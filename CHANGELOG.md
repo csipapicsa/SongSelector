@@ -4,6 +4,21 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.8.0] - 2026-10-27
+
+- **Multi-selection** in both panels: Shift+click (range) and Ctrl+click (toggle).
+  Dragging takes all selected files; rating and color apply to every selected row.
+- **Delete key / right-click → Remove from library|playlist** removes the selected rows from
+  that list. The library asks first. Tracks stay in the collection (with ratings and
+  embeddings), and files on disk are never deleted. Removed playlist tracks reappear in the library.
+- **Comment** can be edited too (*Edit track info…*): written as the file's main comment
+  (ID3 `COMM`, Vorbis `comment`); other comment-type frames such as iTunes' `iTunNORM` are kept.
+- Fix: a file without a main comment no longer shows another comment-type frame
+  (e.g. `iTunNORM` loudness data) in the Comment column.
+- The embedding model of the DJ mix segmentation project
+  (`E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx`) is the default, so analysis starts
+  without choosing a file. *Analysis → Choose embedding model…* still overrides it.
+
 ## [4.7.0] - 2026-10-27
 
 - **Own rating and color.** New columns *Rating - Song Selector* (1–5) and *Color - Song

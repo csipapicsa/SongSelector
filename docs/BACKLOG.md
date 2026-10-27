@@ -23,7 +23,9 @@ CHANGELOG when they ship.
       support" option; today GPU works only from source (see requirements-gpu.txt).
 - [ ] Download the embedding model on demand (first use) instead of choosing the file by hand.
 - [ ] Row shading by *Color - Song Selector* as a third coloring mode.
-- [ ] Rating / color for several selected rows at once (the trees are single-selection today).
+- [x] Rating / color for several selected rows at once (4.8.0).
+- [ ] Undo for "Remove from library" (today: Refresh rebuilds the full list).
+- [ ] Edit track info for several rows at once (e.g. set the genre of 20 tracks).
 
 ## Performance (measured on 5,105 tracks, 2026-10-27)
 
@@ -47,7 +49,8 @@ Do 1–2 first; they matter even without an installer.
       `C:\Program Files` is not writable for normal users, so today the app would fail with
       "Cannot start" there. Keep a "portable" mode (data next to the exe) when a marker file exists,
       and migrate existing data from the exe folder on first start.
-- [ ] 3. Remove machine-specific defaults: the `E:\DJ\TRAKTOR\collection.nml` default
+- [ ] 3. Remove machine-specific defaults: the default embedding model
+      `E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx` (`config.DEFAULT_EMBEDDING_MODEL`), the `E:\DJ\TRAKTOR\collection.nml` default
       (keep the Documents\Native Instruments auto-detection) and the real-file test samples.
 - [ ] 4. Test on a clean Windows 10/11 VM (no Python, no Traktor).
 - [ ] 5. Installer: PyInstaller one-folder build (faster start, fewer antivirus false positives

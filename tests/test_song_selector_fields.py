@@ -137,7 +137,9 @@ class FilterTests(unittest.TestCase):
         self.assertTrue(parse_color_search('sscolor:purpl', SS_COLOR_TOKEN).error)
 
 
-class SongSelectorGuiTests(TempDirTest):
+class GuiTestBase(TempDirTest):
+    """Window with a patched settings file and a small default library (no tests here)."""
+
     @classmethod
     def setUpClass(cls):
         from PyQt5.QtWidgets import QApplication
@@ -191,6 +193,7 @@ class SongSelectorGuiTests(TempDirTest):
             menu = next(action.menu() for action in menu.actions() if action.text() == name)
         return next(action for action in menu.actions() if action.text().endswith(path[-1]))
 
+class SongSelectorGuiTests(GuiTestBase):
     def test_columns_visible_and_searchable_after_settings_upgrade(self):
         window = self.window()
         for column in (SS_RATING_COLUMN, SS_COLOR_COLUMN):
@@ -265,3 +268,120 @@ class SongSelectorGuiTests(TempDirTest):
         window.embedding_store.save(key, file_fingerprint(self.song), np.ones((1, 2048)))
         window.edit_track_tags(str(self.song), Title='Renamed')
         self.assertEqual(window.embedding_store.fingerprints()[key], file_fingerprint(self.song))
+
+
+class CommentTagTests(TempDirTest):
+    def test_mp3_comment_replaces_main_comment_and_keeps_other_comm_frames(self):
+        from mutagen.id3 import COMM
+        path = tagged_file(self.root / 'song.mp3')  # main comment in language 'hun'
+        tags = ID3(str(path))
+        tags.add(COMM(encoding=3, lang='eng', desc='iTunNORM', text=['00000A']))
+        tags.save(str(path))
+        write_tags(path, Comment='Peak time tool')
+        self.assertEqual(extract_audio_metadata(path).comment, 'Peak time tool')
+        frames = {(frame.desc, frame.lang): str(frame) for frame in ID3(str(path)).getall('COMM')}
+        self.assertEqual(frames, {('', 'eng'): 'Peak time tool', ('iTunNORM', 'eng'): '00000A'})
+        write_tags(path, Comment='')
+        self.assertIsNone(extract_audio_metadata(path).comment)
+
+    def test_flac_comment(self):
+        path = self.root / 'tone.flac'
+        soundfile.write(str(path), np.zeros((4410, 2)), 44100)
+        write_tags(path, Comment='Warm-up')
+        self.assertEqual(extract_audio_metadata(path).comment, 'Warm-up')
+
+
+class MultiSelectionGuiTests(GuiTestBase):
+    """Shift/Ctrl multi-selection, Delete key and bulk actions."""
+
+    def setUp(self):
+        super().setUp()
+        self.third = tagged_file(self.root / 'third.mp3')
+        self.library = pd.DataFrame([track(self.song, 'Song'), track(self.other, 'Other'), track(self.third, 'Third')])
+
+    def select(self, tree, *titles):
+        tree.clearSelection()
+        for title in titles:
+            self.item(tree, title).setSelected(True)
+
+    @staticmethod
+    def titles(tree):
+        return [tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount())
+                if not tree.topLevelItem(i).isHidden()]
+
+    def test_trees_allow_shift_and_ctrl_selection(self):
+        from PyQt5.QtWidgets import QAbstractItemView
+        window = self.window()
+        for tree in (window.candidate_tree, window.playlist_tree):
+            self.assertEqual(tree.selectionMode(), QAbstractItemView.ExtendedSelection)
+
+    def test_delete_key_removes_selected_library_rows_after_confirmation(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from PyQt5.QtWidgets import QMessageBox
+        window = self.window()
+        self.select(window.candidate_tree, 'Song', 'Third')
+        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.No):
+            QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
+        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Other', 'Song', 'Third'])
+        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
+            QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
+        self.assertEqual(self.titles(window.candidate_tree), ['Other'])
+        self.assertTrue(self.song.exists() and self.third.exists())
+        restored = self.restart(window)
+        self.assertEqual(self.titles(restored.candidate_tree), ['Other'])
+        self.assertEqual(restored.library_store.track_count(), 3)  # still in the collection
+
+    def test_delete_key_in_playlist_returns_tracks_to_the_library(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        window = self.window()
+        self.select(window.candidate_tree, 'Song', 'Other', 'Third')
+        window.add_selected_to_playlist()
+        self.assertEqual(window.playlist_tree.topLevelItemCount(), 3)
+        self.select(window.playlist_tree, 'Song', 'Third')
+        QTest.keyClick(window.playlist_tree, Qt.Key_Delete)
+        self.assertEqual(self.titles(window.playlist_tree), ['Other'])
+        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Song', 'Third'])
+        self.assertEqual(self.titles(self.restart(window).playlist_tree), ['Other'])
+
+    def test_rating_and_color_apply_to_every_selected_row(self):
+        window = self.window()
+        self.select(window.candidate_tree, 'Song', 'Third')
+        menu = window.library_context_menu()
+        self.menu_action(menu, 'Rating - Song Selector (2 tracks)', '(5)').trigger()
+        self.menu_action(menu, 'Color - Song Selector (2 tracks)', 'Green').trigger()
+        values = {title: (self.item(window.candidate_tree, title).text(HEADER_INDEX[SS_RATING_COLUMN]),
+                          self.item(window.candidate_tree, title).text(HEADER_INDEX[SS_COLOR_COLUMN]))
+                  for title in ('Song', 'Other', 'Third')}
+        self.assertEqual(values, {'Song': ('5', '4'), 'Other': ('', ''), 'Third': ('5', '4')})
+
+    def test_remove_action_in_menu_and_edit_comment(self):
+        from PyQt5.QtWidgets import QMessageBox
+        window = self.window()
+        self.select(window.candidate_tree, 'Other')
+        window.candidate_tree.setCurrentItem(self.item(window.candidate_tree, 'Other'))
+        menu = window.library_context_menu()
+        self.assertTrue(any(action.text().startswith('Edit track info') for action in menu.actions()))
+        self.assertTrue(window.edit_track_tags(str(self.other), Comment='Big room'))
+        self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Comment']), 'Big room')
+        self.assertEqual(extract_audio_metadata(self.other).comment, 'Big room')
+        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
+            self.menu_action(window.library_context_menu(), 'Remove from library\tDel').trigger()
+        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Song', 'Third'])
+
+
+class DefaultModelTests(GuiTestBase):
+    def test_default_model_is_used_when_none_is_chosen(self):
+        model = self.root / 'default-cnn14.onnx'
+        model.write_bytes(b'x')
+        with patch('traktor_key_calculator.ui.main_window.DEFAULT_EMBEDDING_MODEL', str(model)), \
+                patch('traktor_key_calculator.ui.main_window.EmbeddingAnalyzer'):  # no real process
+            window = self.window()
+            self.assertEqual(window.embedding_model_path(), model)
+            window.settings['Embedding model'] = str(self.root / 'missing.onnx')
+            self.assertEqual(window.embedding_model_path(), model)
+            chosen = self.root / 'chosen.onnx'
+            chosen.write_bytes(b'x')
+            window.settings['Embedding model'] = str(chosen)
+            self.assertEqual(window.embedding_model_path(), chosen)

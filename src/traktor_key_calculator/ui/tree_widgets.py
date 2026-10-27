@@ -20,7 +20,8 @@ class DraggableTreeWidget(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragEnabled(True)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        # Click, Shift+click (range) and Ctrl+click (toggle), as in Explorer / Traktor
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.parent_app = parent
         
         # Set the color delegate for the color column (column 10)
@@ -45,6 +46,16 @@ class DraggableTreeWidget(QTreeWidget):
         self.sort_column = column
         self.sort_order = (order == Qt.AscendingOrder)
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Delete and self.selectedItems():
+            self.parent_app.remove_selected_tracks(self)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def selected_paths(self):
+        return [item.text(HEADER_INDEX['Path']) for item in self.selectedItems() if item.text(HEADER_INDEX['Path'])]
+
     def mousePressEvent(self, event):
         """Handle mouse press event to prepare for dragging"""
         super().mousePressEvent(event)
@@ -59,31 +70,25 @@ class DraggableTreeWidget(QTreeWidget):
         if (event.pos() - self.drag_start_position).manhattanLength() < QApplication.startDragDistance():
             return
             
-        # Get the selected item
-        selected_items = self.selectedItems()
-        if not selected_items:
+        selected = self.selected_paths()
+        if not selected:
             return
-        
-        # Get the file path from the item's data
-        file_path = selected_items[0].text(HEADER_INDEX.get("Path"))
-        if not file_path or not os.path.exists(file_path):
-            self.parent_app.status_bar.showMessage(f"File not found: {file_path}")
+        # Drag every selected file that exists (e.g. into Traktor, Explorer or the other panel)
+        files = [path for path in selected if os.path.exists(path)]
+        if not files:
+            self.parent_app.status_bar.showMessage(f"File not found: {selected[0]}")
             return
-        
-        # Start the drag operation
+
         drag = QDrag(self)
         mime_data = QMimeData()
-        
-        # Set the URL for the file (this is what makes the drag work with external apps)
-        mime_data.setUrls([QUrl.fromLocalFile(file_path)])
+        # File URLs are what make the drag work with external apps
+        mime_data.setUrls([QUrl.fromLocalFile(path) for path in files])
         drag.setMimeData(mime_data)
-        
-        # Execute the drag
         result = drag.exec_(Qt.CopyAction)
-        
-        # Update status
+
         if result == Qt.CopyAction:
-            self.parent_app.status_bar.showMessage(f"File dragged successfully: {os.path.basename(file_path)}")
+            name = os.path.basename(files[0]) if len(files) == 1 else f'{len(files)} files'
+            self.parent_app.status_bar.showMessage(f"Dragged {name}")
         else:
             self.parent_app.status_bar.showMessage("Drag cancelled")
 

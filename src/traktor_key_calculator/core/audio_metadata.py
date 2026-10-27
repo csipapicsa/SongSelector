@@ -53,7 +53,9 @@ def _read_id3(tags, metadata):
     for attribute, frame in (('title', 'TIT2'), ('artist', 'TPE1'), ('album', 'TALB'), ('genre', 'TCON')):
         value = str(tags.get(frame, '')).strip()
         setattr(metadata, attribute, value or None)
-    comments = tags.getall('COMM')
+    # Only the main comment (no description); described COMM frames hold other data,
+    # e.g. iTunes' iTunNORM loudness values.
+    comments = [frame for frame in tags.getall('COMM') if not frame.desc]
     if comments:
         comment = next((f for f in comments if f.lang.lower() in ('eng', 'xxx')), comments[0])
         metadata.comment = ' / '.join(comment.text) or None

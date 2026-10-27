@@ -124,6 +124,14 @@ def _default_app_data_dir():
 
 
 APP_DATA_DIR = _default_app_data_dir()
+
+# Embedding model used unless one is chosen in the app (Analysis menu) or placed in
+# <data folder>\models\cnn14.onnx: the CNN14 of the developer's DJ mix segmentation project.
+# TRAKTOR_EMBEDDING_MODEL overrides it; "none" means no default (used by tests and verification).
+DEFAULT_EMBEDDING_MODEL = os.environ.get('TRAKTOR_EMBEDDING_MODEL',
+                                         r'E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx')
+if DEFAULT_EMBEDDING_MODEL.strip().lower() in ('', 'none'):
+    DEFAULT_EMBEDDING_MODEL = None
 SETTINGS_FILE = str(APP_DATA_DIR / 'SpotNextTrack_settings.json')
 
 HEADER_LABELS = [

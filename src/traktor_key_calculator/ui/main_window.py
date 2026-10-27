@@ -18,7 +18,7 @@ from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
 from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
-from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN
+from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
 from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget
 from traktor_key_calculator.core.data_manager import DataManager
@@ -33,7 +33,7 @@ import pandas as pd
 from traktor_key_calculator.core.track_import import (TrackImporter, ImportedTrackStore, merge_tracks,
                                                       enrich_ratings, drop_duplicate_paths)
 from traktor_key_calculator.core.library_store import LibraryStore, LIBRARY_LIST, PLAYLIST_LIST
-from traktor_key_calculator.core.tag_writer import write_tags
+from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
 from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
 from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
@@ -796,47 +796,88 @@ class TraktorKeyCalculator(QMainWindow):
         return removed
 
     def track_context_menu(self, tree):
-        """Right-click menu for the selected row of the library or playlist panel."""
+        """Right-click menu for the selected rows of the library or playlist panel."""
         menu = QMenu(self)
+        paths = tree.selected_paths()
         item = tree.currentItem()
-        path = item.text(HEADER_INDEX['Path']) if item is not None else ''
-        edit = menu.addAction('Edit Artist / Title / Genre...')
-        edit.setEnabled(bool(path))
-        edit.triggered.connect(lambda: self.open_track_info_dialog(path))
+        current = item.text(HEADER_INDEX['Path']) if item is not None and item.isSelected() else ''
+        edit = menu.addAction('Edit track info (Artist, Title, Genre, Comment)...')
+        edit.setToolTip('Edits one track; with several rows selected, the one clicked last.')
+        edit.setEnabled(bool(current))
+        edit.triggered.connect(lambda: self.open_track_info_dialog(current))
 
-        rating_menu = menu.addMenu('Rating - Song Selector')
+        count = f' ({len(paths)} tracks)' if len(paths) > 1 else ''
+        rating_menu = menu.addMenu('Rating - Song Selector' + count)
         for stars in range(5, 0, -1):
             action = rating_menu.addAction('★' * stars + '☆' * (5 - stars) + f'  ({stars})')
-            action.triggered.connect(lambda _checked, value=stars: self.set_song_selector_fields([path], SS_Rating=value))
+            action.triggered.connect(lambda _checked, value=stars: self.set_song_selector_fields(paths, SS_Rating=value))
         rating_menu.addSeparator()
         rating_menu.addAction('Clear rating').triggered.connect(
-            lambda: self.set_song_selector_fields([path], SS_Rating=None))
+            lambda: self.set_song_selector_fields(paths, SS_Rating=None))
 
-        color_menu = menu.addMenu('Color - Song Selector')
+        color_menu = menu.addMenu('Color - Song Selector' + count)
         for number, name in COLOR_NAMES.items():
             if number:
                 action = color_menu.addAction(self._color_swatch(number), name.title())
-                action.triggered.connect(lambda _checked, value=number: self.set_song_selector_fields([path], SS_Color=value))
+                action.triggered.connect(lambda _checked, value=number: self.set_song_selector_fields(paths, SS_Color=value))
         color_menu.addSeparator()
         color_menu.addAction('Clear color').triggered.connect(
-            lambda: self.set_song_selector_fields([path], SS_Color=None))
-        rating_menu.setEnabled(bool(path))
-        color_menu.setEnabled(bool(path))
+            lambda: self.set_song_selector_fields(paths, SS_Color=None))
+        rating_menu.setEnabled(bool(paths))
+        color_menu.setEnabled(bool(paths))
 
+        menu.addSeparator()
+        remove = menu.addAction(f'Remove from {"library" if tree is self.candidate_tree else "playlist"}{count}\tDel')
+        remove.setToolTip('Removes the rows from this list only. Files on disk are not deleted.')
+        remove.setEnabled(bool(paths))
+        remove.triggered.connect(lambda: self.remove_selected_tracks(tree))
         if tree is self.candidate_tree:
-            menu.addSeparator()
             delete_duplicates = menu.addAction('Delete duplicates from the list')
             delete_duplicates.setToolTip('Remove rows with the same file path. Files on disk are not deleted.')
             delete_duplicates.triggered.connect(self.delete_duplicate_tracks)
         return menu
+
+    def remove_selected_tracks(self, tree, confirm=True):
+        """Remove the selected rows from the library or playlist list (Delete key).
+
+        Only the list changes: the tracks stay in the collection (library.sqlite) with
+        their ratings and embeddings, and files on disk are untouched.
+        """
+        paths = tree.selected_paths()
+        if not paths:
+            return 0
+        keys = {canonical_path(path) for path in paths}
+        if tree is self.playlist_tree:
+            for item in tree.selectedItems():
+                tree.takeTopLevelItem(tree.indexOfTopLevelItem(item))
+            self.playlist_paths = {path for path in self.playlist_paths if canonical_path(path) not in keys}
+            error = self._save_playlist()
+            self.filter_items()  # removed playlist tracks show up in the library again
+            where = 'playlist'
+        else:
+            if confirm and QMessageBox.question(
+                    self, 'Remove from library',
+                    f'Remove {len(keys)} track(s) from the library list?\n\n'
+                    'The files on disk are not deleted. Refresh rebuilds the full list.',
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return 0
+            mask = self._rows_mask(paths)
+            self.table = self.table.loc[~mask].reset_index(drop=True)
+            self.data_manager.table = self.table
+            error = self._save_library()
+            self.populate_tree()
+            where = 'library'
+        self.status_label.setStyleSheet('color: red; font-weight: bold;' if error else 'color: green; font-weight: bold;')
+        self.status_label.setText(error or f'Removed {len(keys)} track(s) from the {where}; files on disk were not changed')
+        return len(keys)
 
     def library_context_menu(self):
         return self.track_context_menu(self.candidate_tree)
 
     def show_track_context_menu(self, tree, pos):
         item = tree.itemAt(pos)
-        if item is not None:
-            tree.setCurrentItem(item)
+        if item is not None and not item.isSelected():
+            tree.setCurrentItem(item)  # right-click outside the selection selects just that row
         self.track_context_menu(tree).exec_(tree.viewport().mapToGlobal(pos))
 
     @staticmethod
@@ -914,12 +955,12 @@ class TraktorKeyCalculator(QMainWindow):
         if mask is None or not mask.any():
             return
         row = self.table.loc[mask].iloc[0]
-        dialog = TrackInfoDialog(path, {name: self._text(row.get(name)) for name in ('Artist', 'Title', 'Genre')}, self)
+        dialog = TrackInfoDialog(path, {name: self._text(row.get(name)) for name in EDITABLE_TAGS}, self)
         if dialog.exec_() == QDialog.Accepted:
             self.edit_track_tags(path, **dialog.changed_values())
 
     def edit_track_tags(self, path, **values):
-        """Write Artist/Title/Genre into the audio file, then update the library to match."""
+        """Write Artist/Title/Genre/Comment into the audio file, then update the library to match."""
         if not values:
             return True
         key = canonical_path(path)
@@ -964,9 +1005,10 @@ class TraktorKeyCalculator(QMainWindow):
         menu.addAction('Choose embedding model (cnn14.onnx)...').triggered.connect(self.choose_embedding_model)
 
     def embedding_model_path(self):
-        """Configured model file, else <data folder>/models/cnn14.onnx; None if neither exists."""
+        """Chosen model, else <data folder>/models/cnn14.onnx, else the default; None if none exists."""
         for candidate in (self.settings.get('Embedding model'),
-                          Path(SETTINGS_FILE).with_name('models') / MODEL_FILE_NAME):
+                          Path(SETTINGS_FILE).with_name('models') / MODEL_FILE_NAME,
+                          DEFAULT_EMBEDDING_MODEL):
             if candidate and Path(candidate).is_file():
                 return Path(candidate)
         return None

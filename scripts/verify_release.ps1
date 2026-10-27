@@ -35,7 +35,7 @@ $packagedDir = Join-Path $runDir 'packaged'
 New-Item -ItemType Directory -Path $packagedDir | Out-Null
 $packagedResult = Join-Path $runDir 'packaged-results.json'
 $savedEnv = @{}
-foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','TRAKTOR_APP_DATA_DIR','TRAKTOR_VERIFY_BUILD','TRAKTOR_VERIFY_RESULT','TRAKTOR_VERIFY_MODEL') {
+foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','TRAKTOR_APP_DATA_DIR','TRAKTOR_VERIFY_BUILD','TRAKTOR_VERIFY_RESULT','TRAKTOR_VERIFY_MODEL','TRAKTOR_EMBEDDING_MODEL') {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 try {
@@ -50,6 +50,8 @@ try {
     $env:TRAKTOR_VERIFY_BUILD = '1'
     $env:TRAKTOR_VERIFY_RESULT = $packagedResult
     $env:TRAKTOR_VERIFY_MODEL = $Model
+    # No default model: the app windows must not start analysing the bundled library.
+    $env:TRAKTOR_EMBEDDING_MODEL = 'none'
     $process = Start-Process -FilePath $Exe -WorkingDirectory $packagedDir -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit(300000)) { $process.Kill(); throw 'Packaged self-check timed out.' }
     if (Test-Path -LiteralPath $packagedResult) { Get-Content -LiteralPath $packagedResult }

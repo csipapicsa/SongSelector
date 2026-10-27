@@ -9,9 +9,10 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 - Drag and drop MP3/WAV/FLAC import, reading BPM, key, rating, etc. from file tags
 - Missing metadata filled in from Traktor's `collection.nml` (read-only)
 - Traktor category colors, key colors, text, numeric, rating and color search
-- Library and playlist are restored on restart; *right-click → Delete duplicates from the list*
+- Library and playlist are restored on restart; Shift/Ctrl multi-selection; *Delete* removes rows from a list
+  (never files); *right-click → Delete duplicates from the list*
 - Your own *Rating - Song Selector* and *Color - Song Selector*, independent of Traktor (right-click to set)
-- Edit Artist / Title / Genre; the change is written into the audio file's tags
+- Edit Artist / Title / Genre / Comment; the change is written into the audio file's tags
 - Background audio embeddings (CNN14, one vector per 5 s) for every library track, CPU or NVIDIA GPU
 
 Current version: **4.7.0** (see [CHANGELOG.md](CHANGELOG.md)).
@@ -51,7 +52,7 @@ itself**:
 
 To upgrade an existing installation, put the new exe in the same folder as these
 files (or copy them next to it). The Traktor collection is only ever read. Audio
-files are written only when you edit Artist / Title / Genre, and then only those tags.
+files are written only when you edit Artist / Title / Genre / Comment, and then only those tags.
 
 ## Embedding analysis
 
@@ -59,9 +60,9 @@ The app computes PANNs CNN14 embeddings (one 2048-value vector per 5 seconds) fo
 every track in the library panel, in a background process at low priority. The
 status bar shows progress, and *Analysis → Analyse embeddings in background* pauses it.
 
-- **Model:** `cnn14.onnx` (327 MB, not in the repo or the exe). Put it in a
-  `models` folder next to the exe (or in `.appdata\models\` from source), or choose
-  it with *Analysis → Choose embedding model…*.
+- **Model:** `cnn14.onnx` (327 MB, not in the repo or the exe). Default:
+  `E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx` (the DJ mix segmentation project's model).
+  A `models\cnn14.onnx` next to the data, or *Analysis → Choose embedding model…*, takes precedence.
 - **Speed (6-minute track):** about 6.4 s on the CPU, about 1.5 s on an NVIDIA
   GTX 1650 Ti. A first full pass over ~5,000 tracks takes hours, but only once;
   later only new or changed files are analysed.

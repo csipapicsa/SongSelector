@@ -45,7 +45,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `traktor_collection.py` | Read-only, cached index of Traktor's `collection.nml`; lookup by exact path, then by unique filename + file size |
 | `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
 | `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded), the user's Song Selector rating/color, and the saved Library / Playlist lists |
-| `tag_writer.py` | `write_tags`: writes Artist / Title / Genre into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
+| `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
 | `embeddings.py` | CNN14 embeddings: `load_audio`, `Cnn14Embedder` (onnxruntime, GPU if available), `EmbeddingStore` (`embeddings.sqlite`), `run_analysis` (entry point of the analysis process). Must not import Qt |
 | `data_manager.py` | Loads the library CSV (bundled `data/music_test.csv` by default) into a pandas DataFrame |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
@@ -62,12 +62,12 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `advanced_search_dialog.py` | Complex Search dialog (`AdvancedSearchDialog`, `AdvancedSearchRow`) |
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
-| `track_info_dialog.py` | Edit Artist / Title / Genre of one file |
+| `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
 
 ### Right-click menu (both panels)
 
-`TraktorKeyCalculator.track_context_menu(tree)`: *Edit Artist / Title / Genre…*,
+`TraktorKeyCalculator.track_context_menu(tree)` acts on all selected rows (Shift/Ctrl+click): *Edit track info…* (the clicked row), *Remove from library/playlist* (also the Delete key),
 *Rating - Song Selector*, *Color - Song Selector*, and in the library panel
 *Delete duplicates from the list*.
 
@@ -113,7 +113,7 @@ It holds:
 | `SpotNextTrack_settings.json` | UI settings (name is historical, kept for existing installs) | on close |
 | `library.sqlite` | Collection, Song Selector rating/color, saved lists (see below) | on every change |
 | `embeddings.sqlite` | Audio embeddings, a cache that can be deleted and recomputed (see below) | by the analysis process |
-| `models/cnn14.onnx` | Optional location of the embedding model (or *Analysis → Choose embedding model…*) | never |
+| `models/cnn14.onnx` | Optional location of the embedding model. Order: model chosen in *Analysis*, this file, then `config.DEFAULT_EMBEDDING_MODEL` (`TRAKTOR_EMBEDDING_MODEL=none` disables the default; tests and verification do) | never |
 | `imported_tracks.json` | Imports saved by versions ≤ 4.5.0 | never; read once, kept as a backup |
 
 ### library.sqlite
@@ -184,7 +184,7 @@ backward compatible.
 ## External files
 
 - `collection.nml` (Traktor) is **never written**.
-- Audio files are written **only** when the user edits Artist / Title / Genre
+- Audio files are written **only** when the user edits Artist / Title / Genre / Comment
   (`core/tag_writer.py`). Just those tags change, and the ID3 version (v2.3 / v2.4)
   is kept. The file is then re-read like a fresh import, so the edit also survives
   *Refresh* / *Load CSV*. If writing fails, nothing in the library changes.

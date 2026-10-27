@@ -1,22 +1,31 @@
-"""Write user-edited Artist / Title / Genre into an audio file's own tags.
+"""Write user-edited Artist / Title / Genre / Comment into an audio file's own tags.
 
 This is the only place the app writes to audio files. It changes just these
-three tags and leaves every other tag (key, BPM, rating, comment, artwork, ...)
-and the audio data untouched. The Traktor collection is never written.
+tags and leaves every other tag (key, BPM, rating, artwork, ...) and the audio
+data untouched. The Traktor collection is never written.
 """
 from pathlib import Path
 
 from mutagen.flac import FLAC
-from mutagen.id3 import ID3, ID3NoHeaderError, TCON, TIT2, TPE1
+from mutagen.id3 import COMM, ID3, ID3NoHeaderError, TCON, TIT2, TPE1
 from mutagen.wave import WAVE
 
-EDITABLE_TAGS = ('Artist', 'Title', 'Genre')
+EDITABLE_TAGS = ('Artist', 'Title', 'Genre', 'Comment')
 _ID3_FRAMES = {'Artist': TPE1, 'Title': TIT2, 'Genre': TCON}
-_VORBIS_KEYS = {'Artist': 'artist', 'Title': 'title', 'Genre': 'genre'}
+_VORBIS_KEYS = {'Artist': 'artist', 'Title': 'title', 'Genre': 'genre', 'Comment': 'comment'}
 
 
 def _apply_id3(tags, values):
     for name, value in values.items():
+        if name == 'Comment':
+            # Replace the main comment (empty description) in every language; frames with
+            # a description, e.g. iTunes' iTunNORM, are other data and stay.
+            for frame in tags.getall('COMM'):
+                if not frame.desc:
+                    tags.delall(frame.HashKey)
+            if value:
+                tags.add(COMM(encoding=3, lang='eng', desc='', text=[value]))
+            continue
         frame = _ID3_FRAMES[name]
         tags.delall(frame.__name__)
         if value:

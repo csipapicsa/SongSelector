@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+# No default embedding model: test windows must not start analysing real tracks.
+os.environ.setdefault('TRAKTOR_EMBEDDING_MODEL', 'none')
 
 _created_data_dir = None
 if not os.environ.get('TRAKTOR_APP_DATA_DIR'):
