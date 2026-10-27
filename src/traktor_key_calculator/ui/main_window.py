@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QToolButton, QMenu, QAction
+from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget
 
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
@@ -37,6 +37,8 @@ from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
 from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
 from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
+from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget
+from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
 from traktor_key_calculator.ui.theme import DEFAULT_THEME, apply_theme, row_tint_alpha, status_style
 from mutagen import MutagenError
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
@@ -152,6 +154,15 @@ class TraktorKeyCalculator(QMainWindow):
         self.embedding_analyzer = None
         self._init_analysis_menu()
         self.start_embedding_analysis()
+
+        # Similarity map: second tab of the library panel
+        self.similarity_map = SimilarityMapWidget(self.embedding_store, self.settings, self)
+        self.similarity_map.request_add_to_playlist.connect(self._map_add_to_playlist)
+        self.similarity_map.request_context_menu.connect(self._map_context_menu)
+        self.similarity_map.selected.connect(self._select_in_list)
+        self.library_tabs.addTab(self.similarity_map, 'Similarity map')
+        self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
+        self._map_stale = True
 
     def apply_row_shading_from_color(self, item):
         color = None
@@ -414,7 +425,9 @@ class TraktorKeyCalculator(QMainWindow):
             lambda pos: self.show_track_context_menu(self.candidate_tree, pos))
         
         # Add tree to right layout
-        right_layout.addWidget(self.candidate_tree)
+        self.library_tabs = QTabWidget()
+        self.library_tabs.addTab(self.candidate_tree, 'List')
+        right_layout.addWidget(self.library_tabs)
         
         # Add panes to splitter
         self.splitter.addWidget(left_pane)
@@ -570,6 +583,7 @@ class TraktorKeyCalculator(QMainWindow):
         if color_query.error or ss_color_query.error:
             self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(color_query.error or ss_color_query.error)
+        self._refresh_map()
 
 
     def update_color_search(self, _checked=False):
@@ -1027,6 +1041,64 @@ class TraktorKeyCalculator(QMainWindow):
         self.dark_theme_action.setCheckable(True)
         self.dark_theme_action.setChecked(self.settings.get('Theme', DEFAULT_THEME) == 'dark')
         self.dark_theme_action.toggled.connect(lambda dark: self.set_theme('dark' if dark else 'light'))
+        menu.addSeparator()
+        list_view = menu.addAction('Library list')
+        list_view.setShortcut('Ctrl+1')
+        list_view.triggered.connect(lambda: self.library_tabs.setCurrentIndex(0))
+        map_view = menu.addAction('Similarity map')
+        map_view.setShortcut('Ctrl+2')
+        map_view.triggered.connect(lambda: self.library_tabs.setCurrentIndex(1))
+        menu.addAction('Map hover details...').triggered.connect(self.choose_hover_fields)
+
+    # -- similarity map -----------------------------------------------------
+
+    def map_visible(self):
+        return hasattr(self, 'similarity_map') and self.library_tabs.currentWidget() is self.similarity_map
+
+    def _refresh_map(self):
+        """Show the rows the list shows; (re)load map data when it is opened and stale."""
+        if not self.map_visible():
+            return
+        if self._map_stale:
+            self._map_stale = False
+            self.similarity_map.load()
+        columns = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
+        fields = {}
+        for index in range(self.candidate_tree.topLevelItemCount()):
+            item = self.candidate_tree.topLevelItem(index)
+            if not item.isHidden():
+                fields[canonical_path(item.text(HEADER_INDEX['Path']))] = \
+                    {name: item.text(column) for column, name in enumerate(columns)}
+        self.similarity_map.set_tracks(fields)
+
+    def _embedding_added(self, _key):
+        self._map_stale = True  # placed on the map the next time it is opened
+
+    def _list_item(self, key):
+        for index in range(self.candidate_tree.topLevelItemCount()):
+            item = self.candidate_tree.topLevelItem(index)
+            if canonical_path(item.text(HEADER_INDEX['Path'])) == key:
+                return item
+        return None
+
+    def _select_in_list(self, key):
+        item = self._list_item(key)
+        if item is not None:
+            self.candidate_tree.setCurrentItem(item)
+
+    def _map_add_to_playlist(self, key):
+        self._select_in_list(key)
+        self.add_selected_to_playlist()
+
+    def _map_context_menu(self, key, position):
+        self._select_in_list(key)
+        self.track_context_menu(self.candidate_tree).exec_(position)
+
+    def choose_hover_fields(self):
+        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), HEADER_LABELS, self)
+        if dialog.exec_() == QDialog.Accepted:
+            self.settings['Map hover fields'] = dialog.selected()
+            self._refresh_map()
 
     def set_theme(self, name):
         self.settings['Theme'] = apply_theme(name)
@@ -1063,6 +1135,7 @@ class TraktorKeyCalculator(QMainWindow):
         if self.embedding_analyzer is None:
             self.embedding_analyzer = EmbeddingAnalyzer(self.embedding_store, model, parent=self)
             self.embedding_analyzer.progress.connect(self._show_embedding_progress)
+            self.embedding_analyzer.track_analyzed.connect(self._embedding_added)
             self.embedding_analyzer.failed.connect(self.embedding_label.setText)
         self._queue_embeddings()
         self.embedding_analyzer.start()
@@ -1235,6 +1308,8 @@ class TraktorKeyCalculator(QMainWindow):
         """Save settings before closing the app"""
         if self.embedding_analyzer is not None:
             self.embedding_analyzer.stop(timeout=2)
+        if hasattr(self, 'similarity_map'):
+            self.similarity_map.stop()
         self._save_playlist()
         HEADER_LABELS = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
 

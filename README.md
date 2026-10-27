@@ -15,6 +15,7 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 - Edit Artist / Title / Genre / Comment; the change is written into the audio file's tags
 - Background audio embeddings (CNN14, one vector per 5 s) for every library track, on the GPU (DirectML) or CPU
 - Dark grey theme (*View → Dark theme* toggles light)
+- **Similarity map**: tracks as dots, similar ones close together; closest matches, harmonic edges
 
 Current version: **4.7.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
@@ -98,6 +99,25 @@ docs/                   Architecture notes, backlog, project history
 
 How the parts fit together is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Known issues and planned work are in [docs/BACKLOG.md](docs/BACKLOG.md).
+
+## Similarity map
+
+*Similarity map* tab next to *List* (Ctrl+2 / Ctrl+1). It shows the analysed tracks of the list as
+it is filtered now (search, colours, Advanced Search), so narrow the list first to explore a style.
+
+| Action | Result |
+|---|---|
+| Hover a dot | Details; choose which in *View → Map hover details…* |
+| Click | 15 most similar tracks: cyan rings on the map, list on the right (similarity %, mix type) |
+| Double-click (dot or list) | Add to playlist |
+| Right-click | The usual track menu (rating, colour, edit, remove) |
+| Scroll / drag | Zoom / move |
+| *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour, same rating |
+| *Re-arrange map* | Recompute the layout from all analysed tracks (a few minutes for 3,000) |
+
+Distances on any 2D map are approximate; the closest-matches list uses the full embeddings and
+is exact. On the developer's library the map separated breakbeat and DnB with about 93 % purity,
+from audio alone.
 
 ## Search syntax
 

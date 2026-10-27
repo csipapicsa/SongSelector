@@ -16,19 +16,14 @@ CHANGELOG when they ship.
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
 - [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
-- [ ] **Similarity view (next task, requested 2026-10-27).** A second main view, switched with
-      the library list (View menu / toggle button): every track of the *filtered* library as a
-      dot in 2D (3D later), placed so that similar tracks (embeddings) are close together.
-      Dot colour: Song Selector colour first, then Traktor colour. Hover tooltip with fields
-      chosen in Settings (artist, title, genre, comment, colour, rating, ...). Optional edges:
-      same tempo-adjusted key, harmonic jumps (Mixed In Key table: perfect, ±1, energy boost,
-      scale change, diagonal, Jaws, mood shifter), same colour or rating. Reuse the harmonic
-      mixing calculator from the master thesis project.
-- [ ] **Track similarity** from the embeddings (the basis of the view above). Derive compact per-track vectors
-      (e.g. mean / mean+std over time, or PCA fitted on the library) from `embeddings.sqlite`;
-      the stored full-resolution data allows trying several methods without re-analysis.
-- [ ] Optional GPU exe flavour (onnxruntime-gpu or onnxruntime-directml) or a "download GPU
-      support" option; today GPU works only from source (see requirements-gpu.txt).
+- [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
+- [ ] Map: "edges only to the N closest matches" (harmonic *and* similar), likely the most useful edge mode.
+- [ ] Map: 3D view (pyqtgraph.opengl or vispy).
+- [ ] Map: faster layout for very large libraries (Barnes-Hut t-SNE, or arrange a sample + place_new).
+- [ ] Map: lasso selection, labels for the selected track's neighbours, a legend for the edge colours.
+- [ ] Re-check the per-track vector (`similarity.track_vectors`) once more styles are analysed.
+- [x] Track similarity from the embeddings (`core/similarity.py`, 4.11.0).
+- [x] GPU in the exe: DirectML since 4.9.0 (CUDA stays optional from source, requirements-gpu.txt).
 - [ ] Download the embedding model on demand (first use) instead of choosing the file by hand.
 - [ ] Row shading by *Color - Song Selector* as a third coloring mode.
 - [x] Rating / color for several selected rows at once (4.8.0).

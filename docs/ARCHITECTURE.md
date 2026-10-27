@@ -46,6 +46,8 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
 | `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded), the user's Song Selector rating/color, and the saved Library / Playlist lists |
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
+| `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
+| `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
 | `embeddings.py` | CNN14 embeddings: `load_audio`, `Cnn14Embedder` (onnxruntime, GPU if available), `EmbeddingStore` (`embeddings.sqlite`), `run_analysis` (entry point of the analysis process). Must not import Qt |
 | `data_manager.py` | Loads the library CSV (bundled `data/music_test.csv` by default) into a pandas DataFrame |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
@@ -63,6 +65,8 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
+| `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
+| `map_settings_dialog.py` | Choose the map's hover details |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
 
 ### Right-click menu (both panels)
@@ -180,6 +184,23 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   connection per call, so no file stays locked.
 - `launcher.py` calls `multiprocessing.freeze_support()` first and `__main__.py`
   has a `__name__` guard, because the spawned process re-imports the entry module.
+
+### Similarity map
+
+- **Same rows as the list.** `TraktorKeyCalculator._refresh_map` passes the texts of the visible
+  list rows to the map (`set_tracks`), at the end of every `filter_items`, but only while the map
+  tab is shown. Filters, tempo-adjusted keys and colours therefore always match the list.
+- **Layout** (`build_map_data`, background thread): load all embeddings, `track_vectors`, then
+  `tsne_layout` if there is no stored layout or it covers less than half of the analysed tracks.
+  Otherwise `place_new` positions the new tracks. Positions are stored in `embeddings.sqlite`
+  (`map_layout`) and only `save_layout` replaces them, so filtering never moves dots.
+- **Edges** (`SimilarityMapWidget._edges`): tracks are grouped by tempo-adjusted Camelot key,
+  colour and rating, and partners are looked up per group (no all-pairs loop); one edge per
+  pair, capped at `MAX_EDGES`.
+- **Choices backed by measurements** (2026-10-27, ~450–700 analysed tracks; see
+  `docs/research/audio_embeddings.md`): t-SNE kept 41–47 % of each track's 10 true neighbours as
+  map neighbours (UMAP 37–42 %, PCA 26 %). The numpy t-SNE matches scikit-learn's quality
+  (41.5 % vs 42.6 %); for 3,000 tracks it takes about 3 minutes, hence the cache.
 
 ### MSVC runtime conflict (PyQt5 ↔ onnxruntime)
 

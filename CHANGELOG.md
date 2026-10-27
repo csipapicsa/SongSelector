@@ -4,6 +4,23 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.11.0] - 2026-10-27
+
+- **Similarity map** (library panel tab *Similarity map*, Ctrl+2; *List* is Ctrl+1). Every analysed
+  track of the current (filtered) list is a dot; similar-sounding tracks lie close together.
+  Dot colour: Song Selector colour first, then Traktor's. Filtering hides dots but never moves the
+  rest. Scroll to zoom, drag to pan, hover for details (*View → Map hover details…*), click for the
+  15 exact closest matches (ringed on the map, listed with similarity and mix type), double-click to
+  add to the playlist, right-click for the usual track menu.
+- **Edges** (*Edges* menu): harmonic mixes on the tempo-adjusted Camelot key (perfect, ±1, scale
+  change, energy boost, mood shifter, Jaw's, diagonal), same colour, same rating. They start at the
+  selected track, or optionally connect all visible tracks (capped at 2,500).
+- **Harmonic mixing calculator** (`core/harmonic.py`) ported from the master thesis project and
+  tested against every cell of Mixed In Key's table (24 keys × 8 mixes).
+- Map layout: t-SNE in numpy (no new dependency), computed in the background and cached in
+  `embeddings.sqlite`; tracks analysed later are placed next to their closest matches instantly.
+  *Re-arrange map* recomputes it.
+
 ## [4.10.0] - 2026-10-27
 
 - **Dark grey theme** (Qt Fusion style), default; *View → Dark theme* switches to light while

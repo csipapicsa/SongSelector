@@ -164,6 +164,13 @@ class EmbeddingStore:
         error         TEXT,               -- why the file could not be analysed
         created_at    TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS map_layout (
+        path_key TEXT NOT NULL,
+        model    TEXT NOT NULL,
+        x        REAL NOT NULL,
+        y        REAL NOT NULL,
+        PRIMARY KEY (path_key, model)
+    );
     """
 
     def __init__(self, path, keep_open=False):
@@ -231,6 +238,29 @@ class EmbeddingStore:
         with self._open() as connection, connection:
             connection.execute('UPDATE embeddings SET file_size = ?, file_mtime_ns = ? WHERE path_key = ?',
                                (fingerprint[0], fingerprint[1], path_key))
+
+    def load_many(self, path_keys=None, model=MODEL_ID):
+        """{path_key: (frames, 2048) float16 array} of analysed tracks (all, or these keys)."""
+        with self._open() as connection:
+            rows = connection.execute('SELECT path_key, frames, dim, data FROM embeddings WHERE model = ? '
+                                      'AND data IS NOT NULL', (model,)).fetchall()
+        wanted = None if path_keys is None else set(path_keys)
+        return {key: decode(data, frames, dim) for key, frames, dim, data in rows
+                if wanted is None or key in wanted}
+
+    # -- map layout: 2D positions of the similarity map (a cache, like the embeddings) --
+
+    def save_layout(self, positions, model=MODEL_ID):
+        """Replace the stored map with {path_key: (x, y)}."""
+        with self._open() as connection, connection:
+            connection.execute('DELETE FROM map_layout WHERE model = ?', (model,))
+            connection.executemany('INSERT INTO map_layout VALUES (?, ?, ?, ?)',
+                                   [(key, model, float(x), float(y)) for key, (x, y) in positions.items()])
+
+    def load_layout(self, model=MODEL_ID):
+        with self._open() as connection:
+            rows = connection.execute('SELECT path_key, x, y FROM map_layout WHERE model = ?', (model,)).fetchall()
+        return {key: (x, y) for key, x, y in rows}
 
     def counts(self, model=MODEL_ID):
         """(analysed, failed) number of tracks."""

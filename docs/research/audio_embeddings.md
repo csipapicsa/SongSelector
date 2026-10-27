@@ -67,3 +67,13 @@ All on one real 6-minute track (72 chunks), unless noted.
 
 Library estimate (5,105 tracks, 6-minute average): about 9 h on the CPU or 2 h on the
 GPU for the first pass, and about 250 MB in `embeddings.sqlite`.
+
+## Similarity and map layout (2026-10-27, 446–699 analysed tracks: DnB and breakbeat folders)
+
+| Question | Result |
+|---|---|
+| Raw mean vectors | All very alike: median cosine of random pairs 0.948, of nearest neighbours 0.988 |
+| Per-track vector (judged by folder = style) | Breakbeat tracks' 10 closest that are breakbeat (chance 11 %): mean 80.8 %, **mean+std centred 88.8 %**, log-mean centred 87.3 %. DnB tracks: mean 98 %, mean+std centred 92 %. Chosen: mean+std centred (best average) |
+| 2D layout: share of each track's 10 true neighbours that are map neighbours | PCA 26 %, UMAP 37–42 %, **t-SNE 46–47 %** (scikit-learn), numpy t-SNE 41.5 % vs scikit-learn 42.6 % on the same data |
+| Map purity | Left half 277 breakbeat / 43 DnB, right half 8 breakbeat / 371 DnB |
+| Example | Closest matches of Break The Box – *Test the Bass*: Stanton Warriors, Elite Force, Break The Box, Deekline & Wizard, Robosapiens, RMS & Peak, Hedflux |
