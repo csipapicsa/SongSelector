@@ -9,10 +9,13 @@
     settings and imported tracks are never touched.
 .PARAMETER Exe
     Path to the exe. Defaults to the newest dist\TraktorKeyCalculator-*.exe.
+.PARAMETER Model
+    Optional path to cnn14.onnx. When given (or TRAKTOR_VERIFY_MODEL is set), the
+    self-check also runs a real embedding analysis inside the exe.
 .EXAMPLE
     .\scripts\verify_release.ps1
 #>
-param([string]$Exe)
+param([string]$Exe, [string]$Model = $env:TRAKTOR_VERIFY_MODEL)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) {
@@ -32,7 +35,7 @@ $packagedDir = Join-Path $runDir 'packaged'
 New-Item -ItemType Directory -Path $packagedDir | Out-Null
 $packagedResult = Join-Path $runDir 'packaged-results.json'
 $savedEnv = @{}
-foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','TRAKTOR_APP_DATA_DIR','TRAKTOR_VERIFY_BUILD','TRAKTOR_VERIFY_RESULT') {
+foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','TRAKTOR_APP_DATA_DIR','TRAKTOR_VERIFY_BUILD','TRAKTOR_VERIFY_RESULT','TRAKTOR_VERIFY_MODEL') {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 try {
@@ -46,8 +49,9 @@ try {
     $env:TRAKTOR_APP_DATA_DIR = $packagedDir
     $env:TRAKTOR_VERIFY_BUILD = '1'
     $env:TRAKTOR_VERIFY_RESULT = $packagedResult
+    $env:TRAKTOR_VERIFY_MODEL = $Model
     $process = Start-Process -FilePath $Exe -WorkingDirectory $packagedDir -WindowStyle Hidden -PassThru
-    if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Packaged self-check timed out.' }
+    if (-not $process.WaitForExit(300000)) { $process.Kill(); throw 'Packaged self-check timed out.' }
     if (Test-Path -LiteralPath $packagedResult) { Get-Content -LiteralPath $packagedResult }
     if ($process.ExitCode -ne 0) { throw 'Packaged self-check failed.' }
     if (-not (Get-Content -LiteralPath $packagedResult -Raw | ConvertFrom-Json).ok) { throw 'Packaged self-check reported failure.' }
@@ -61,6 +65,7 @@ try {
     $env:QT_QPA_PLATFORM = ''
     $env:TRAKTOR_VERIFY_BUILD = ''
     $env:TRAKTOR_VERIFY_RESULT = ''
+    $env:TRAKTOR_VERIFY_MODEL = ''
 
     Add-Type -TypeDefinition @"
 using System;

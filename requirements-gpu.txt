@@ -1,0 +1,15 @@
+# Optional: run embedding analysis on an NVIDIA GPU when running from source.
+# Replaces the CPU onnxruntime from requirements.txt (the two cannot be installed together):
+#   .venv\Scripts\python.exe -m pip uninstall -y onnxruntime
+#   .venv\Scripts\python.exe -m pip install -r requirements-gpu.txt
+#
+# 1.22 is built for CUDA 12, which works with NVIDIA drivers >= 525. Newer releases (1.31)
+# are built for CUDA 13 and need driver >= 580.
+onnxruntime-gpu==1.22.0
+#
+# The CUDA 12 + cuDNN 9 DLLs are needed as well. Either
+#   a) point TRAKTOR_CUDA_DLL_DIR at a folder that already has them, e.g. the torch\lib folder
+#      of a CUDA build of PyTorch (no download), or
+#   b) install NVIDIA's pip packages (about 1.5 GB):
+#        nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12
+# Do not build the release exe from a GPU environment: it would bundle the CUDA provider.

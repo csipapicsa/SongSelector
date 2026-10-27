@@ -11,6 +11,12 @@ if (-not (Test-Path -LiteralPath $python)) {
     throw "Virtual environment not found. Run .\scripts\setup.ps1 first."
 }
 
+& (Join-Path $PSScriptRoot 'update_qt_msvc_runtime.ps1') -Check
+if ($LASTEXITCODE -ne 0) { throw 'Outdated PyQt5 MSVC runtime would crash onnxruntime in the exe (see above).' }
+if (& $python -c "import importlib.util as u; print(bool(u.find_spec('onnxruntime') and u.find_spec('onnxruntime.capi.onnxruntime_providers_cuda')))" 2>$null | Select-String True) {
+    Write-Warning 'This environment has onnxruntime-gpu; the exe will bundle the large CUDA provider.'
+}
+
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:PYTHONHASHSEED = '0'
 $env:PYINSTALLER_CONFIG_DIR = Join-Path $root 'build\pyinstaller-cache'

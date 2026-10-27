@@ -1,8 +1,8 @@
 # Audio embeddings: reference from the DJ mix segmentation project
 
-Status: research note only, nothing implemented yet. Planned use: compute an
-embedding sequence for every track in the library (MP3/WAV/FLAC) for future
-similarity and structure features.
+Status: implemented in 4.7.0 (`core/embeddings.py`, design in `docs/ARCHITECTURE.md`).
+This note keeps the background and the measurements behind the design. Next use:
+track similarity.
 
 Source project: `E:\GITHUB_E\MusicFindBoundaries` (not part of this repo).
 
@@ -51,16 +51,19 @@ np.savez_compressed(out_path, embeddings=np.stack(embeddings).astype(np.float16)
   (`MODEL_2_MFCC_MEL.ipynb`). The runs used different datasets and settings, so the
   numbers are not a like-for-like comparison.
 
-## Notes for integrating into this app
+## Measurements behind the implementation (2026-10-27)
 
-- **Size:** CNN14 has about 81M parameters, and the 327 MB checkpoint alone is
-  over 5× today's 59 MB exe. Ship it as an optional, separately downloaded
-  component, not inside the exe.
-- **Runtime:** `onnxruntime` with the existing `cnn14.onnx` avoids bundling PyTorch.
-- **Storage:** a 6-minute track is 72 chunks × 2048 × 2 bytes ≈ 290 KB, so about
-  1.5 GB for 5,000 tracks. Keep embeddings in files next to `library.sqlite`
-  (one `.npy`/`.npz` per track, keyed by the track's `path_key`), or in a separate
-  SQLite table of BLOBs. Do not put them in the main tracks table.
-- **Background work:** extraction takes seconds per track, so it must run off the UI
-  thread and be resumable (skip tracks whose embedding file exists and is newer
-  than the audio file).
+All on one real 6-minute track (72 chunks), unless noted.
+
+| Question | Result |
+|---|---|
+| Same output as the original pipeline? | Decoding with soundfile + soxr is **bit-identical** to `librosa.load`; ONNX embeddings differ from PyTorch `panns_inference` by at most 1.1e-05 (float32 rounding, below float16 precision) |
+| Is 2048 the real dimension? | Yes: ONNX output `embedding [batch, 2048]`, stored files `(n, 2048)`, `MODEL.ipynb` trains on `(T, 2048)` |
+| How compressible? | 86.8 % of values are exactly 0 (ReLU). float16 + zlib (lossless): 21 % of raw over 100k frames; this track 49 KB instead of 288 KB |
+| Alternatives considered | uint8 + zlib: ~13 % of raw, cosine 0.99999 (lossy). PCA 256 dims: 97.7 % variance (lossy, needs a fitted basis). Not used: storing full data keeps every option open, and recomputing takes hours |
+| CPU speed (4 of 8 threads) | 5.5 s model + 0.8 s decode per track; batching does not help |
+| GPU speed (GTX 1650 Ti, onnxruntime-gpu 1.22, CUDA 12) | 1.6 s one chunk at a time, **0.6 s in batches of 16**, + 0.8 s decode, so ~4x faster per track |
+| onnxruntime-gpu 1.31 | Built for CUDA 13, which needs NVIDIA driver ≥ 580 (this machine: 555.97), so it falls back to the CPU |
+
+Library estimate (5,105 tracks, 6-minute average): about 9 h on the CPU or 2 h on the
+GPU for the first pass, and about 250 MB in `embeddings.sqlite`.

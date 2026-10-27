@@ -18,6 +18,7 @@ from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
 from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
+from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
 from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget
 from traktor_key_calculator.core.data_manager import DataManager
@@ -32,10 +33,16 @@ import pandas as pd
 from traktor_key_calculator.core.track_import import (TrackImporter, ImportedTrackStore, merge_tracks,
                                                       enrich_ratings, drop_duplicate_paths)
 from traktor_key_calculator.core.library_store import LibraryStore, LIBRARY_LIST, PLAYLIST_LIST
+from traktor_key_calculator.core.tag_writer import write_tags
+from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
+from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
+from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
+from mutagen import MutagenError
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
 from traktor_key_calculator.core.search_filters import matches_condition
-from traktor_key_calculator.core.color_search import COLOR_NAMES, parse_color_search, replace_color_filter
+from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKEN, parse_color_search,
+                                                      replace_color_filter)
 from traktor_key_calculator.ui.tree_widgets import audio_paths
 
 
@@ -102,6 +109,22 @@ class TraktorKeyCalculator(QMainWindow):
                 searchable.append('Rating')
             self.settings['Rating display version'] = 1
 
+        # 4.7: show and search the new Song Selector rating/color columns once.
+        if not self.settings.get('Song Selector columns version'):
+            for side in ('left', 'right'):
+                visible = self.settings.setdefault('Visible column ' + side, list(HEADER_LABELS))
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                for column, width in ((SS_RATING_COLUMN, 70), (SS_COLOR_COLUMN, 45)):
+                    if column not in visible:
+                        visible.append(column)
+                    if sizes.get(column, 0) <= 0:
+                        sizes[column] = width
+            searchable = self.settings.setdefault('Search columns', list(HEADER_LABELS))
+            for column in (SS_RATING_COLUMN, SS_COLOR_COLUMN):
+                if column not in searchable:
+                    searchable.append(column)
+            self.settings['Song Selector columns version'] = 1
+
 
         
         self.playlist_paths = set()
@@ -120,6 +143,12 @@ class TraktorKeyCalculator(QMainWindow):
         self.table = pd.DataFrame()
         self._restore_lists()
         self.populate_tree()
+
+        # Embeddings of every library track, analysed in the background
+        self.embedding_store = EmbeddingStore(Path(SETTINGS_FILE).with_name('embeddings.sqlite'))
+        self.embedding_analyzer = None
+        self._init_analysis_menu()
+        self.start_embedding_analysis()
 
     def apply_row_shading_from_color(self, item):
         color = None
@@ -271,15 +300,7 @@ class TraktorKeyCalculator(QMainWindow):
         for number, name in COLOR_NAMES.items():
             action = QAction('No color' if number == 0 else name.title(), self)
             if number:
-                swatch = QPixmap(18, 18)
-                swatch.fill(Qt.transparent)
-                painter = QPainter(swatch)
-                painter.setRenderHint(QPainter.Antialiasing)
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(COLOR_MAPPING_CATEGORY[number])
-                painter.drawEllipse(2, 2, 14, 14)
-                painter.end()
-                action.setIcon(QIcon(swatch))
+                action.setIcon(self._color_swatch(number))
             action.setCheckable(True)
             action.toggled.connect(self.update_color_search)
             self.color_search_menu.addAction(action)
@@ -386,7 +407,8 @@ class TraktorKeyCalculator(QMainWindow):
 
         # Right-click menu on library rows
         self.candidate_tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.candidate_tree.customContextMenuRequested.connect(self.show_library_context_menu)
+        self.candidate_tree.customContextMenuRequested.connect(
+            lambda pos: self.show_track_context_menu(self.candidate_tree, pos))
         
         # Add tree to right layout
         right_layout.addWidget(self.candidate_tree)
@@ -410,6 +432,8 @@ class TraktorKeyCalculator(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("color: black; font-weight: normal;")
         self.status_bar.addPermanentWidget(self.status_label)
+        self.embedding_label = QLabel('')
+        self.status_bar.addPermanentWidget(self.embedding_label)
 
 
         # ---------------
@@ -424,6 +448,12 @@ class TraktorKeyCalculator(QMainWindow):
 
         self.color_delegate = ColorDotDelegate(self.candidate_tree)
         self.candidate_tree.setItemDelegateForColumn(COLOR_COLUMN_INDEX, self.color_delegate)
+        self.candidate_tree.setItemDelegateForColumn(HEADER_INDEX[SS_COLOR_COLUMN], self.color_delegate)
+
+        # Right-click menu on playlist rows (the library's is connected above)
+        self.playlist_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.playlist_tree.customContextMenuRequested.connect(
+            lambda pos: self.show_track_context_menu(self.playlist_tree, pos))
 
     def show_header_context_menu(self, pos, tree_widget):
         """Show context menu for column headers"""
@@ -509,7 +539,8 @@ class TraktorKeyCalculator(QMainWindow):
 
     def filter_items(self):
         color_query = parse_color_search(self.search_bar.text())
-        search_text = color_query.text.casefold()
+        ss_color_query = parse_color_search(color_query.text, SS_COLOR_TOKEN)
+        search_text = ss_color_query.text.casefold()
         if hasattr(self, 'color_search_actions'):
             for number, action in self.color_search_actions.items():
                 action.blockSignals(True)
@@ -522,7 +553,8 @@ class TraktorKeyCalculator(QMainWindow):
         for index in range(self.candidate_tree.topLevelItemCount()):
             item = self.candidate_tree.topLevelItem(index)
             path = canonical_path(item.text(HEADER_INDEX['Path']))
-            matches = path not in playlist_paths and color_query.matches(item.text(COLOR_COLUMN_INDEX))
+            matches = (path not in playlist_paths and color_query.matches(item.text(COLOR_COLUMN_INDEX))
+                       and ss_color_query.matches(item.text(HEADER_INDEX[SS_COLOR_COLUMN])))
             if matches and search_text:
                 matches = any(search_text in item.text(column).casefold() for column in search_indices)
             if matches and self.current_advanced_search.get('enabled') and self.advanced_filters:
@@ -532,9 +564,9 @@ class TraktorKeyCalculator(QMainWindow):
                       for i in range(self.candidate_tree.topLevelItemCount()))
         self.status_label.setStyleSheet('color: green; font-weight: bold;')
         self.status_label.setText(f'Displaying {visible} of {self.candidate_tree.topLevelItemCount()} tracks')
-        if color_query.error:
+        if color_query.error or ss_color_query.error:
             self.status_label.setStyleSheet('color: red; font-weight: bold;')
-            self.status_label.setText(color_query.error)
+            self.status_label.setText(color_query.error or ss_color_query.error)
 
 
     def update_color_search(self, _checked=False):
@@ -611,7 +643,7 @@ class TraktorKeyCalculator(QMainWindow):
                 items.append(self.candidate_tree.takeTopLevelItem(0))
             
             # Define sort key function based on column
-            if column == HEADER_INDEX.get("Color"):  # Color column (special handling)
+            if column in (HEADER_INDEX.get("Color"), HEADER_INDEX.get(SS_COLOR_COLUMN)):  # color numbers
                 def get_sort_key(item):
                     try:
                         # Extract color value
@@ -621,7 +653,8 @@ class TraktorKeyCalculator(QMainWindow):
                         return (0, int(float(text.strip())))
                     except:
                         return (1, 999)  # Put errors at the end too
-            elif column in (HEADER_INDEX.get("Original BPM"), HEADER_INDEX.get("Rating")):  # Numeric columns
+            elif column in (HEADER_INDEX.get("Original BPM"), HEADER_INDEX.get("Rating"),
+                            HEADER_INDEX.get(SS_RATING_COLUMN)):  # Numeric columns
                 def get_sort_key(item):
                     try:
                         # Extract numeric value
@@ -695,7 +728,7 @@ class TraktorKeyCalculator(QMainWindow):
     
     def _load_library(self, table):
         merged = merge_tracks(table, self.saved_imports.values())
-        return enrich_ratings(merged, self.importer.collection)
+        return self._with_user_fields(enrich_ratings(merged, self.importer.collection))
 
     def _restore_lists(self):
         """Load the library and playlist saved at the last change.
@@ -762,20 +795,234 @@ class TraktorKeyCalculator(QMainWindow):
         self.status_label.setText(error or message)
         return removed
 
-    def library_context_menu(self):
+    def track_context_menu(self, tree):
+        """Right-click menu for the selected row of the library or playlist panel."""
         menu = QMenu(self)
-        delete_duplicates = menu.addAction('Delete duplicates from the list')
-        delete_duplicates.setToolTip('Remove rows with the same file path. Files on disk are not deleted.')
-        delete_duplicates.triggered.connect(self.delete_duplicate_tracks)
+        item = tree.currentItem()
+        path = item.text(HEADER_INDEX['Path']) if item is not None else ''
+        edit = menu.addAction('Edit Artist / Title / Genre...')
+        edit.setEnabled(bool(path))
+        edit.triggered.connect(lambda: self.open_track_info_dialog(path))
+
+        rating_menu = menu.addMenu('Rating - Song Selector')
+        for stars in range(5, 0, -1):
+            action = rating_menu.addAction('★' * stars + '☆' * (5 - stars) + f'  ({stars})')
+            action.triggered.connect(lambda _checked, value=stars: self.set_song_selector_fields([path], SS_Rating=value))
+        rating_menu.addSeparator()
+        rating_menu.addAction('Clear rating').triggered.connect(
+            lambda: self.set_song_selector_fields([path], SS_Rating=None))
+
+        color_menu = menu.addMenu('Color - Song Selector')
+        for number, name in COLOR_NAMES.items():
+            if number:
+                action = color_menu.addAction(self._color_swatch(number), name.title())
+                action.triggered.connect(lambda _checked, value=number: self.set_song_selector_fields([path], SS_Color=value))
+        color_menu.addSeparator()
+        color_menu.addAction('Clear color').triggered.connect(
+            lambda: self.set_song_selector_fields([path], SS_Color=None))
+        rating_menu.setEnabled(bool(path))
+        color_menu.setEnabled(bool(path))
+
+        if tree is self.candidate_tree:
+            menu.addSeparator()
+            delete_duplicates = menu.addAction('Delete duplicates from the list')
+            delete_duplicates.setToolTip('Remove rows with the same file path. Files on disk are not deleted.')
+            delete_duplicates.triggered.connect(self.delete_duplicate_tracks)
         return menu
 
-    def show_library_context_menu(self, pos):
-        self.library_context_menu().exec_(self.candidate_tree.viewport().mapToGlobal(pos))
+    def library_context_menu(self):
+        return self.track_context_menu(self.candidate_tree)
+
+    def show_track_context_menu(self, tree, pos):
+        item = tree.itemAt(pos)
+        if item is not None:
+            tree.setCurrentItem(item)
+        self.track_context_menu(tree).exec_(tree.viewport().mapToGlobal(pos))
+
+    @staticmethod
+    def _color_swatch(number):
+        swatch = QPixmap(18, 18)
+        swatch.fill(Qt.transparent)
+        painter = QPainter(swatch)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(COLOR_MAPPING_CATEGORY[number])
+        painter.drawEllipse(2, 2, 14, 14)
+        painter.end()
+        return QIcon(swatch)
+
+    def _rows_mask(self, paths):
+        keys = {canonical_path(path) for path in paths}
+        if self.table is None or 'File_Path' not in self.table:
+            return None
+        return self.table['File_Path'].map(canonical_path).isin(keys)
+
+    def _rerender(self, paths):
+        """Redraw the rows of these paths in both panels after their data changed."""
+        mask = self._rows_mask(paths)
+        if mask is None or not mask.any():
+            return
+        rows = {}
+        for row in self.table.loc[mask].to_dict('records'):
+            rows.setdefault(canonical_path(row['File_Path']), row)
+        for tree in (self.candidate_tree, self.playlist_tree):
+            for index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(index)
+                row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
+                if row is not None:
+                    self._track_item(row, item)
+        self.filter_items()
+
+    def set_song_selector_fields(self, paths, **fields):
+        """Set the app's own rating/color (SS_Rating, SS_Color; None clears) for tracks."""
+        mask = self._rows_mask(paths)
+        if mask is None or not mask.any():
+            return False
+        updated = self.table.copy()
+        for name, value in fields.items():
+            if name not in updated:
+                updated[name] = None
+            updated[name] = updated[name].astype(object)
+            updated.loc[mask, name] = value
+        try:
+            self.library_store.set_user_fields(updated.loc[mask].to_dict('records'), **fields)
+        except (sqlite3.Error, OSError, ValueError) as error:
+            self.status_label.setStyleSheet('color: red; font-weight: bold;')
+            self.status_label.setText(f'Could not save: {error}')
+            return False
+        self.table = updated
+        self.data_manager.table = self.table
+        self._rerender(paths)
+        return True
+
+    def _with_user_fields(self, table):
+        """Overlay the stored Song Selector fields on a table built from CSV or tags."""
+        try:
+            stored = self.library_store.user_fields()
+        except sqlite3.Error:
+            return table
+        if table is None or table.empty or 'File_Path' not in table:
+            return table
+        result = table.copy()
+        keys = result['File_Path'].map(canonical_path)
+        for name in ('SS_Rating', 'SS_Color'):
+            result[name] = keys.map(lambda key: stored.get(key, {}).get(name)).astype(object)
+        return result
+
+    def open_track_info_dialog(self, path):
+        mask = self._rows_mask([path])
+        if mask is None or not mask.any():
+            return
+        row = self.table.loc[mask].iloc[0]
+        dialog = TrackInfoDialog(path, {name: self._text(row.get(name)) for name in ('Artist', 'Title', 'Genre')}, self)
+        if dialog.exec_() == QDialog.Accepted:
+            self.edit_track_tags(path, **dialog.changed_values())
+
+    def edit_track_tags(self, path, **values):
+        """Write Artist/Title/Genre into the audio file, then update the library to match."""
+        if not values:
+            return True
+        key = canonical_path(path)
+        try:
+            before = file_fingerprint(path)
+            embedding_current = self.embedding_store.fingerprints().get(key) == before
+        except (OSError, sqlite3.Error):
+            embedding_current = False
+        try:
+            write_tags(path, **values)
+        except (ValueError, OSError, MutagenError) as error:
+            QMessageBox.warning(self, 'Cannot write tags', f'{path}\n\n{error}')
+            return False
+        # Re-read the file like a fresh import (so the edit also survives Refresh / Load CSV),
+        # keeping exactly the values the user entered.
+        mask = self._rows_mask([path])
+        existing = self.table.loc[mask].iloc[0] if mask is not None and mask.any() else None
+        record = self.importer.read(path, existing=existing)
+        record.update(values)
+        self.saved_imports[canonical_path(record['File_Path'])] = record
+        self.table = merge_tracks(self.table, [record])
+        self.data_manager.table = self.table
+        error = self._save_library()
+        if embedding_current:  # only tags changed, the audio did not
+            try:
+                self.embedding_store.update_fingerprint(key, file_fingerprint(path))
+            except (OSError, sqlite3.Error):
+                pass
+        self._rerender([path])
+        self.status_label.setStyleSheet('color: red; font-weight: bold;' if error else 'color: green; font-weight: bold;')
+        self.status_label.setText(error or f'Saved {", ".join(values)} to {Path(path).name}')
+        return not error
+
+    # -- embeddings ---------------------------------------------------------
+
+    def _init_analysis_menu(self):
+        menu = self.menuBar().addMenu('Analysis')
+        self.embedding_toggle = menu.addAction('Analyse embeddings in background')
+        self.embedding_toggle.setCheckable(True)
+        self.embedding_toggle.setChecked(self.settings.get('Embedding analysis', True))
+        self.embedding_toggle.toggled.connect(self.set_embedding_analysis_enabled)
+        menu.addAction('Choose embedding model (cnn14.onnx)...').triggered.connect(self.choose_embedding_model)
+
+    def embedding_model_path(self):
+        """Configured model file, else <data folder>/models/cnn14.onnx; None if neither exists."""
+        for candidate in (self.settings.get('Embedding model'),
+                          Path(SETTINGS_FILE).with_name('models') / MODEL_FILE_NAME):
+            if candidate and Path(candidate).is_file():
+                return Path(candidate)
+        return None
+
+    def start_embedding_analysis(self):
+        if not self.settings.get('Embedding analysis', True):
+            self.embedding_label.setText('Embeddings: paused')
+            return
+        model = self.embedding_model_path()
+        if model is None:
+            self.embedding_label.setText('Embeddings: no model (Analysis menu)')
+            return
+        if self.embedding_analyzer is not None and self.embedding_analyzer.model_path != model:
+            self.embedding_analyzer.stop()
+            self.embedding_analyzer = None
+        if self.embedding_analyzer is None:
+            self.embedding_analyzer = EmbeddingAnalyzer(self.embedding_store, model, parent=self)
+            self.embedding_analyzer.progress.connect(self._show_embedding_progress)
+            self.embedding_analyzer.failed.connect(self.embedding_label.setText)
+        self._queue_embeddings()
+        self.embedding_analyzer.start()
+
+    def _queue_embeddings(self):
+        if self.embedding_analyzer is not None and self.table is not None and 'File_Path' in self.table:
+            paths = [str(path) for path in self.table['File_Path'] if isinstance(path, str) and path]
+            self.embedding_analyzer.submit((canonical_path(path), path) for path in paths)
+
+    def _show_embedding_progress(self, done, total, missing, current):
+        device = self.embedding_analyzer.device if self.embedding_analyzer is not None else ''
+        text = f'Embeddings{f" ({device})" if device else ""}: {done}/{total}'
+        if missing:
+            text += f' ({missing} files missing)'
+        text += f' - {current}' if current else (' - up to date' if done == total else '')
+        self.embedding_label.setText(text)
+
+    def set_embedding_analysis_enabled(self, enabled):
+        self.settings['Embedding analysis'] = enabled
+        if enabled:
+            self.start_embedding_analysis()
+        else:
+            if self.embedding_analyzer is not None:
+                self.embedding_analyzer.stop(timeout=0)
+            self.embedding_label.setText('Embeddings: paused')
+
+    def choose_embedding_model(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Choose the CNN14 embedding model',
+                                              str(self.embedding_model_path() or ''), 'ONNX models (*.onnx)')
+        if path:
+            self.settings['Embedding model'] = path
+            self.start_embedding_analysis()
 
     def refresh_data(self):
         """Rebuild the library list from the default CSV plus all imported tracks"""
         self.table = self._load_library(self.data_manager.load_default_data())
         self._save_library()
+        self._queue_embeddings()
         self.populate_tree()
         
         # Re-apply current sort
@@ -793,6 +1040,7 @@ class TraktorKeyCalculator(QMainWindow):
             if result is not None:
                 self.table = self._load_library(result)
                 self._save_library()
+                self._queue_embeddings()
                 self.populate_tree()
                 
                 # Re-apply current sort
@@ -907,6 +1155,8 @@ class TraktorKeyCalculator(QMainWindow):
 
     def closeEvent(self, event):
         """Save settings before closing the app"""
+        if self.embedding_analyzer is not None:
+            self.embedding_analyzer.stop(timeout=2)
         self._save_playlist()
         HEADER_LABELS = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
 
@@ -1023,9 +1273,10 @@ class TraktorKeyCalculator(QMainWindow):
             self.status_label.setText(failures[0] if failures else 'No audio files to import')
             return []
         self.saved_imports.update(records)
-        self.table = merge_tracks(self.table, records.values())
+        self.table = self._with_user_fields(merge_tracks(self.table, records.values()))
         self.data_manager.table = self.table
         persistence_error = self._save_library()
+        self._queue_embeddings()
         # A dropped file should be immediately visible even if a previous filter excluded it.
         self.search_bar.clear()
         self.current_advanced_search['enabled'] = False
@@ -1100,7 +1351,9 @@ class TraktorKeyCalculator(QMainWindow):
                   'Camelot Key New': camelot, 'Open Key New': open_key,
                   'Path': self._text(row.get('File_Path')), 'Comment': self._text(row.get('Comment')),
                   'Genre': self._text(row.get('Genre')), 'Color': self._rating_text(row.get('Color')) or '0',
-                  'Album': self._text(row.get('Album')), 'Rating': self._rating_text(row.get('Rating'))}
+                  'Album': self._text(row.get('Album')), 'Rating': self._rating_text(row.get('Rating')),
+                  SS_RATING_COLUMN: self._rating_text(row.get('SS_Rating')),
+                  SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color'))}
         key_source = self._text(row.get('Key_Source')) or ('Loaded CSV' if key else 'Not available')
         bpm_source = self._text(row.get('BPM_Source')) or ('Loaded CSV' if bpm else 'Not available')
         color_source = self._text(row.get('Color_Source')) or ('Saved import' if self._text(row.get('Imported')) else 'Loaded CSV')

@@ -9,8 +9,19 @@ COLOR_ALIASES = {name: number for number, name in COLOR_NAMES.items()}
 COLOR_ALIASES.update({'purple':7, 'magenta':7, 'uncolored':0, 'uncoloured':0,
                       'no color':0, 'no colour':0})
 COLOR_HELP = 'red, orange, yellow, green, blue, indigo, violet (purple), pink, brown, none'
-# Tokens start at a word boundary; ordinary title text like "discolor:blue" stays text.
-COLOR_TOKEN = re.compile(r'(?<!\S)(?P<exclude>-?)(?:color|colour)\s*:\s*(?P<values>[^\s,|]*(?:\s*[,|]\s*[^\s,|]*)*)', re.IGNORECASE)
+# Search-bar keywords: color: filters the Traktor color, sscolor: the Song Selector color.
+TRAKTOR_COLOR_KEYWORDS = ('color', 'colour')
+SS_COLOR_KEYWORDS = ('sscolor', 'sscolour')
+
+
+def _color_token(keywords):
+    # Tokens start at a word boundary; ordinary title text like "discolor:blue" stays text.
+    return re.compile(r'(?<!\S)(?P<exclude>-?)(?:' + '|'.join(keywords) +
+                      r')\s*:\s*(?P<values>[^\s,|]*(?:\s*[,|]\s*[^\s,|]*)*)', re.IGNORECASE)
+
+
+COLOR_TOKEN = _color_token(TRAKTOR_COLOR_KEYWORDS)
+SS_COLOR_TOKEN = _color_token(SS_COLOR_KEYWORDS)
 
 
 def parse_color_values(value):
@@ -52,7 +63,8 @@ class ColorSearch:
         return (not self.has_included or number in self.included) and number not in self.excluded
 
 
-def parse_color_search(text):
+def parse_color_search(text, token=COLOR_TOKEN):
+    """Split color tokens (color: by default, or SS_COLOR_TOKEN) from plain search text."""
     result = ColorSearch()
     def consume(match):
         colors, error = parse_color_values(match.group('values'))
@@ -63,7 +75,7 @@ def parse_color_search(text):
             result.has_included = True
             result.included.update(colors)
         return ''
-    remaining = COLOR_TOKEN.sub(consume, text).strip()
+    remaining = token.sub(consume, text).strip()
     result.text = re.sub(r'[ \t]+', ' ', remaining) if result.has_included or result.excluded or result.error else remaining
     return result
 

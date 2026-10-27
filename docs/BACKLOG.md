@@ -15,7 +15,15 @@ CHANGELOG when they ship.
 - [ ] Replace the bundled `music_test.csv` with a library built from the user's own collection.
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
 - [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
-- [ ] Audio embeddings (PANNs CNN14, 5 s chunks) for every track. See `docs/research/audio_embeddings.md`.
+- [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
+- [ ] **Track similarity** from the embeddings (next step). Derive compact per-track vectors
+      (e.g. mean / mean+std over time, or PCA fitted on the library) from `embeddings.sqlite`;
+      the stored full-resolution data allows trying several methods without re-analysis.
+- [ ] Optional GPU exe flavour (onnxruntime-gpu or onnxruntime-directml) or a "download GPU
+      support" option; today GPU works only from source (see requirements-gpu.txt).
+- [ ] Download the embedding model on demand (first use) instead of choosing the file by hand.
+- [ ] Row shading by *Color - Song Selector* as a third coloring mode.
+- [ ] Rating / color for several selected rows at once (the trees are single-selection today).
 
 ## Performance (measured on 5,105 tracks, 2026-10-27)
 
@@ -26,6 +34,30 @@ CHANGELOG when they ship.
 - [ ] `_rows_by_path` uses `DataFrame.iterrows` (~0.5 s on 5k rows); use vectorised lookups.
 - [ ] Saving the library list after each import rewrites all 5k tracks (~0.2 s); upsert only the
       changed tracks and rewrite only the list order.
+
+## Distribution to other users
+
+The exe is already self-contained (Python, Qt, pandas, ...), but it is set up for one machine.
+Do 1–2 first; they matter even without an installer.
+
+- [ ] 1. Ship without the developer's library: `data/music_test.csv` holds the developer's own
+      2,920 tracks with `E:\DJ\...` paths. New users should start with an empty library
+      (keep the CSV as a test fixture only).
+- [ ] 2. Store user data in `%LOCALAPPDATA%\TraktorKeyCalculator\` instead of next to the exe.
+      `C:\Program Files` is not writable for normal users, so today the app would fail with
+      "Cannot start" there. Keep a "portable" mode (data next to the exe) when a marker file exists,
+      and migrate existing data from the exe folder on first start.
+- [ ] 3. Remove machine-specific defaults: the `E:\DJ\TRAKTOR\collection.nml` default
+      (keep the Documents\Native Instruments auto-detection) and the real-file test samples.
+- [ ] 4. Test on a clean Windows 10/11 VM (no Python, no Traktor).
+- [ ] 5. Installer: PyInstaller one-folder build (faster start, fewer antivirus false positives
+      than one-file) + Inno Setup script `packaging/installer.iss`, giving
+      `TraktorKeyCalculator-Setup-<version>.exe` with Start menu entry and uninstaller.
+      MSI (WiX) or MSIX only if needed for corporate or Store distribution.
+- [ ] 6. Code signing, to avoid the SmartScreen "Windows protected your PC" warning.
+- [ ] 7. Large optional components (the 327 MB embedding model) as a separate download on demand,
+      never inside the installer.
+- [ ] 8. Update check (later): compare with the latest GitHub release tag.
 
 ## Code health
 

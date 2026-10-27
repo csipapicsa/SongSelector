@@ -4,6 +4,29 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.7.0] - 2026-10-27
+
+- **Own rating and color.** New columns *Rating - Song Selector* (1–5) and *Color - Song
+  Selector* (Traktor's 9 color names), set by right-clicking a row in either panel. They are
+  stored in `library.sqlite` (schema 2, existing files are upgraded in place) and never
+  overwritten by Traktor, file tags, Refresh or Load CSV. They can be searched, sorted,
+  filtered in Advanced Search (numeric comparisons, color names), and typed as
+  `sscolor:blue` in the search bar.
+- **Edit Artist / Title / Genre** (right-click → *Edit Artist / Title / Genre…*). The
+  change is written into the audio file's tags (MP3, WAV, FLAC), keeping all other tags
+  and the ID3 version. This is the first time the app writes to audio files. The
+  Traktor collection stays read-only.
+- **Background audio embeddings.** PANNs CNN14 (same model and preprocessing as the DJ mix
+  segmentation project; verified identical) computes one 2048-value vector per 5 s for
+  every library track. Runs in a separate low-priority process; the app stays usable,
+  progress shows in the status bar, and *Analysis* pauses it or chooses the model file.
+  Stored losslessly compressed in `embeddings.sqlite` (~50 KB per 6-minute track).
+  Uses an NVIDIA GPU when `onnxruntime-gpu` is installed (~4x faster), otherwise the CPU.
+- New dependencies: onnxruntime, soundfile, soxr. The exe grows from 59 to 74 MB; the
+  327 MB model is not bundled.
+- Build: `scripts/update_qt_msvc_runtime.ps1` replaces PyQt5's outdated MSVC runtime,
+  which made onnxruntime crash.
+
 ## [4.6.0] - 2026-10-27
 
 - **Library and playlist are remembered.** New `library.sqlite` next to the settings

@@ -10,8 +10,11 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 - Missing metadata filled in from Traktor's `collection.nml` (read-only)
 - Traktor category colors, key colors, text, numeric, rating and color search
 - Library and playlist are restored on restart; *right-click → Delete duplicates from the list*
+- Your own *Rating - Song Selector* and *Color - Song Selector*, independent of Traktor (right-click to set)
+- Edit Artist / Title / Genre; the change is written into the audio file's tags
+- Background audio embeddings (CNN14, one vector per 5 s) for every library track, CPU or NVIDIA GPU
 
-Current version: **4.6.0** (see [CHANGELOG.md](CHANGELOG.md)).
+Current version: **4.7.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Quick start (development)
 
@@ -32,6 +35,7 @@ in the repo (git-ignored), so development never touches your real app data.
 ```powershell
 .\scripts\build.ps1                  # -> dist\TraktorKeyCalculator-<version>.exe
 .\scripts\verify_release.ps1         # headless self-check + real-window smoke test
+                                     # add -Model <path>\cnn14.onnx to also test embeddings in the exe
 ```
 
 The exe is self-contained (no Python needed). It stores its data **next to
@@ -40,12 +44,31 @@ itself**:
 | File | Content |
 |---|---|
 | `SpotNextTrack_settings.json` | Column visibility, search settings, tempo, coloring |
-| `library.sqlite` | Every track ever loaded, plus the last saved Library and Playlist lists |
+| `library.sqlite` | Every track ever loaded, your Song Selector ratings/colors, the last saved Library and Playlist lists |
+| `embeddings.sqlite` | Audio embeddings (a cache: safe to delete, it is rebuilt) |
+| `models\cnn14.onnx` | The embedding model, if you keep it here (optional, see below) |
 | `imported_tracks.json` | Imports from versions ≤ 4.5.0; read once on the first 4.6 start, then kept as a backup |
 
 To upgrade an existing installation, put the new exe in the same folder as these
-files (or copy them next to it). Audio files and the Traktor collection are only
-ever read, never written.
+files (or copy them next to it). The Traktor collection is only ever read. Audio
+files are written only when you edit Artist / Title / Genre, and then only those tags.
+
+## Embedding analysis
+
+The app computes PANNs CNN14 embeddings (one 2048-value vector per 5 seconds) for
+every track in the library panel, in a background process at low priority. The
+status bar shows progress, and *Analysis → Analyse embeddings in background* pauses it.
+
+- **Model:** `cnn14.onnx` (327 MB, not in the repo or the exe). Put it in a
+  `models` folder next to the exe (or in `.appdata\models\` from source), or choose
+  it with *Analysis → Choose embedding model…*.
+- **Speed (6-minute track):** about 6.4 s on the CPU, about 1.5 s on an NVIDIA
+  GTX 1650 Ti. A first full pass over ~5,000 tracks takes hours, but only once;
+  later only new or changed files are analysed.
+- **GPU (from source):** see `requirements-gpu.txt`. Install `onnxruntime-gpu==1.22.0`
+  in place of `onnxruntime`, and provide the CUDA 12 / cuDNN 9 DLLs, e.g. by setting
+  `TRAKTOR_CUDA_DLL_DIR` to the `torch\lib` folder of a CUDA PyTorch install.
+  The release exe uses the CPU.
 
 Release checklist:
 
@@ -73,6 +96,17 @@ docs/                   Architecture notes, backlog, project history
 How the parts fit together is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Known issues and planned work are in [docs/BACKLOG.md](docs/BACKLOG.md).
 
+## Search syntax
+
+| Search bar | Matches |
+|---|---|
+| `tribal` | text in the columns ticked under *Search Columns* |
+| `color:blue`, `color:red,orange`, `-color:blue`, `color:none` | Traktor category color |
+| `sscolor:blue`, `-sscolor:none`, ... | *Color - Song Selector* (same names) |
+
+*Advanced Search* can also compare *Rating - Song Selector* numerically (e.g. at least 4)
+and *Color - Song Selector* by color name.
+
 ## Configuration
 
 | Setting | How |
@@ -82,7 +116,8 @@ Known issues and planned work are in [docs/BACKLOG.md](docs/BACKLOG.md).
 
 ## Tests
 
-`.\scripts\test.ps1` runs 50 tests, including headless Qt GUI tests. Two tests
+`.\scripts\test.ps1` runs 75 tests, plus one with the real model when
+`$env:TKC_CNN14_ONNX = '<path>\cnn14.onnx'` is set, including headless Qt GUI tests. Two tests
 also use real files on the original developer machine (`E:\DJ\...`) and are
 skipped automatically when those files are absent. Pass pytest options through,
 e.g. `.\scripts\test.ps1 -k color`.

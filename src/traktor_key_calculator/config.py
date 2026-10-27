@@ -149,6 +149,13 @@ HEADER_LABELS += ['Album', 'Rating']
 HEADER_INDEX.update({'Album': len(HEADER_LABELS) - 2, 'Rating': len(HEADER_LABELS) - 1})
 COLOR_COLUMN_INDEX = HEADER_INDEX.get("Color", 10)
 
+# The app's own rating and color, edited in the app and stored in library.sqlite.
+# "Rating" and "Color" stay the values read from file tags / the Traktor collection.
+SS_RATING_COLUMN = 'Rating - Song Selector'
+SS_COLOR_COLUMN = 'Color - Song Selector'
+HEADER_LABELS += [SS_RATING_COLUMN, SS_COLOR_COLUMN]
+HEADER_INDEX.update({SS_RATING_COLUMN: len(HEADER_LABELS) - 2, SS_COLOR_COLUMN: len(HEADER_LABELS) - 1})
+
 test = 100
 
 SETTINGS_DEFAULT = {

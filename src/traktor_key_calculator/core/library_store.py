@@ -19,9 +19,16 @@ from pathlib import Path
 
 from traktor_key_calculator.core.traktor_collection import canonical_path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 LIBRARY_LIST = 'Library'
 PLAYLIST_LIST = 'Playlist'
+
+# The app's own per-track values (record key -> column). They are written only by
+# set_user_fields; upserting track metadata never overwrites them.
+USER_COLUMNS = {
+    'SS_Rating': 'ss_rating',
+    'SS_Color': 'ss_color',
+}
 
 # Track fields stored in their own (searchable) columns: record key -> column.
 # Any other record field (sources, CSV extras) is kept in the JSON `extra` column.
@@ -38,6 +45,7 @@ TRACK_COLUMNS = {
     'Rating': 'rating',
     'Color': 'color',
     'Imported': 'imported',
+    **USER_COLUMNS,
 }
 _RECORD_COLUMNS = (*TRACK_COLUMNS.values(), 'extra')
 _SELECT_TRACKS = 'SELECT ' + ', '.join(_RECORD_COLUMNS) + ' FROM tracks'
@@ -64,6 +72,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     rating     REAL,
     color      INTEGER,
     imported   INTEGER,
+    ss_rating  REAL,               -- schema 2: Song Selector rating 1-5
+    ss_color   INTEGER,            -- schema 2: Song Selector color 1-9 (see COLOR_NAMES)
     extra      TEXT NOT NULL DEFAULT '{}',
     added_at   TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -102,8 +112,18 @@ class LibraryStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path)
         connection.executescript(_SCHEMA)
-        connection.execute("INSERT OR IGNORE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+        self._migrate(connection)
         return connection
+
+    @staticmethod
+    def _migrate(connection):
+        """Bring an older database up to SCHEMA_VERSION (new databases already are)."""
+        existing = {row[1] for row in connection.execute('PRAGMA table_info(tracks)')}
+        with connection:
+            for column, kind in (('ss_rating', 'REAL'), ('ss_color', 'INTEGER')):  # 1 -> 2
+                if column not in existing:
+                    connection.execute(f'ALTER TABLE tracks ADD COLUMN {column} {kind}')
+            connection.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
 
     # -- collection -----------------------------------------------------------
 
@@ -127,12 +147,38 @@ class LibraryStore:
             rows.append((key, *columns, json.dumps(extra, ensure_ascii=False), now, now))
         names = ', '.join(TRACK_COLUMNS.values())
         placeholders = ', '.join('?' * (len(TRACK_COLUMNS) + 4))
-        updates = ', '.join(f'{column}=excluded.{column}' for column in TRACK_COLUMNS.values())
+        updates = ', '.join(f'{column}=excluded.{column}' for column in TRACK_COLUMNS.values()
+                            if column not in USER_COLUMNS.values())
         sql = (f'INSERT INTO tracks (path_key, {names}, extra, added_at, updated_at) VALUES ({placeholders}) '
                f'ON CONFLICT(path_key) DO UPDATE SET {updates}, extra=excluded.extra, updated_at=excluded.updated_at')
         with closing(self._connect()) as connection, connection:
             connection.executemany(sql, rows)
         return len(rows)
+
+    def set_user_fields(self, records, **fields):
+        """Set Song Selector fields, e.g. SS_Rating=4 or SS_Color=None (clears), for tracks.
+
+        The tracks are stored first if they are not in the collection yet.
+        """
+        unknown = set(fields) - set(USER_COLUMNS)
+        if unknown:
+            raise ValueError(f'Not a Song Selector field: {", ".join(sorted(unknown))}')
+        records = list(records)
+        self.upsert_tracks(records)
+        assignments = ', '.join(f'{USER_COLUMNS[name]} = ?' for name in fields)
+        keys = [canonical_path(record.get('File_Path')) for record in records]
+        values = [_plain(value) for value in fields.values()]
+        with closing(self._connect()) as connection, connection:
+            connection.executemany(f'UPDATE tracks SET {assignments}, updated_at = ? WHERE path_key = ?',
+                                   [(*values, _now(), key) for key in keys if key])
+
+    def user_fields(self):
+        """Song Selector fields of every track that has at least one, by canonical path."""
+        columns = ', '.join(USER_COLUMNS.values())
+        condition = ' OR '.join(f'{column} IS NOT NULL' for column in USER_COLUMNS.values())
+        with closing(self._connect()) as connection:
+            rows = connection.execute(f'SELECT path_key, {columns} FROM tracks WHERE {condition}').fetchall()
+        return {row[0]: dict(zip(USER_COLUMNS, row[1:])) for row in rows}
 
     def track_count(self):
         with closing(self._connect()) as connection:

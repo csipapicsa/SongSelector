@@ -44,7 +44,9 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `audio_metadata.py` | Read ID3 / FLAC / WAV tags with mutagen into `config.AudioMetadata` |
 | `traktor_collection.py` | Read-only, cached index of Traktor's `collection.nml`; lookup by exact path, then by unique filename + file size |
 | `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
-| `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded) and the saved Library / Playlist lists |
+| `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded), the user's Song Selector rating/color, and the saved Library / Playlist lists |
+| `tag_writer.py` | `write_tags`: writes Artist / Title / Genre into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
+| `embeddings.py` | CNN14 embeddings: `load_audio`, `Cnn14Embedder` (onnxruntime, GPU if available), `EmbeddingStore` (`embeddings.sqlite`), `run_analysis` (entry point of the analysis process). Must not import Qt |
 | `data_manager.py` | Loads the library CSV (bundled `data/music_test.csv` by default) into a pandas DataFrame |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
@@ -60,6 +62,14 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `advanced_search_dialog.py` | Complex Search dialog (`AdvancedSearchDialog`, `AdvancedSearchRow`) |
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
+| `track_info_dialog.py` | Edit Artist / Title / Genre of one file |
+| `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
+
+### Right-click menu (both panels)
+
+`TraktorKeyCalculator.track_context_menu(tree)`: *Edit Artist / Title / Genre…*,
+*Rating - Song Selector*, *Color - Song Selector*, and in the library panel
+*Delete duplicates from the list*.
 
 ## Data flow
 
@@ -101,7 +111,9 @@ It holds:
 | File | Content | Written |
 |---|---|---|
 | `SpotNextTrack_settings.json` | UI settings (name is historical, kept for existing installs) | on close |
-| `library.sqlite` | Collection + saved lists (see below) | on every list change |
+| `library.sqlite` | Collection, Song Selector rating/color, saved lists (see below) | on every change |
+| `embeddings.sqlite` | Audio embeddings, a cache that can be deleted and recomputed (see below) | by the analysis process |
+| `models/cnn14.onnx` | Optional location of the embedding model (or *Analysis → Choose embedding model…*) | never |
 | `imported_tracks.json` | Imports saved by versions ≤ 4.5.0 | never; read once, kept as a backup |
 
 ### library.sqlite
@@ -116,8 +128,14 @@ Modelled on how Traktor and Rekordbox separate the collection from playlists:
 - `lists` + `list_tracks`: **saved lists**, ordered `path_key`s per list name.
   `Library` = right panel, `Playlist` = left panel. More playlists can be added
   later without a schema change.
-- `meta`: `schema_version` (currently 1). Bump it and add a migration when the
-  schema changes.
+- `tracks.ss_rating` / `tracks.ss_color` (schema 2): **the user's own** rating
+  (1–5) and color (1–9, as in `COLOR_NAMES`), shown as *Rating - Song Selector*
+  and *Color - Song Selector*. Only `set_user_fields` writes them. Upserting
+  metadata (imports, CSV, Refresh) never overwrites them, and `_with_user_fields`
+  lays them over tables rebuilt from a CSV. *Rating* and *Color* stay the values
+  from file tags / Traktor.
+- `meta`: `schema_version` (currently 2). To change the schema, bump it and add
+  the step to `LibraryStore._migrate`, which upgrades existing files in place.
 
 On start, the window restores both lists (`_restore_lists`). Only on the very
 first start, when no `Library` list exists yet, is the library built from
@@ -127,11 +145,50 @@ SQLite was chosen after measuring on the real 5,100-track library: loading it
 takes 10 ms in SQLite vs 18 ms in JSON, and updating one track 0.1 ms vs
 22 ms, because JSON rewrites the whole file. Writes are transactional.
 
-## External files: read-only by design
+### embeddings.sqlite and the analysis process
 
-Audio files and `collection.nml` are **never written**. This is a hard rule from
-the project's history (the Traktor collection is the DJ's master library). Keep
-it when adding features.
+Every track in the library panel gets PANNs CNN14 embeddings: one 2048-value
+vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
+
+- **Separate process.** `EmbeddingAnalyzer` (UI side) starts
+  `core.embeddings.run_analysis` with `multiprocessing` (spawn). The process loads
+  the model, decodes files, writes results to `embeddings.sqlite` and reports
+  events through a queue, which a 200 ms `QTimer` polls. Why not a thread:
+  (1) a decoder crash on a broken file only kills the process: the analyzer records
+  that file as failed and restarts the process, giving up after 3 crashes in a row;
+  (2) no competition with the UI for the Python GIL; (3) the process runs at
+  *below normal* priority with half the CPU cores.
+- **Jobs go to the process 4 at a time** (`IN_FLIGHT`). Queuing thousands at
+  once filled the OS pipe, and the queue's feeder thread then kept the app from
+  exiting (regression test: `test_app_can_exit_after_stopping_with_a_large_backlog`).
+- **Up to date = same file size and mtime** (`file_fingerprint`). Undecodable
+  files are stored with `error` and retried only when the file changes. A tag
+  edit updates the fingerprint, because the audio itself did not change.
+- **Storage:** float16 + zlib, lossless; about 17–21 % of raw size, because ~87 %
+  of the values are exactly 0. A 6-minute track takes ~50 KB. WAL mode lets the
+  UI read while the process writes.
+- **Device:** CUDA, then DirectML, then CPU, whichever the installed onnxruntime
+  supports. The GPU uses batches of 16 chunks. See README → GPU.
+- `launcher.py` calls `multiprocessing.freeze_support()` first and `__main__.py`
+  has a `__name__` guard, because the spawned process re-imports the entry module.
+
+### MSVC runtime conflict (PyQt5 ↔ onnxruntime)
+
+The PyQt5-Qt5 wheel ships MSVC runtime DLLs from 2020 (14.26). If they load first
+in a process, onnxruntime crashes with an access violation. This happens in
+PyInstaller's build step, and the old DLLs would end up in the exe.
+`scripts/update_qt_msvc_runtime.ps1` (run by `setup.ps1`, checked by `build.ps1`)
+replaces them with the system's current v14 runtime, which Microsoft keeps
+backward compatible.
+
+## External files
+
+- `collection.nml` (Traktor) is **never written**.
+- Audio files are written **only** when the user edits Artist / Title / Genre
+  (`core/tag_writer.py`). Just those tags change, and the ID3 version (v2.3 / v2.4)
+  is kept. The file is then re-read like a fresh import, so the edit also survives
+  *Refresh* / *Load CSV*. If writing fails, nothing in the library changes.
+  Traktor shows the new tags once it re-reads the file.
 
 ## Testing
 
@@ -139,13 +196,18 @@ it when adding features.
   relocation matching, persistence, drag-and-drop GUI flows, color painting.
   Also exports the `tagged_file()` / `make_collection()` fixtures used by other
   test modules.
-- `tests/test_numeric_search.py`, `test_ratings.py`, `test_color_search.py`:
-  one feature each, logic plus GUI.
+- `tests/test_numeric_search.py`, `test_ratings.py`, `test_color_search.py`,
+  `test_library.py`, `test_song_selector_fields.py`: one feature each, logic plus GUI.
+- `tests/test_embeddings.py`: pipeline, storage, and the analysis process with
+  fake embedders (module-level classes, because they run in the spawned process),
+  including crash recovery and clean exit. `RealModelTests` runs the real CNN14
+  only when `TKC_CNN14_ONNX` points at `cnn14.onnx`.
 - `tests/conftest.py` makes Qt headless (`QT_QPA_PLATFORM=offscreen`) and points
   `TRAKTOR_APP_DATA_DIR` at a temporary folder **before** the package is imported.
 - `selfcheck.py` repeats the key scenarios inside the frozen exe, because
   PyInstaller builds can break things that pass from source (missing data files,
-  hidden imports). `scripts/verify_release.ps1` runs it.
+  hidden imports). `scripts/verify_release.ps1` runs it. With `-Model <cnn14.onnx>`,
+  it also runs a real embedding analysis in the exe's analysis process.
 
 ## Packaging
 

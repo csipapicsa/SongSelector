@@ -5,6 +5,35 @@ from pathlib import Path
 import sys
 
 
+def _check_embedding_process():
+    """With TRAKTOR_VERIFY_MODEL set to cnn14.onnx: analyse a generated 11 s tone in the
+    analysis process, which proves multiprocessing, onnxruntime, soundfile and soxr work
+    inside the frozen exe. Returns a summary, or 'skipped' without a model."""
+    model=os.environ.get('TRAKTOR_VERIFY_MODEL')
+    if not model:
+        return 'skipped (set TRAKTOR_VERIFY_MODEL to cnn14.onnx)'
+    import numpy as np
+    import soundfile
+    from traktor_key_calculator.config import APP_DATA_DIR
+    from traktor_key_calculator.core.embeddings import EmbeddingStore
+    from traktor_key_calculator.core.traktor_collection import canonical_path
+    from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
+    tone=APP_DATA_DIR/'embedding_check.wav'
+    seconds=np.arange(11*44100)/44100
+    soundfile.write(str(tone),np.stack([0.3*np.sin(2*np.pi*440*seconds)]*2,axis=1),44100)
+    store=EmbeddingStore(APP_DATA_DIR/'embedding_check.sqlite')
+    analyzer=EmbeddingAnalyzer(store,model)
+    analyzer.submit([(canonical_path(tone),str(tone))])
+    analyzer.start()
+    try:
+        assert analyzer.wait_idle(180),'Embedding analysis did not finish'
+    finally:
+        analyzer.stop()
+    matrix=store.load(canonical_path(tone))
+    assert matrix is not None and matrix.shape==(3,2048),f'Unexpected embedding: {None if matrix is None else matrix.shape}'
+    return f'ok, {matrix.shape[0]}x{matrix.shape[1]} on {analyzer.device}'
+
+
 def run():
     result_path=Path(os.environ['TRAKTOR_VERIFY_RESULT']).resolve()
     result={}
@@ -185,6 +214,7 @@ def run():
         assert any(action.text()=='Delete duplicates from the list' for action in restored.library_context_menu().actions())
         assert restored.delete_duplicate_tracks()==0
         restored.close()
+        embedding=_check_embedding_process()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
                 'drop_events':True,'duplicates':True,'playlist_key_at_150_bpm':'G major',
                 'imports_survive_restart':True,'real_open_key_mp3':real_checked,
@@ -192,7 +222,7 @@ def run():
                 'ratings_visible_and_searchable':True,'existing_library_ratings':library_ratings,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True}
+                'delete_duplicates_menu':True,'embedding_process':embedding}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}

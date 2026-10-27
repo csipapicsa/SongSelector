@@ -3,4 +3,6 @@ import sys
 
 from traktor_key_calculator.app import main
 
-sys.exit(main())
+# The guard matters: the embedding analysis process re-imports this module.
+if __name__ == '__main__':
+    sys.exit(main())

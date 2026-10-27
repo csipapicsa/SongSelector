@@ -18,4 +18,6 @@ $python = Join-Path $venv 'Scripts\python.exe'
 # Editable install so `python -m traktor_key_calculator` works from anywhere.
 & $python -m pip install --no-deps -e $root
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+# PyQt5 ships a 2020 MSVC runtime that makes onnxruntime crash; see the script for details.
+& (Join-Path $PSScriptRoot 'update_qt_msvc_runtime.ps1')
 Write-Host 'Environment ready. Activate with: .\.venv\Scripts\Activate.ps1'

@@ -1,9 +1,12 @@
 """Shared complex-search comparison rules."""
 import math
 import operator
+from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN
 from traktor_key_calculator.core.color_search import color_id, parse_color_values
 
-NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color'}
+NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color', SS_RATING_COLUMN, SS_COLOR_COLUMN}
+# Columns holding a category color number; they also accept color names (blue, red,orange).
+COLOR_COLUMNS = {'Color', SS_COLOR_COLUMN}
 TEXT_CONDITIONS = ['contains', 'does not contain', 'is', 'is not']
 NUMERIC_COMPARISONS = {
     'greater than': operator.gt,
@@ -27,7 +30,7 @@ def matches_condition(cell, condition, value, column):
             return False
         actual, threshold = parse_number(cell), parse_number(value)
         return actual is not None and threshold is not None and NUMERIC_COMPARISONS[condition](actual, threshold)
-    if column == 'Color' and str(value).strip():
+    if column in COLOR_COLUMNS and str(value).strip():
         colors, error = parse_color_values(value)
         actual = color_id(cell)
         if error or actual is None:

@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from traktor_key_calculator.core.color_search import COLOR_NAMES, COLOR_HELP, parse_color_values
-from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS, TEXT_CONDITIONS, NUMERIC_COMPARISONS, parse_number
+from traktor_key_calculator.core.search_filters import (NUMERIC_COLUMNS, COLOR_COLUMNS, TEXT_CONDITIONS,
+                                                       NUMERIC_COMPARISONS, parse_number)
 
 
 class AdvancedSearchRow(QWidget):
@@ -50,10 +51,10 @@ class AdvancedSearchRow(QWidget):
 
     def update_value_hint(self, _condition=None):
         numeric = self.condition_combo.currentText() in NUMERIC_COMPARISONS
-        color = self.column_combo.currentText() == 'Color'
+        color = self.column_combo.currentText() in COLOR_COLUMNS
         self.value_edit.setCompleter(self.color_completer if color and not numeric else None)
         self.value_edit.setPlaceholderText('e.g. 5' if color and numeric else 'e.g. blue or red,orange' if color else 'e.g. 128.5' if numeric else '')
-        self.value_edit.setToolTip('Traktor category colors: ' + COLOR_HELP if color else '')
+        self.value_edit.setToolTip('Category colors: ' + COLOR_HELP if color else '')
 
     def get_filter(self):
         return {
@@ -108,7 +109,7 @@ class AdvancedSearchDialog(QDialog):
         if self.checkbox_enable.isChecked():
             for row in self.filter_rows:
                 value = row.value_edit.text().strip()
-                if value and row.column_combo.currentText() == 'Color' and row.condition_combo.currentText() not in NUMERIC_COMPARISONS:
+                if value and row.column_combo.currentText() in COLOR_COLUMNS and row.condition_combo.currentText() not in NUMERIC_COMPARISONS:
                     _, error = parse_color_values(value)
                     if error:
                         QMessageBox.warning(self, 'Invalid color filter', error)
