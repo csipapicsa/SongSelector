@@ -4,6 +4,23 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.12.0] - 2026-10-27
+
+- **Folders can be dropped** on the library or playlist (or the window): all MP3, WAV and FLAC files
+  in them and in all subfolders are imported, in folder/name order. *Import → Add folder (with
+  subfolders)…* does the same. Imports of more than 25 files show a progress dialog with Cancel.
+- **Similarity map, after first use:**
+  - The selected track shows a label next to its dot (artist – title, key at master tempo, BPM) and a
+    details box above the closest matches.
+  - Clicking a closest match no longer changes the selection: it rings the match in orange and
+    scrolls it into view.
+  - Drag a dot, or one or more closest matches, straight into Traktor (or Explorer, or the playlist).
+  - Closest-match columns sort on click (ascending/descending): similarity as a number, mix by
+    strength, names case-insensitively. The chosen order is kept for the next track.
+  - Fix: "Showing the first 2500 edges" stayed visible after switching back to edges from the
+    selected track only.
+  - Colour 0 ("no colour") is no longer listed in hover and details.
+
 ## [4.11.0] - 2026-10-27
 
 - **Similarity map** (library panel tab *Similarity map*, Ctrl+2; *List* is Ctrl+1). Every analysed

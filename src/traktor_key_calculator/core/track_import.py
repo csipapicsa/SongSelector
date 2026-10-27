@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import warnings
 import pandas as pd
 from traktor_key_calculator.config import AUDIO_EXTENSIONS
 from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
@@ -100,7 +101,12 @@ def merge_tracks(table, records):
     if new_records:
         # Keep one row per normalized path in a batch, including paths differing only in case.
         unique = {canonical_path(row['File_Path']): row for row in new_records}
-        result = pd.concat([result, pd.DataFrame(unique.values())], ignore_index=True)
+        with warnings.catch_warnings():
+            # pandas will change how all-empty columns (e.g. untagged WAV/FLAC files) affect
+            # the merged column types. Either way works here: every value is read through
+            # parse_key/parse_bpm/_text, never by its pandas dtype.
+            warnings.filterwarnings('ignore', category=FutureWarning, message='.*empty or all-NA.*')
+            result = pd.concat([result, pd.DataFrame(unique.values())], ignore_index=True)
     return result
 
 

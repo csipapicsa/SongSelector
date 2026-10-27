@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget
+from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog
 
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
@@ -46,7 +46,10 @@ from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
 from traktor_key_calculator.core.search_filters import matches_condition
 from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKEN, parse_color_search,
                                                       replace_color_filter)
-from traktor_key_calculator.ui.tree_widgets import audio_paths
+from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
+
+
+PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 
 
 class TraktorKeyCalculator(QMainWindow):
@@ -1363,6 +1366,8 @@ class TraktorKeyCalculator(QMainWindow):
         menu = self.menuBar().addMenu('Import')
         add_files = menu.addAction('Add audio files...')
         add_files.triggered.connect(self.choose_audio_files)
+        add_folder = menu.addAction('Add folder (with subfolders)...')
+        add_folder.triggered.connect(self.choose_audio_folder)
         collection = menu.addAction('Link Traktor collection...')
         collection.triggered.connect(self.choose_traktor_collection)
 
@@ -1371,6 +1376,16 @@ class TraktorKeyCalculator(QMainWindow):
                                                'Audio files (*.mp3 *.MP3 *.flac *.wav);;All files (*)')
         if paths:
             self.import_audio_files(paths)
+
+    def choose_audio_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Add all audio files of a folder and its subfolders')
+        if folder:
+            paths = find_audio_files([folder])
+            if paths:
+                self.import_audio_files(paths)
+            else:
+                self.status_label.setStyleSheet(status_style('warning'))
+                self.status_label.setText(f'No MP3, WAV or FLAC files in {folder}')
 
     def choose_traktor_collection(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Link Traktor collection',
@@ -1392,7 +1407,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.status_bar.showMessage(path)
 
     def dragEnterEvent(self, event):
-        if audio_paths(event.mimeData()):
+        if dropped_paths(event.mimeData()):
             event.setDropAction(Qt.CopyAction)
             event.accept()
         else:
@@ -1413,7 +1428,21 @@ class TraktorKeyCalculator(QMainWindow):
     def import_audio_files(self, paths, to_playlist=False):
         records, failures = {}, []
         previous_rows = self._rows_by_path()
-        for path in paths:
+        # Reading tags takes a few ms per file: show progress (with Cancel) for big imports,
+        # e.g. a dropped folder with thousands of tracks.
+        progress = None
+        if len(paths) > PROGRESS_THRESHOLD:
+            progress = QProgressDialog('Reading audio files...', 'Cancel', 0, len(paths), self)
+            progress.setWindowTitle('Import')
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(400)
+        cancelled = False
+        for index, path in enumerate(paths):
+            if progress is not None:
+                progress.setValue(index)
+                if progress.wasCanceled():
+                    cancelled = True
+                    break
             key = canonical_path(path)
             if key in records:
                 continue
@@ -1422,6 +1451,8 @@ class TraktorKeyCalculator(QMainWindow):
                 records[canonical_path(record['File_Path'])] = record
             except (OSError, ValueError) as error:
                 failures.append(str(error))
+        if progress is not None:
+            progress.close()
         if not records:
             self.status_label.setText(failures[0] if failures else 'No audio files to import')
             return []
@@ -1450,6 +1481,8 @@ class TraktorKeyCalculator(QMainWindow):
                     break
         missing = sum(not row['Musical_Key_Base'] or row['BPM'] is None for row in records.values())
         message = f'Imported {len(records)} track(s)'
+        if cancelled:
+            message += f' (cancelled; {len(paths) - len(records) - len(failures)} not imported)'
         if missing:
             message += f'; {missing} need key/BPM analysis in Traktor'
         if failures:

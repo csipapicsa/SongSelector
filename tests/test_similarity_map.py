@@ -84,7 +84,9 @@ class LayoutStoreTests(unittest.TestCase):
             self.assertEqual(store.load_layout(), {'a': (0.0, 0.0)})
 
 
-class SimilarityMapGuiTests(unittest.TestCase):
+class MapWindowTestBase(unittest.TestCase):
+    """Window with 25 library tracks (24 analysed, two styles) and the map tab open; no tests here."""
+
     @classmethod
     def setUpClass(cls):
         from PyQt5.QtWidgets import QApplication
@@ -139,6 +141,7 @@ class SimilarityMapGuiTests(unittest.TestCase):
     def visible(self):
         return {key for key, dot in self.map.dots.items() if dot.isVisible()}
 
+class SimilarityMapGuiTests(MapWindowTestBase):
     def test_map_shows_analysed_tracks_of_the_filtered_list_and_keeps_positions(self):
         self.assertEqual(len(self.visible()), 24)
         self.assertIn('1 listed tracks are not analysed yet', self.map.status.text())
@@ -155,7 +158,7 @@ class SimilarityMapGuiTests(unittest.TestCase):
         matches = [self.map.suggestions.topLevelItem(i).data(0, 0x0100) for i in range(self.map.suggestions.topLevelItemCount())]
         self.assertEqual(len(matches), 15)
         self.assertTrue(all(int(key.split('track')[-1].split('.')[0]) < 12 for key in matches[:11]))  # same style first
-        self.assertEqual(self.map.match_keys, matches)
+        self.assertEqual(set(self.map.match_keys), set(matches))
         self.assertEqual(self.map.dots[matches[0]].pen().color().name(), '#40e0ff')
         self.assertEqual(self.window.candidate_tree.currentItem().text(1), 'breaks 0')  # list follows
 
@@ -187,3 +190,73 @@ class SimilarityMapGuiTests(unittest.TestCase):
         dialog = HoverFieldsDialog(['Title', 'Artist'], ['Artist', 'Title', 'Genre'])
         dialog.boxes['Genre'].setChecked(True)
         self.assertEqual(dialog.selected(), ['Artist', 'Title', 'Genre'])
+
+
+class SimilarityMapInteractionTests(MapWindowTestBase):
+    """Selection details, previewing matches, dragging files out, sorting."""
+
+    def matches(self):
+        tree = self.map.suggestions
+        return [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+
+    def test_clicking_a_match_rings_it_but_keeps_the_selected_track(self):
+        self.map.select(self.key(0))
+        first = self.matches()[0]
+        self.map.suggestions.itemClicked.emit(first, 0)
+        self.assertEqual(self.map.selected_key, self.key(0))
+        self.assertEqual(self.map.preview_key, first.data(0, 0x0100))
+        self.assertEqual(self.map.dots[self.map.preview_key].pen().color().name(), '#ffb020')
+        self.assertEqual(self.map.dots[self.key(0)].pen().color().name(), '#ffffff')
+        self.assertEqual(self.map.suggestions.topLevelItemCount(), 15)  # list unchanged
+
+    def test_selected_track_shows_details_box_and_label_on_the_map(self):
+        self.map.select(self.key(4))
+        self.assertTrue(self.map.label.isVisible())
+        self.assertIn('breaks artist - breaks 4', self.map.label_text.text())
+        self.assertIn('master tempo', self.map.label_text.text())
+        self.assertIn('breaks 4', self.map.details.text())
+        self.assertIn('Genre', self.map.details.text())
+        self.window.search_bar.setText('dnb')  # the selected track is filtered out
+        self.assertFalse(self.map.label.isVisible())
+
+    def test_matches_and_dots_drag_their_files(self):
+        for index in range(24):
+            (self.root / f'track{index}.mp3').write_bytes(b'')
+        self.map.select(self.key(0))
+        items = self.matches()[:2]
+        urls = [url.toLocalFile() for url in self.map.suggestions.mimeData(items).urls()]
+        self.assertEqual([Path(url) for url in urls], [Path(item.data(0, 0x0101)) for item in items])
+        dragged = []
+        with patch('traktor_key_calculator.ui.similarity_map.QDrag.exec_',
+                   lambda drag, *args: dragged.append(drag.mimeData().urls()) or 1):
+            self.map.drag_files([self.key(3)])
+        self.assertEqual(Path(dragged[0][0].toLocalFile()), self.root / 'track3.mp3')
+
+    def test_edge_cap_message_disappears_when_no_longer_true(self):
+        with patch('traktor_key_calculator.ui.similarity_map.MAX_EDGES', 5):
+            self.map.all_edges.setChecked(True)
+            self.assertIn('Showing the first 5 edges', self.map.status.text())
+            self.map.all_edges.setChecked(False)
+            self.assertNotIn('Showing the first', self.map.status.text())
+
+    def test_match_columns_sort_by_number_and_name_both_ways(self):
+        self.map.select(self.key(0))
+        scores = [item.data(0, 0x0102) for item in self.matches()]
+        self.assertEqual(scores, sorted(scores, reverse=True))  # default: most similar first
+        self.map.suggestions.sortByColumn(0, 0)  # Qt.AscendingOrder
+        scores = [item.data(0, 0x0102) for item in self.matches()]
+        self.assertEqual(scores, sorted(scores))
+        self.map.suggestions.sortByColumn(3, 1)  # title, descending
+        titles = [item.text(3).casefold() for item in self.matches()]
+        self.assertEqual(titles, sorted(titles, reverse=True))
+        self.map.select(self.key(13))  # the chosen sort is kept for the next track
+        titles = [item.text(3).casefold() for item in self.matches()]
+        self.assertEqual(titles, sorted(titles, reverse=True))
+
+
+class ShownFieldsTests(unittest.TestCase):
+    def test_empty_values_and_colour_zero_are_not_shown(self):
+        from traktor_key_calculator.ui.similarity_map import shown_fields
+        fields = {'Artist': 'A', 'Genre': '', 'Color': '0', 'Color - Song Selector': '5', 'Rating': '0'}
+        self.assertEqual(shown_fields(fields, ['Artist', 'Genre', 'Color', 'Color - Song Selector', 'Rating', 'Comment']),
+                         [('Artist', 'A'), ('Color - Song Selector', '5'), ('Rating', '0')])

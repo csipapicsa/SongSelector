@@ -8,15 +8,18 @@
 - "Closest matches" are exact (cosine similarity of the full vectors), because any 2D
   map distorts distances.
 """
+import os
 import threading
+from html import escape
 from dataclasses import dataclass, field
 
 import numpy as np
-from PyQt5.QtCore import QObject, QPointF, QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
-from PyQt5.QtWidgets import (QAbstractItemView, QCheckBox, QGraphicsEllipseItem, QGraphicsItem,
-                             QGraphicsPathItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel,
-                             QMenu, QPushButton, QSplitter, QToolButton, QTreeWidget, QTreeWidgetItem,
+from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen
+from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QGraphicsEllipseItem,
+                             QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene,
+                             QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel, QMenu,
+                             QPushButton, QSplitter, QToolButton, QTreeWidget, QTreeWidgetItem,
                              QVBoxLayout, QWidget)
 
 from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
@@ -33,6 +36,9 @@ DOT_SIZE = 9                 # pixels, independent of zoom
 MAX_EDGES = 2500             # "between all visible tracks" is capped to stay readable
 SUGGESTIONS = 15
 NO_COLOR = QColor('#8a8f98')
+SELECTED_RING, MATCH_RING, PREVIEW_RING = '#ffffff', '#40e0ff', '#ffb020'
+PATH_ROLE = Qt.UserRole + 1    # file path of a closest-match row (for dragging)
+SORT_ROLE = Qt.UserRole + 2    # value a closest-match column sorts by (number or text)
 EDGE_COLORS = {
     'perfect_mix': '#4cd964', 'plus_1_mix': '#5ac8fa', 'minus_1_mix': '#5ac8fa',
     'scale_change': '#af7ff2', 'energy_boost': '#ff9f0a', 'mood_shifter': '#ff6fae',
@@ -77,6 +83,12 @@ def build_map_data(store, rearrange=False, should_stop=lambda: False):
     return MapData(keys, vectors, positions)
 
 
+def shown_fields(fields, names):
+    """(name, text) pairs worth showing: non-empty, and colour 0 ("no colour") left out."""
+    return [(name, fields[name]) for name in names
+            if fields.get(name) and not (name in ('Color', 'Color - Song Selector') and fields[name] == '0')]
+
+
 class _Loader(QObject):
     done = pyqtSignal(object)
 
@@ -91,13 +103,57 @@ class DotItem(QGraphicsEllipseItem):
 
     def mousePressEvent(self, event):
         self.owner.select(self.key)
+        self._press = event.screenPos() if event.button() == Qt.LeftButton else None
         if event.button() == Qt.RightButton:
             self.owner.request_context_menu.emit(self.key, event.screenPos())
         event.accept()
 
+    def mouseMoveEvent(self, event):
+        press = getattr(self, '_press', None)
+        if press is not None and (event.screenPos() - press).manhattanLength() >= QApplication.startDragDistance():
+            self._press = None
+            self.owner.drag_files([self.key])
+
     def mouseDoubleClickEvent(self, event):
         self.owner.request_add_to_playlist.emit(self.key)
         event.accept()
+
+
+class MatchItem(QTreeWidgetItem):
+    """Sorts by SORT_ROLE: similarity as a number, mix by strength, names case-insensitively."""
+
+    def __lt__(self, other):
+        column = self.treeWidget().sortColumn() if self.treeWidget() else 0
+        mine, theirs = self.data(column, SORT_ROLE), other.data(column, SORT_ROLE)
+        if mine is None or theirs is None:
+            return self.text(column).casefold() < other.text(column).casefold()
+        return mine < theirs
+
+
+class MatchList(QTreeWidget):
+    """Closest matches; rows can be dragged out as files (e.g. into Traktor)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragOnly)
+        self.setDefaultDropAction(Qt.CopyAction)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # Click a column header to sort; click again to reverse. Default: most similar first.
+        self.setSortingEnabled(True)
+        self.sortByColumn(0, Qt.DescendingOrder)
+
+    def mimeTypes(self):
+        return ['text/uri-list']
+
+    def mimeData(self, items):
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(path) for path in (item.data(0, PATH_ROLE) for item in items)
+                      if path and os.path.exists(path)])
+        return mime
+
+    def supportedDropActions(self):
+        return Qt.CopyAction
 
 
 class MapView(QGraphicsView):
@@ -125,7 +181,9 @@ class SimilarityMapWidget(QWidget):
         self.fields = {}          # path_key -> {column: text} of the rows the list shows
         self.dots = {}
         self.selected_key = None
+        self.preview_key = None   # a closest match clicked in the list: ringed, not selected
         self.match_keys = []      # closest matches of the selected track, ringed on the map
+        self._base_status = ''
         self._loading = False
         self._stop = threading.Event()
         self._loader = _Loader()
@@ -134,6 +192,16 @@ class SimilarityMapWidget(QWidget):
         self.scene = QGraphicsScene(self)
         self.view = MapView(self.scene)
         self.edge_items = []
+        # Label next to the selected dot: artist - title, key and BPM at the current tempo.
+        self.label = QGraphicsRectItem()
+        self.label.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+        self.label.setBrush(QBrush(QColor(20, 22, 25, 225)))
+        self.label.setPen(QPen(QColor(SELECTED_RING), 1))
+        self.label.setZValue(10)
+        self.label_text = QGraphicsSimpleTextItem(self.label)
+        self.label_text.setBrush(QBrush(QColor('#f0f0f0')))
+        self.label.hide()
+        self.scene.addItem(self.label)
 
         self.status = QLabel('')
         self.edges_button = QToolButton()
@@ -161,11 +229,14 @@ class SimilarityMapWidget(QWidget):
         self.rearrange_button.setToolTip('Compute the map again from all analysed tracks (takes a few minutes).')
         self.rearrange_button.clicked.connect(lambda: self.load(rearrange=True))
 
-        self.suggestions = QTreeWidget()
+        self.details = QLabel('Click a track on the map.')
+        self.details.setWordWrap(True)
+        self.details.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.suggestions = MatchList()
         self.suggestions.setHeaderLabels(['Similarity', 'Mix', 'Artist', 'Title'])
         self.suggestions.setRootIsDecorated(False)
-        self.suggestions.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.suggestions.itemClicked.connect(lambda item: self.select(item.data(0, Qt.UserRole)))
+        # Clicking a match shows where it is but keeps the selected track selected.
+        self.suggestions.itemClicked.connect(lambda item: self.preview(item.data(0, Qt.UserRole)))
         self.suggestions.itemDoubleClicked.connect(
             lambda item: self.request_add_to_playlist.emit(item.data(0, Qt.UserRole)))
 
@@ -178,7 +249,9 @@ class SimilarityMapWidget(QWidget):
         side = QWidget()
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
-        side_layout.addWidget(QLabel('Closest matches (double-click: add to playlist)'))
+        side_layout.addWidget(self.details)
+        side_layout.addWidget(QLabel('Closest matches (click: show on map, double-click: add to\n'
+                                     'playlist, drag: to Traktor or Explorer)'))
         side_layout.addWidget(self.suggestions)
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.view)
@@ -267,15 +340,17 @@ class SimilarityMapWidget(QWidget):
             colour = COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR
             dot.setBrush(QBrush(colour))
             self._outline(key)
-            dot.setToolTip('\n'.join(f'{name}: {fields.get(name, "")}' for name in hover if fields.get(name)))
+            dot.setToolTip('\n'.join(f'{name}: {text}' for name, text in shown_fields(fields, hover)))
         missing = len(self.fields) - shown
-        self.status.setText(f'{shown} tracks on the map' +
-                            (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '') +
-                            '. Scroll to zoom, drag to move, hover for details, click for closest matches.')
+        self._base_status = (f'{shown} tracks on the map' +
+                             (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '') +
+                             '. Scroll: zoom, drag background: move, drag dot: file to Traktor, '
+                             'hover: details, click: closest matches.')
         if self.selected_key not in self.fields:
             self.selected_key = None
         self._draw_edges()
         self._update_suggestions()
+        self._show_selected_details()
 
     def fit(self):
         visible = [dot for dot in self.dots.values() if dot.isVisible()] or list(self.dots.values())
@@ -290,11 +365,57 @@ class SimilarityMapWidget(QWidget):
         if key is None or key not in self.dots:
             return
         previous, self.selected_key = self.selected_key, key
-        for changed in (previous, key):
+        preview, self.preview_key = self.preview_key, None
+        for changed in (previous, preview, key):
             self._outline(changed)
         self._draw_edges()
         self._update_suggestions()
+        self._show_selected_details()
         self.selected.emit(key)
+
+    def preview(self, key):
+        """Ring a closest match on the map and bring it into view; the selection stays."""
+        previous, self.preview_key = self.preview_key, key
+        for changed in (previous, key):
+            self._outline(changed)
+        if key in self.dots:
+            self.view.ensureVisible(QRectF(self.dots[key].pos(), self.dots[key].pos()).adjusted(-40, -40, 40, 40))
+
+    def _show_selected_details(self):
+        fields = self.fields.get(self.selected_key)
+        if fields is None or self.selected_key not in self.dots:
+            self.label.hide()
+            self.details.setText('Click a track on the map.')
+            return
+        key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
+        self.label_text.setText(f"{fields.get('Artist', '')} - {fields.get('Title', '')}\n"
+                                f"{key_now} at master tempo, {fields.get('Original BPM', '')} BPM")
+        # The label ignores zoom, so these offsets are pixels: right of and above the dot.
+        text_box = self.label_text.boundingRect()
+        top = -(text_box.height() + 8) - DOT_SIZE
+        self.label.setRect(QRectF(DOT_SIZE, top, text_box.width() + 12, text_box.height() + 8))
+        self.label_text.setPos(DOT_SIZE + 6, top + 4)
+        self.label.setPos(self.dots[self.selected_key].pos())
+        self.label.show()
+        hover = self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)
+        rows = ''.join(f'<tr><td><i>{name}</i></td><td>{escape(text)}</td></tr>'
+                       for name, text in shown_fields(fields, hover))
+        self.details.setText(f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+                             f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM'
+                             f'<table cellspacing="4">{rows}</table>')
+
+    def drag_files(self, keys):
+        """Drag the files of these tracks out of the map (Traktor, Explorer, the playlist)."""
+        paths = [self.fields.get(key, {}).get('Path', '') for key in keys]
+        paths = [path for path in paths if path and os.path.exists(path)]
+        if not paths:
+            self.status.setText('File not found, nothing to drag.')
+            return Qt.IgnoreAction
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(path) for path in paths])
+        drag = QDrag(self.view)
+        drag.setMimeData(mime)
+        return drag.exec_(Qt.CopyAction)
 
     def _outline(self, key):
         """Selected track: white ring on top; its closest matches: cyan ring; others: thin dark edge."""
@@ -302,10 +423,13 @@ class SimilarityMapWidget(QWidget):
         if dot is None:
             return
         if key == self.selected_key:
-            dot.setPen(QPen(QColor('#ffffff'), 3))
+            dot.setPen(QPen(QColor(SELECTED_RING), 3))
             dot.setZValue(4)
+        elif key == self.preview_key:
+            dot.setPen(QPen(QColor(PREVIEW_RING), 3))
+            dot.setZValue(3.5)
         elif key in self.match_keys:
-            dot.setPen(QPen(QColor('#40e0ff'), 2.5))
+            dot.setPen(QPen(QColor(MATCH_RING), 2.5))
             dot.setZValue(3)
         else:
             dot.setPen(QPen(QColor(20, 20, 20, 160), 1))
@@ -362,6 +486,7 @@ class SimilarityMapWidget(QWidget):
             self.scene.removeItem(item)
         self.edge_items = []
         criteria = self.criteria()
+        self.status.setText(self._base_status)
         if not criteria or self.data is None:
             return
         paths = {}
@@ -375,7 +500,8 @@ class SimilarityMapWidget(QWidget):
             path.moveTo(self._scaled(source))
             path.lineTo(self._scaled(target))
         if len(edges) >= MAX_EDGES:
-            self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks.')
+            self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks. '
+                                + self._base_status)
         for (reason, colour), path in paths.items():
             weight = MIX_TYPES_BY_NAME[reason].weight if reason in MIX_TYPES_BY_NAME else 4
             pen = QPen(QColor(colour), 0.6 + weight / 5)
@@ -393,7 +519,8 @@ class SimilarityMapWidget(QWidget):
         self.settings['Map harmonic only'] = self.harmonic_only.isChecked()
         self.suggestions.clear()
         previous, self.match_keys = self.match_keys, []
-        for key in previous:
+        preview, self.preview_key = self.preview_key, None
+        for key in previous + [preview]:
             self._outline(key)
         if self.data is None or self.selected_key not in self.data.row:
             return
@@ -407,9 +534,14 @@ class SimilarityMapWidget(QWidget):
             mix = mix_type(source.get('Camelot Key New'), target.get('Camelot Key New'))
             if self.harmonic_only.isChecked() and mix is None:
                 continue
-            item = QTreeWidgetItem([f'{score * 100:.0f} %', mix.label if mix else '',
-                                    target.get('Artist', ''), target.get('Title', '')])
+            item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else '',
+                              target.get('Artist', ''), target.get('Title', '')])
+            item.setData(0, SORT_ROLE, score)
+            item.setData(1, SORT_ROLE, mix.weight if mix else 0)
+            item.setData(2, SORT_ROLE, target.get('Artist', '').casefold())
+            item.setData(3, SORT_ROLE, target.get('Title', '').casefold())
             item.setData(0, Qt.UserRole, key)
+            item.setData(0, PATH_ROLE, target.get('Path', ''))
             if mix is not None:
                 item.setForeground(1, QBrush(QColor(EDGE_COLORS[mix.name])))
             self.suggestions.addTopLevelItem(item)

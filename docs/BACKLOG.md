@@ -67,6 +67,11 @@ Do 1–2 first; they matter even without an installer.
 
 ## Code health
 
+Assessment 2026-10-27: new modules are small and documented, but `ui/main_window.py` (1,577 lines,
+one class) and `core/key_tables.py` (850 lines, mostly thesis leftovers) are not yet
+human-friendly. Suggested next step, before more features: a behaviour-preserving cleanup pass.
+
+
 - [ ] `config.py` mixes constants, the `AudioMetadata` dataclass and Qt colors; split it so
       `core/` does not depend on PyQt5.
 - [ ] `ui/main_window.py` (~1000 lines) holds most of the state; extract library/table logic

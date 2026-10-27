@@ -94,20 +94,48 @@ class DraggableTreeWidget(QTreeWidget):
             self.parent_app.status_bar.showMessage("Drag cancelled")
 
 
-def audio_paths(mime):
-    """Only local audio files; incoming drops never move or edit them."""
+def is_audio_file(path):
+    return os.path.isfile(path) and get_file_extension(path) in AUDIO_EXTENSIONS
+
+
+def find_audio_files(paths):
+    """Audio files among `paths`; folders are searched with all their subfolders.
+
+    Sorted by folder and name, so an import always has the same order.
+    """
+    found = []
+    for path in paths:
+        if os.path.isdir(path):
+            for folder, subfolders, files in os.walk(path):
+                subfolders.sort(key=str.casefold)
+                found += [os.path.join(folder, name) for name in sorted(files, key=str.casefold)
+                          if get_file_extension(name) in AUDIO_EXTENSIONS]
+        elif is_audio_file(path):
+            found.append(path)
+    return found
+
+
+def dropped_paths(mime):
+    """Local audio files and folders being dragged, not expanded yet: cheap enough to run
+    on every drag-move event. Incoming drops never move or edit files."""
     if not mime.hasUrls():
         return []
-    return [url.toLocalFile() for url in mime.urls()
-            if url.isLocalFile() and os.path.isfile(url.toLocalFile())
-            and get_file_extension(url.toLocalFile()) in AUDIO_EXTENSIONS]
+    # Qt gives "C:/Users/..."; normpath makes it the platform form so joined subfolder
+    # paths are not mixed ("C:/Users/...\\a.mp3").
+    paths = [os.path.normpath(url.toLocalFile()) for url in mime.urls() if url.isLocalFile()]
+    return [path for path in paths if os.path.isdir(path) or is_audio_file(path)]
+
+
+def audio_paths(mime):
+    """All audio files of a drop, with dropped folders searched recursively."""
+    return find_audio_files(dropped_paths(mime))
 
 
 class AudioDropMixin:
     playlist_drop = False
 
     def dragEnterEvent(self, event):
-        if audio_paths(event.mimeData()):
+        if dropped_paths(event.mimeData()):
             event.setDropAction(Qt.CopyAction)
             event.accept()
         else:
@@ -119,6 +147,8 @@ class AudioDropMixin:
     def dropEvent(self, event):
         paths = audio_paths(event.mimeData())
         if not paths:
+            self.parent_app.status_label.setStyleSheet(status_style('warning'))
+            self.parent_app.status_label.setText('No MP3, WAV or FLAC files in what was dropped')
             event.ignore()
             return
         self.parent_app.import_audio_files(paths, to_playlist=self.playlist_drop)

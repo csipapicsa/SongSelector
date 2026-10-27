@@ -6,7 +6,7 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 
 - Library and playlist panels with Musical, Camelot and Open Key notation
 - Master-tempo slider that recalculates every row live
-- Drag and drop MP3/WAV/FLAC import, reading BPM, key, rating, etc. from file tags
+- Drag and drop MP3/WAV/FLAC files or whole folders (with subfolders), reading BPM, key, rating, etc. from file tags
 - Missing metadata filled in from Traktor's `collection.nml` (read-only)
 - Traktor category colors, key colors, text, numeric, rating and color search
 - Library and playlist are restored on restart; Shift/Ctrl multi-selection; *Delete* removes rows from a list
@@ -108,7 +108,10 @@ it is filtered now (search, colours, Advanced Search), so narrow the list first 
 | Action | Result |
 |---|---|
 | Hover a dot | Details; choose which in *View → Map hover details…* |
-| Click | 15 most similar tracks: cyan rings on the map, list on the right (similarity %, mix type) |
+| Click | Label and details of the track; its 15 most similar tracks: cyan rings, list on the right |
+| Click in the matches list | Orange ring on that track; the selection stays |
+| Drag a dot or matches | The files, e.g. into Traktor's deck or playlist |
+| Column headers of the matches | Sort (click again to reverse) |
 | Double-click (dot or list) | Add to playlist |
 | Right-click | The usual track menu (rating, colour, edit, remove) |
 | Scroll / drag | Zoom / move |
