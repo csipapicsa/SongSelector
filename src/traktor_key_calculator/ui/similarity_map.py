@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QGraphi
 
 from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type
+from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.core.similarity import (EDGE_SAME_COLOR, EDGE_SAME_RATING, display_color,
                                                     nearest, place_new, track_vectors,
                                                     tsne_layout)
@@ -157,8 +158,11 @@ class MatchList(QTreeWidget):
 
 
 class MapView(QGraphicsView):
+    dropped = pyqtSignal(list)   # file paths dropped on the map (e.g. from the playlist)
+
     def __init__(self, scene, parent=None):
         super().__init__(scene, parent)
+        self.setAcceptDrops(True)
         self.setRenderHint(QPainter.Antialiasing)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -167,6 +171,27 @@ class MapView(QGraphicsView):
     def wheelEvent(self, event):
         factor = 1.2 ** (event.angleDelta().y() / 120)
         self.scale(factor, factor)
+
+    # Dropping a track selects it on the map. The view handles drops itself instead of
+    # passing them to the scene, whose items do not accept drops.
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        paths = [os.path.normpath(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()]
+        if paths:
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            self.dropped.emit(paths)
+        else:
+            event.ignore()
 
 
 class SimilarityMapWidget(QWidget):
@@ -178,7 +203,13 @@ class SimilarityMapWidget(QWidget):
         super().__init__(parent)
         self.store, self.settings = store, settings
         self.data = None
-        self.fields = {}          # path_key -> {column: text} of the rows the list shows
+        self.listed = {}          # path_key -> {column: text} of the rows the list shows
+        self.fields = {}          # listed rows plus the reference track, if any
+        # A track dropped on the map that the list does not show (e.g. a playlist track):
+        # shown and selected anyway, so its closest matches can be explored. (key, fields)
+        self.reference = None
+        # key -> {column: text} for any library or playlist track; set by the main window.
+        self.fields_provider = lambda key: None
         self.dots = {}
         self.selected_key = None
         self.preview_key = None   # a closest match clicked in the list: ringed, not selected
@@ -191,6 +222,7 @@ class SimilarityMapWidget(QWidget):
 
         self.scene = QGraphicsScene(self)
         self.view = MapView(self.scene)
+        self.view.dropped.connect(self.drop_paths)
         self.edge_items = []
         # Label next to the selected dot: artist - title, key and BPM at the current tempo.
         self.label = QGraphicsRectItem()
@@ -302,9 +334,36 @@ class SimilarityMapWidget(QWidget):
 
     def set_tracks(self, fields):
         """The rows the library list shows now: {path_key: {column: text}}."""
-        self.fields = fields
+        self.listed = fields
+        self._merge_reference()
         if self.data is not None:
             self._refresh()
+
+    def _merge_reference(self):
+        self.fields = dict(self.listed)
+        if self.reference is not None:
+            self.fields.setdefault(*self.reference)
+
+    def drop_paths(self, paths):
+        """Select the first dropped track that is on the map (analysed)."""
+        for path in paths:
+            key = canonical_path(path)
+            if self.data is not None and key in self.dots:
+                fields = self.fields.get(key) or self.fields_provider(key) or \
+                    {'Title': os.path.basename(path), 'Path': path}
+                self.show_reference(key, fields)
+                return True
+        name = os.path.basename(paths[0]) if paths else ''
+        self.status.setText(f'{name} is not on the map yet: it has not been analysed.')
+        return False
+
+    def show_reference(self, key, fields):
+        """Show and select a track even if the list does not show it (e.g. a playlist track)."""
+        self.reference = None if key in self.listed else (key, fields)
+        self._merge_reference()
+        self._refresh()
+        self.select(key)
+        self.view.centerOn(self.dots[key])
 
     # -- drawing ------------------------------------------------------------
 
@@ -366,6 +425,10 @@ class SimilarityMapWidget(QWidget):
             return
         previous, self.selected_key = self.selected_key, key
         preview, self.preview_key = self.preview_key, None
+        if self.reference is not None and self.reference[0] != key:
+            self.reference = None  # selecting another track: the reference dot goes away
+            self._merge_reference()
+            self._refresh()
         for changed in (previous, preview, key):
             self._outline(changed)
         self._draw_edges()
@@ -400,7 +463,9 @@ class SimilarityMapWidget(QWidget):
         hover = self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)
         rows = ''.join(f'<tr><td><i>{name}</i></td><td>{escape(text)}</td></tr>'
                        for name, text in shown_fields(fields, hover))
-        self.details.setText(f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+        note = ('<i>Not in the list view (e.g. a playlist track); its matches come from the list.</i><br>'
+                if self.reference is not None and self.reference[0] == self.selected_key else '')
+        self.details.setText(f'{note}<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
                              f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM'
                              f'<table cellspacing="4">{rows}</table>')
 

@@ -12,6 +12,7 @@ from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
 from traktor_key_calculator.core.track_import import TrackImporter, ImportedTrackStore, merge_tracks
 from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
 from traktor_key_calculator.core.library_store import LibraryStore
+from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
 from traktor_key_calculator.ui.theme import row_tint_alpha
 
 
@@ -241,7 +242,9 @@ class GuiTests(unittest.TestCase):
         window.sort_by_column(HEADER_INDEX['Original BPM'])
         drop(window.playlist_tree, [tagged, tagged])
         self.assertEqual(window.playlist_tree.topLevelItemCount(), 1)
-        self.assertTrue(item_for(window.candidate_tree, tagged).isHidden())
+        in_library = item_for(window.candidate_tree, tagged)
+        self.assertFalse(in_library.isHidden())  # playlist tracks stay in the library, dimmed
+        self.assertTrue(in_library.data(0, IN_PLAYLIST_ROLE) and in_library.font(0).italic())
         window.bpm_slider.setValue(150)
         window.update_tree_after_slider()
         self.assertEqual(item_for(window.playlist_tree, tagged).text(HEADER_INDEX['New Key']), 'G major')

@@ -22,6 +22,7 @@ from traktor_key_calculator.core.color_search import SS_COLOR_TOKEN, parse_color
 from traktor_key_calculator.core.library_store import LIBRARY_LIST, LibraryStore
 from traktor_key_calculator.core.search_filters import matches_condition
 from traktor_key_calculator.core.tag_writer import write_tags
+from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
 from test_imports import tagged_file
 
 
@@ -342,7 +343,9 @@ class MultiSelectionGuiTests(GuiTestBase):
         self.select(window.playlist_tree, 'Song', 'Third')
         QTest.keyClick(window.playlist_tree, Qt.Key_Delete)
         self.assertEqual(self.titles(window.playlist_tree), ['Other'])
-        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Song', 'Third'])
+        dimmed = {title for title in ('Song', 'Other', 'Third')
+                  if self.item(window.candidate_tree, title).data(0, IN_PLAYLIST_ROLE)}
+        self.assertEqual(dimmed, {'Other'})  # removed from the playlist: no longer dimmed
         self.assertEqual(self.titles(self.restart(window).playlist_tree), ['Other'])
 
     def test_rating_and_color_apply_to_every_selected_row(self):
@@ -434,3 +437,38 @@ class ThemeTests(GuiTestBase):
         self.assertIn('#cf222e', status_style('error'))
         self.assertEqual(status_style('info'), 'font-weight: normal;')
         window.dark_theme_action.setChecked(True)  # leave the shared QApplication dark
+
+
+class PlaylistInLibraryTests(GuiTestBase):
+    """Playlist tracks stay findable in the library (dimmed); hiding them is a View option."""
+
+    def test_search_finds_playlist_tracks_dimmed_and_the_toggle_hides_them(self):
+        window = self.window()
+        window.candidate_tree.setCurrentItem(self.item(window.candidate_tree, 'Song'))
+        window.add_selected_to_playlist()
+        window.search_bar.setText('Song')
+        song = self.item(window.candidate_tree, 'Song')
+        self.assertFalse(song.isHidden())
+        self.assertTrue(song.font(0).italic())
+        self.assertIn('1 in the playlist (dimmed)', window.status_label.text())
+        window.hide_playlist_action.setChecked(True)
+        self.assertTrue(song.isHidden())
+        self.assertIn('1 more in the playlist (hidden, see View menu)', window.status_label.text())
+        self.assertTrue(window.settings['Hide playlist tracks'])
+        window.hide_playlist_action.setChecked(False)
+        self.assertFalse(song.isHidden())
+
+    def test_active_advanced_search_is_visible_on_the_button_and_in_the_status(self):
+        window = self.window()
+        self.assertEqual(window.btn_advanced_search.text(), 'Advanced Search')
+        window.current_advanced_search = {'enabled': True, 'filters': [
+            {'column': 'Original BPM', 'condition': 'greater than', 'value': '100'},
+            {'column': 'Original BPM', 'condition': 'less than', 'value': '140'}]}
+        window.advanced_filters = window.current_advanced_search['filters']
+        window.filter_items()
+        self.assertEqual(window.btn_advanced_search.text(), 'Advanced Search (2 active)')
+        self.assertIn('Original BPM less than 140', window.btn_advanced_search.toolTip())
+        self.assertIn('Advanced Search is on', window.status_label.text())
+        window.current_advanced_search['enabled'] = False
+        window.filter_items()
+        self.assertEqual(window.btn_advanced_search.text(), 'Advanced Search')

@@ -52,6 +52,12 @@ def current_theme():
     return _current
 
 
+def dim_text_colour():
+    """Text colour of de-emphasised rows (e.g. library rows already on the playlist)."""
+    from PyQt5.QtGui import QColor
+    return QColor('#6f737a') if _current == 'dark' else QColor('#9a9a9a')
+
+
 def row_tint_alpha():
     """Opacity of the category/key colour tint behind a row; dark backgrounds need more."""
     return 55 if _current == "dark" else 40

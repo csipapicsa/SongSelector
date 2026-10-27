@@ -69,6 +69,13 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `map_settings_dialog.py` | Choose the map's hover details |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
 
+### Playlist tracks in the library list
+
+`filter_items` marks library rows whose track is on the playlist (`IN_PLAYLIST_ROLE`); they are
+dimmed and italic (`_apply_text_colours`, which also owns the orange "missing key/BPM" colour) and
+hidden only with *View → Hide playlist tracks in the library* (`settings['Hide playlist tracks']`).
+Until 4.14.0 they were always hidden, which made searches miss them without notice.
+
 ### Right-click menu (both panels)
 
 `TraktorKeyCalculator.track_context_menu(tree)` acts on all selected rows (Shift/Ctrl+click): *Edit track info…* (the clicked row), *Remove from library/playlist* (also the Delete key),
@@ -194,6 +201,9 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   `tsne_layout` if there is no stored layout or it covers less than half of the analysed tracks.
   Otherwise `place_new` positions the new tracks. Positions are stored in `embeddings.sqlite`
   (`map_layout`) and only `save_layout` replaces them, so filtering never moves dots.
+- **Reference track:** a dropped track the list does not show (e.g. on the playlist) is added to
+  the map's `fields` as `reference` while it is selected (`show_reference`); its table texts come
+  from `fields_provider` (`TraktorKeyCalculator._fields_for_key`).
 - **Edges** (`SimilarityMapWidget._edges`): tracks are grouped by tempo-adjusted Camelot key,
   colour and rating, and partners are looked up per group (no all-pairs loop); one edge per
   pair, capped at `MAX_EDGES`.

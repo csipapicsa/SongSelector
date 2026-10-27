@@ -13,6 +13,7 @@ import pandas as pd
 from traktor_key_calculator.core.library_store import LibraryStore, LIBRARY_LIST, PLAYLIST_LIST
 from traktor_key_calculator.core.track_import import drop_duplicate_paths
 from traktor_key_calculator.core.traktor_collection import canonical_path
+from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
 
 
 def track(path, title='Track', **fields):
@@ -153,10 +154,10 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         # A path has one record in the collection, so both 'one' rows now share the first row's data.
         self.assertEqual(sorted(restored.table['Title']), ['one', 'one', 'three'])
         self.assertEqual(self.titles(restored.playlist_tree), ['three', 'one'])
-        # Playlist members stay hidden in the library panel, as before the restart.
-        visible = [title for i, title in enumerate(self.titles(restored.candidate_tree))
-                   if not restored.candidate_tree.topLevelItem(i).isHidden()]
-        self.assertEqual(visible, [])
+        # Playlist members are dimmed in the library panel, as before the restart.
+        tree = restored.candidate_tree
+        dimmed = [tree.topLevelItem(i).data(0, IN_PLAYLIST_ROLE) for i in range(tree.topLevelItemCount())]
+        self.assertTrue(all(dimmed))
 
         restored.clear_playlist()
         self.assertEqual(self.titles(self.restart(restored).playlist_tree), [])

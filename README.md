@@ -111,6 +111,7 @@ it is filtered now (search, colours, Advanced Search), so narrow the list first 
 | Click | Label and details of the track; its 15 most similar tracks: cyan rings, list on the right |
 | Click in the matches list | Orange ring on that track; the selection stays |
 | Drag a dot or matches | The files, e.g. into Traktor's deck or playlist |
+| Drop a track on the map (e.g. from the playlist) | Selects it there and shows its closest matches |
 | Column headers of the matches | Sort (click again to reverse) |
 | Double-click (dot or list) | Add to playlist |
 | Right-click | The usual track menu (rating, colour, edit, remove) |

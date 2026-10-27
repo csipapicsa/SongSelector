@@ -183,7 +183,7 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertEqual(dot.toolTip(), 'Original Key: B minor')  # track 5: keys cycle A, E, B
         self.map.request_add_to_playlist.emit(self.key(5))
         self.assertEqual(self.window.playlist_tree.topLevelItem(0).text(1), 'breaks 5')
-        self.assertFalse(dot.isVisible())  # playlist tracks leave the library view, as in the list
+        self.assertTrue(dot.isVisible())  # playlist tracks stay in the library view (dimmed in the list)
 
     def test_hover_fields_dialog_returns_checked_columns_in_table_order(self):
         from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
@@ -260,3 +260,45 @@ class ShownFieldsTests(unittest.TestCase):
         fields = {'Artist': 'A', 'Genre': '', 'Color': '0', 'Color - Song Selector': '5', 'Rating': '0'}
         self.assertEqual(shown_fields(fields, ['Artist', 'Genre', 'Color', 'Color - Song Selector', 'Rating', 'Comment']),
                          [('Artist', 'A'), ('Color - Song Selector', '5'), ('Rating', '0')])
+
+
+class MapDropTests(MapWindowTestBase):
+    """Dropping a track on the map (e.g. from the playlist) selects it there."""
+
+    def drop_on_map(self, *paths):
+        from PyQt5.QtCore import QCoreApplication, QMimeData, QPoint, QPointF, Qt, QUrl
+        from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+        viewport = self.map.view.viewport()
+        enter = QDragEnterEvent(QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+        QCoreApplication.sendEvent(viewport, enter)
+        self.assertTrue(enter.isAccepted())
+        QCoreApplication.sendEvent(viewport, QDropEvent(QPointF(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier))
+        self.application.processEvents()
+
+    def test_playlist_track_dropped_on_the_map_is_shown_selected_and_matched(self):
+        self.window.hide_playlist_action.setChecked(True)  # playlist tracks hidden from list and map
+        self.map.request_add_to_playlist.emit(self.key(2))  # now on the playlist, hidden on the map
+        self.assertFalse(self.map.dots[self.key(2)].isVisible())
+        self.drop_on_map(self.root / 'track2.mp3')
+        self.assertEqual(self.map.selected_key, self.key(2))
+        self.assertTrue(self.map.dots[self.key(2)].isVisible())
+        self.assertIn('breaks 2', self.map.label_text.text())
+        self.assertIn('Not in the list view', self.map.details.text())
+        matches = {self.map.suggestions.topLevelItem(i).data(0, 0x0100) for i in range(self.map.suggestions.topLevelItemCount())}
+        self.assertNotIn(self.key(2), matches)
+        self.assertTrue(matches <= set(self.map.listed))  # matches come from the list
+        self.window.search_bar.setText('breaks')  # filtering keeps the selected reference
+        self.assertTrue(self.map.dots[self.key(2)].isVisible())
+        self.map.select(self.key(5))  # another track: the reference dot goes away again
+        self.assertFalse(self.map.dots[self.key(2)].isVisible())
+        self.assertIsNone(self.map.reference)
+
+    def test_listed_track_dropped_is_simply_selected_and_unanalysed_is_reported(self):
+        self.drop_on_map(self.root / 'track7.mp3')
+        self.assertEqual(self.map.selected_key, self.key(7))
+        self.assertIsNone(self.map.reference)
+        self.drop_on_map(self.root / 'track24.mp3')  # in the library, but not analysed
+        self.assertEqual(self.map.selected_key, self.key(7))
+        self.assertIn('track24.mp3 is not on the map yet', self.map.status.text())

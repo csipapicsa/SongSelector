@@ -39,7 +39,8 @@ from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
 from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget
 from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
-from traktor_key_calculator.ui.theme import DEFAULT_THEME, apply_theme, row_tint_alpha, status_style
+from traktor_key_calculator.ui.theme import (DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha,
+                                             status_style)
 from mutagen import MutagenError
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
@@ -50,6 +51,7 @@ from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, f
 
 
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
+IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
 
 
 class TraktorKeyCalculator(QMainWindow):
@@ -163,6 +165,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.similarity_map.request_add_to_playlist.connect(self._map_add_to_playlist)
         self.similarity_map.request_context_menu.connect(self._map_context_menu)
         self.similarity_map.selected.connect(self._select_in_list)
+        self.similarity_map.fields_provider = self._fields_for_key
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
         self._map_stale = True
@@ -569,20 +572,34 @@ class TraktorKeyCalculator(QMainWindow):
             self.color_search_button.setText(f'Colors ({count})' if count else 'Colors')
         search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in HEADER_INDEX]
         playlist_paths = {canonical_path(path) for path in self.playlist_paths}
+        hide_playlist_tracks = self.settings.get('Hide playlist tracks', False)
+        advanced = bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
+        in_playlist_matches = 0
         for index in range(self.candidate_tree.topLevelItemCount()):
             item = self.candidate_tree.topLevelItem(index)
-            path = canonical_path(item.text(HEADER_INDEX['Path']))
-            matches = (path not in playlist_paths and color_query.matches(item.text(COLOR_COLUMN_INDEX))
+            in_playlist = canonical_path(item.text(HEADER_INDEX['Path'])) in playlist_paths
+            if bool(item.data(0, IN_PLAYLIST_ROLE)) != in_playlist:
+                item.setData(0, IN_PLAYLIST_ROLE, in_playlist)
+                self._apply_text_colours(item)
+            matches = (color_query.matches(item.text(COLOR_COLUMN_INDEX))
                        and ss_color_query.matches(item.text(HEADER_INDEX[SS_COLOR_COLUMN])))
             if matches and search_text:
                 matches = any(search_text in item.text(column).casefold() for column in search_indices)
-            if matches and self.current_advanced_search.get('enabled') and self.advanced_filters:
+            if matches and advanced:
                 matches = self.apply_advanced_filters_tree(item)
-            item.setHidden(not matches)
+            in_playlist_matches += matches and in_playlist
+            item.setHidden(not matches or (in_playlist and hide_playlist_tracks))
+        self._show_advanced_search_state()
         visible = sum(not self.candidate_tree.topLevelItem(i).isHidden()
                       for i in range(self.candidate_tree.topLevelItemCount()))
+        message = f'Displaying {visible} of {self.candidate_tree.topLevelItemCount()} tracks'
+        if in_playlist_matches:
+            message += (f'; {in_playlist_matches} more in the playlist (hidden, see View menu)' if hide_playlist_tracks
+                        else f'; {in_playlist_matches} in the playlist (dimmed)')
+        if advanced:
+            message += '; Advanced Search is on'
         self.status_label.setStyleSheet(status_style('ok'))
-        self.status_label.setText(f'Displaying {visible} of {self.candidate_tree.topLevelItemCount()} tracks')
+        self.status_label.setText(message)
         if color_query.error or ss_color_query.error:
             self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(color_query.error or ss_color_query.error)
@@ -1044,6 +1061,11 @@ class TraktorKeyCalculator(QMainWindow):
         self.dark_theme_action.setCheckable(True)
         self.dark_theme_action.setChecked(self.settings.get('Theme', DEFAULT_THEME) == 'dark')
         self.dark_theme_action.toggled.connect(lambda dark: self.set_theme('dark' if dark else 'light'))
+        self.hide_playlist_action = menu.addAction('Hide playlist tracks in the library')
+        self.hide_playlist_action.setCheckable(True)
+        self.hide_playlist_action.setChecked(self.settings.get('Hide playlist tracks', False))
+        self.hide_playlist_action.setToolTip('Off: tracks on the playlist stay in the library list, dimmed.')
+        self.hide_playlist_action.toggled.connect(self.set_hide_playlist_tracks)
         menu.addSeparator()
         list_view = menu.addAction('Library list')
         list_view.setShortcut('Ctrl+1')
@@ -1073,6 +1095,16 @@ class TraktorKeyCalculator(QMainWindow):
                 fields[canonical_path(item.text(HEADER_INDEX['Path']))] = \
                     {name: item.text(column) for column, name in enumerate(columns)}
         self.similarity_map.set_tracks(fields)
+
+    def _fields_for_key(self, key):
+        """Table texts of a track in the library list (also hidden rows) or the playlist."""
+        columns = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
+        for tree in (self.candidate_tree, self.playlist_tree):
+            for index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(index)
+                if canonical_path(item.text(HEADER_INDEX['Path'])) == key:
+                    return {name: item.text(column) for column, name in enumerate(columns)}
+        return None
 
     def _embedding_added(self, _key):
         self._map_stale = True  # placed on the map the next time it is opened
@@ -1106,6 +1138,23 @@ class TraktorKeyCalculator(QMainWindow):
     def set_theme(self, name):
         self.settings['Theme'] = apply_theme(name)
         self.populate_tree()  # re-tint rows for the new background
+
+    def set_hide_playlist_tracks(self, hide):
+        self.settings['Hide playlist tracks'] = hide
+        self.filter_items()
+
+    def _show_advanced_search_state(self):
+        """'Advanced Search (2 active)', highlighted, with the filters in the tooltip."""
+        filters = self.advanced_filters if self.current_advanced_search.get('enabled') else []
+        if filters:
+            self.btn_advanced_search.setText(f'Advanced Search ({len(filters)} active)')
+            self.btn_advanced_search.setStyleSheet(status_style('warning', bold=True))
+            self.btn_advanced_search.setToolTip('Active filters:\n' + '\n'.join(
+                f"{f['column']} {f['condition']} {f['value']}" for f in filters))
+        else:
+            self.btn_advanced_search.setText('Advanced Search')
+            self.btn_advanced_search.setStyleSheet('')
+            self.btn_advanced_search.setToolTip('Filter by column conditions, e.g. BPM between 120 and 130.')
 
     def _init_analysis_menu(self):
         menu = self.menuBar().addMenu('Analysis')
@@ -1551,12 +1600,25 @@ class TraktorKeyCalculator(QMainWindow):
             item.setText(HEADER_INDEX[column], value)
             item.setToolTip(HEADER_INDEX[column], tooltip)
         self.apply_row_shading_from_color(item)
-        for column in ('Original Key', 'Original BPM'):
-            item.setForeground(HEADER_INDEX[column], QBrush())
-        if not key or bpm is None:
-            item.setForeground(HEADER_INDEX['Original Key'] if not key else HEADER_INDEX['Original BPM'],
-                               QBrush(QColor('darkorange')))
+        self._apply_text_colours(item)
         return item
+
+    @staticmethod
+    def _apply_text_colours(item):
+        """Library rows of playlist tracks are dimmed and italic; otherwise a missing key or
+        BPM is shown in orange (the one that is missing; key first)."""
+        dimmed = bool(item.data(0, IN_PLAYLIST_ROLE))
+        font = item.font(0)
+        font.setItalic(dimmed)
+        for column in range(item.columnCount()):
+            item.setForeground(column, QBrush(dim_text_colour()) if dimmed else QBrush())
+            item.setFont(column, font)
+        if dimmed:
+            return
+        missing_key = item.text(HEADER_INDEX['Original Key']) == 'Unknown'
+        if missing_key or item.text(HEADER_INDEX['Original BPM']) == 'Unknown':
+            item.setForeground(HEADER_INDEX['Original Key'] if missing_key else HEADER_INDEX['Original BPM'],
+                               QBrush(QColor('darkorange')))
 
     def _add_to_playlist(self, row):
         path = canonical_path(row.get('File_Path'))

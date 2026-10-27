@@ -140,6 +140,7 @@ class ColorSearchGuiTests(unittest.TestCase):
         self.window.advanced_filters=[{'column':'Rating','condition':'at least (>=)','value':'4'}]
         self.window.search_bar.setText('tribal color:red,orange,blue')
         self.assertEqual(self.visible(),{'tribal red','tribal blue'})
+        self.window.hide_playlist_action.setChecked(True)  # View > Hide playlist tracks in the library
         self.window._add_to_playlist(self.window.table.iloc[0])
         self.window.filter_items()
         self.assertEqual(self.visible(),{'tribal blue'})

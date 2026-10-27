@@ -4,6 +4,22 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.14.0] - 2026-10-27
+
+- **Playlist tracks stay in the library list**, dimmed and in italics, so a search finds them.
+  Previously they were hidden without notice, so a search for an artist could miss a track that
+  was on the playlist. *View → Hide playlist tracks in the library* restores the old
+  set-building behaviour; the status bar then says how many matches are hidden.
+- **Active Advanced Search is visible:** the button reads e.g. *Advanced Search (2 active)*,
+  highlighted, with the filters in its tooltip, and the status bar says *Advanced Search is on*.
+
+## [4.13.0] - 2026-10-27
+
+- **Drop a track on the similarity map to select it**, e.g. from the playlist. A track the list
+  does not show (a playlist track, or one filtered out) appears as a reference dot with label and
+  details; its closest matches come from the list. Selecting another dot removes the reference.
+  Tracks that are not analysed yet are reported in the status line.
+
 ## [4.12.0] - 2026-10-27
 
 - **Folders can be dropped** on the library or playlist (or the window): all MP3, WAV and FLAC files
