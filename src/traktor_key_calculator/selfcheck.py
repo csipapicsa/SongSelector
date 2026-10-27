@@ -171,19 +171,28 @@ def run():
             assert find(window.candidate_tree,real_path).text(HEADER_INDEX['Original Key'])=='B minor'
             assert find(window.candidate_tree,real_path).text(HEADER_INDEX['Color'])==str(expected_color)
             real_checked=True
+        library_rows=len(window.table)
+        playlist_rows=window.playlist_tree.topLevelItemCount()
         window.close()
         window=None
         application.processEvents()
         restored=TraktorKeyCalculator()
         assert canonical_path(fixture) in restored.saved_imports
         assert find(restored.candidate_tree,fixture).text(HEADER_INDEX['Original Key'])=='C major'
+        assert restored.library_store.path.is_file()
+        assert len(restored.table)==library_rows,'Library list was not restored'
+        assert restored.playlist_tree.topLevelItemCount()==playlist_rows,'Playlist was not restored'
+        assert any(action.text()=='Delete duplicates from the list' for action in restored.library_context_menu().actions())
+        assert restored.delete_duplicate_tracks()==0
         restored.close()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
                 'drop_events':True,'duplicates':True,'playlist_key_at_150_bpm':'G major',
                 'imports_survive_restart':True,'real_open_key_mp3':real_checked,
                 'traktor_category_colors':True,'key_colors_follow_tempo':True,'painted_color_dot':True,'numeric_search_comparisons':True,
                 'ratings_visible_and_searchable':True,'existing_library_ratings':library_ratings,
-                'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True}
+                'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
+                'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
+                'delete_duplicates_menu':True}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}

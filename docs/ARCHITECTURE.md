@@ -43,7 +43,8 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `key_tables.py` | Static key lookup tables (also contains unused leftovers from the thesis project) |
 | `audio_metadata.py` | Read ID3 / FLAC / WAV tags with mutagen into `config.AudioMetadata` |
 | `traktor_collection.py` | Read-only, cached index of Traktor's `collection.nml`; lookup by exact path, then by unique filename + file size |
-| `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `enrich_ratings`; `ImportedTrackStore` saves imports to JSON atomically |
+| `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
+| `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded) and the saved Library / Playlist lists |
 | `data_manager.py` | Loads the library CSV (bundled `data/music_test.csv` by default) into a pandas DataFrame |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
@@ -63,14 +64,14 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 ## Data flow
 
 ```text
-data/music_test.csv ─┐
-                     ├─> DataFrame (window.table) ──> _track_item() per row ──> tree rows
-imported_tracks.json ┘                                  │
-                                                        └─ KeyCalculator at slider BPM
+start ──> library.sqlite: saved 'Library' list ──> DataFrame (window.table) ──> _track_item() per row ──> tree rows
+          (first start only: data/music_test.csv          │                        │
+           + imported_tracks.json)                        │                        └─ KeyCalculator at slider BPM
+                                                          └─ saved 'Playlist' list ──> left panel
 Dropped audio file ──> TrackImporter.read()
                          ├─ tags (mutagen)
                          └─ fallback: TraktorCollection.find()  (key, BPM, color, rating)
-                       ──> merge_tracks() into window.table ──> ImportedTrackStore.save()
+                       ──> merge_tracks() into window.table ──> LibraryStore.save_list('Library')
 ```
 
 - **Library CSV columns** used: `Artist, Title, File_Path, Comment, BPM, Color,
@@ -81,6 +82,10 @@ Dropped audio file ──> TrackImporter.read()
   per tempo.
 - **Duplicates:** rows are matched by `canonical_path()` (normalised, case-folded
   Windows path). Dropping a file again updates its row instead of adding one.
+  Rows with a repeated path can still come from a loaded CSV. *Right-click →
+  Delete duplicates from the list* removes them (`drop_duplicate_paths`), keeping
+  the first row. Wherever a path occurs more than once, the **first row wins**:
+  `_rows_by_path`, `LibraryStore.upsert_tracks` and dedupe all follow this rule.
 
 ## Persistence
 
@@ -91,9 +96,36 @@ Dropped audio file ──> TrackImporter.read()
 3. `<repo>/.appdata` when running from a source checkout
 4. `~/.traktor_key_calculator` otherwise
 
-It holds `SpotNextTrack_settings.json` (the name is historical and kept for
-compatibility with existing installs) and `imported_tracks.json`. Settings are
-written in `closeEvent`.
+It holds:
+
+| File | Content | Written |
+|---|---|---|
+| `SpotNextTrack_settings.json` | UI settings (name is historical, kept for existing installs) | on close |
+| `library.sqlite` | Collection + saved lists (see below) | on every list change |
+| `imported_tracks.json` | Imports saved by versions ≤ 4.5.0 | never; read once, kept as a backup |
+
+### library.sqlite
+
+Modelled on how Traktor and Rekordbox separate the collection from playlists:
+
+- `tracks`: **the collection**, every track the app has ever loaded, one row per
+  `path_key` (= `canonical_path(file_path)`). Known fields have their own columns
+  so they can be queried and indexed. Any other field (`Key_Source`, CSV extras,
+  ...) goes in the JSON `extra` column, so no field is lost. Tracks are never
+  deleted when they leave a list.
+- `lists` + `list_tracks`: **saved lists**, ordered `path_key`s per list name.
+  `Library` = right panel, `Playlist` = left panel. More playlists can be added
+  later without a schema change.
+- `meta`: `schema_version` (currently 1). Bump it and add a migration when the
+  schema changes.
+
+On start, the window restores both lists (`_restore_lists`). Only on the very
+first start, when no `Library` list exists yet, is the library built from
+`data/music_test.csv` plus the old `imported_tracks.json`. After that, *Refresh*
+rebuilds the list from those sources on request, and *Load CSV* replaces it.
+SQLite was chosen after measuring on the real 5,100-track library: loading it
+takes 10 ms in SQLite vs 18 ms in JSON, and updating one track 0.1 ms vs
+22 ms, because JSON rewrites the whole file. Writes are transactional.
 
 ## External files: read-only by design
 

@@ -9,8 +9,9 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 - Drag and drop MP3/WAV/FLAC import, reading BPM, key, rating, etc. from file tags
 - Missing metadata filled in from Traktor's `collection.nml` (read-only)
 - Traktor category colors, key colors, text, numeric, rating and color search
+- Library and playlist are restored on restart; *right-click → Delete duplicates from the list*
 
-Current version: **4.5.0** (see [CHANGELOG.md](CHANGELOG.md)).
+Current version: **4.6.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Quick start (development)
 
@@ -39,11 +40,12 @@ itself**:
 | File | Content |
 |---|---|
 | `SpotNextTrack_settings.json` | Column visibility, search settings, tempo, coloring |
-| `imported_tracks.json` | Metadata of tracks imported by drag and drop |
+| `library.sqlite` | Every track ever loaded, plus the last saved Library and Playlist lists |
+| `imported_tracks.json` | Imports from versions ≤ 4.5.0; read once on the first 4.6 start, then kept as a backup |
 
 To upgrade an existing installation, put the new exe in the same folder as these
-two files (or copy them next to it). Audio files and the Traktor collection are
-only ever read, never written.
+files (or copy them next to it). Audio files and the Traktor collection are only
+ever read, never written.
 
 Release checklist:
 
@@ -80,7 +82,7 @@ Known issues and planned work are in [docs/BACKLOG.md](docs/BACKLOG.md).
 
 ## Tests
 
-`.\scripts\test.ps1` runs 40 tests, including headless Qt GUI tests. Two tests
+`.\scripts\test.ps1` runs 50 tests, including headless Qt GUI tests. Two tests
 also use real files on the original developer machine (`E:\DJ\...`) and are
 skipped automatically when those files are absent. Pass pytest options through,
 e.g. `.\scripts\test.ps1 -k color`.

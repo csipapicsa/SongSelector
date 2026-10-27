@@ -11,6 +11,7 @@ from traktor_key_calculator.core.key_formats import parse_key, parse_bpm, nml_ke
 from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
 from traktor_key_calculator.core.track_import import TrackImporter, ImportedTrackStore, merge_tracks
 from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
+from traktor_key_calculator.core.library_store import LibraryStore
 
 
 def tagged_file(path, key='C', bpm='100'):
@@ -290,7 +291,7 @@ class ColorGuiTests(unittest.TestCase):
         self.window=TraktorKeyCalculator()
         self.window.coloring_mode='song'
         self.window.importer=TrackImporter(self.collection)
-        self.window.imported_store=ImportedTrackStore(self.root/'saved-imports.json')
+        self.window.library_store=LibraryStore(self.root/'library.sqlite')
         self.window.saved_imports={}
         self.window.table=pd.DataFrame()
         self.window.bpm_slider.setValue(100)

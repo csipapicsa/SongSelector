@@ -13,6 +13,19 @@ CHANGELOG when they ship.
 - [ ] "Key at Master BPM" column inside Traktor itself: investigated 2026-10-14, not feasible
       directly (the desktop browser is a native control). See `docs/history/`.
 - [ ] Replace the bundled `music_test.csv` with a library built from the user's own collection.
+- [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
+- [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
+- [ ] Audio embeddings (PANNs CNN14, 5 s chunks) for every track. See `docs/research/audio_embeddings.md`.
+
+## Performance (measured on 5,105 tracks, 2026-10-27)
+
+- [ ] Startup ~1.7 s: building the tree rows ~1.2 s (`populate_tree` / `_track_item`) and parsing
+      `collection.nml` ~1.1 s (`TraktorCollection._load`); the two overlap in the profile. Loading the
+      list from SQLite is only ~0.05 s. Options: QTreeView with a model instead of QTreeWidget items;
+      cache the NML index keyed by the file's mtime.
+- [ ] `_rows_by_path` uses `DataFrame.iterrows` (~0.5 s on 5k rows); use vectorised lookups.
+- [ ] Saving the library list after each import rewrites all 5k tracks (~0.2 s); upsert only the
+      changed tracks and rewrite only the list order.
 
 ## Code health
 

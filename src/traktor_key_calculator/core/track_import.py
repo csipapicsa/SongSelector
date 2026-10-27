@@ -104,6 +104,19 @@ def merge_tracks(table, records):
     return result
 
 
+def drop_duplicate_paths(table):
+    """Remove rows whose file path repeats an earlier row; returns (table, removed count).
+
+    Paths are compared with canonical_path, so case and slash differences count as
+    the same file (as on Windows). The first occurrence is kept.
+    """
+    if table is None or table.empty or 'File_Path' not in table:
+        return table, 0
+    keys = table['File_Path'].map(canonical_path)
+    duplicated = keys.duplicated() & (keys != '')
+    return table.loc[~duplicated].reset_index(drop=True), int(duplicated.sum())
+
+
 def enrich_ratings(table, collection):
     """Fill absent CSV ratings from exact collection paths without reading audio files."""
     result = table.copy()
@@ -120,7 +133,8 @@ def enrich_ratings(table, collection):
     ratings = result.loc[missing, 'File_Path'].map(
         lambda path: collection.by_path.get(canonical_path(path), {}).get('rating'))
     # Only exact paths match: identically named songs must never receive another song's rating.
-    result.loc[missing, 'Rating'] = ratings
+    # Numeric (NaN for unrated) so it also fits a float Rating column loaded from the store.
+    result.loc[missing, 'Rating'] = pd.to_numeric(ratings, errors='coerce')
     return result
 
 

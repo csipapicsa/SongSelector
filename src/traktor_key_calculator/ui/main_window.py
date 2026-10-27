@@ -6,6 +6,7 @@ Main window for the Traktor Key Calculator
 # When song is selected and it is not available then RED
 import os
 import json
+import sqlite3
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QLabel, QPushButton, QFileDialog, QTreeWidgetItem,
                             QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
@@ -28,7 +29,9 @@ from traktor_key_calculator.ui.music_paths_dialog import MusicPathsDialog
 from traktor_key_calculator.ui.coloring_dialog import ColoringDialog
 from pathlib import Path
 import pandas as pd
-from traktor_key_calculator.core.track_import import TrackImporter, ImportedTrackStore, merge_tracks, enrich_ratings
+from traktor_key_calculator.core.track_import import (TrackImporter, ImportedTrackStore, merge_tracks,
+                                                      enrich_ratings, drop_duplicate_paths)
+from traktor_key_calculator.core.library_store import LibraryStore, LIBRARY_LIST, PLAYLIST_LIST
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
 from traktor_key_calculator.core.search_filters import matches_condition
@@ -102,8 +105,6 @@ class TraktorKeyCalculator(QMainWindow):
 
         
         self.playlist_paths = set()
-        self.imported_store = ImportedTrackStore(Path(SETTINGS_FILE).with_name('imported_tracks.json'))
-        self.saved_imports = self.imported_store.load()
         collection_path = self.settings.get('Traktor collection') or discover_collection()
         self.settings['Traktor collection'] = collection_path
         self.importer = TrackImporter(collection_path)
@@ -112,11 +113,12 @@ class TraktorKeyCalculator(QMainWindow):
         # Initialize UI
         self.init_ui()
         self._init_import_menu()
-        
-        # Load data
-        self.table = self._load_library(self.data_manager.load_default_data())
-        
-        # Populate the tree
+
+        # Load data: restore both panels as they were last saved
+        self.library_store = LibraryStore(Path(SETTINGS_FILE).with_name('library.sqlite'))
+        self.saved_imports = {}
+        self.table = pd.DataFrame()
+        self._restore_lists()
         self.populate_tree()
 
     def apply_row_shading_from_color(self, item):
@@ -327,10 +329,12 @@ class TraktorKeyCalculator(QMainWindow):
         
         # Buttons
         self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.setToolTip('Rebuild the library list from the default CSV plus all imported tracks')
         self.refresh_button.clicked.connect(self.refresh_data)
         control_layout.addWidget(self.refresh_button)
         
         self.load_csv_button = QPushButton("Load CSV")
+        self.load_csv_button.setToolTip('Replace the library list with a CSV file plus all imported tracks')
         self.load_csv_button.clicked.connect(self.load_csv)
         control_layout.addWidget(self.load_csv_button)
         
@@ -379,6 +383,10 @@ class TraktorKeyCalculator(QMainWindow):
         
         # Connect double-click
         self.candidate_tree.itemDoubleClicked.connect(self.on_item_double_clicked)
+
+        # Right-click menu on library rows
+        self.candidate_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.candidate_tree.customContextMenuRequested.connect(self.show_library_context_menu)
         
         # Add tree to right layout
         right_layout.addWidget(self.candidate_tree)
@@ -462,12 +470,14 @@ class TraktorKeyCalculator(QMainWindow):
             row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
             if row is not None:
                 self._add_to_playlist(row)
+        self._save_playlist()
         self.filter_items()
 
-    
+
     def clear_playlist(self):
         self.playlist_tree.clear()
         self.playlist_paths.clear()
+        self._save_playlist()
         self.filter_items()
         self.status_label.setText('Playlist cleared')
 
@@ -687,9 +697,85 @@ class TraktorKeyCalculator(QMainWindow):
         merged = merge_tracks(table, self.saved_imports.values())
         return enrich_ratings(merged, self.importer.collection)
 
+    def _restore_lists(self):
+        """Load the library and playlist saved at the last change.
+
+        On the first start (no saved library list yet) the library is built from the
+        default CSV plus imports saved by versions up to 4.5.0 in imported_tracks.json.
+        That file is only read, and is kept as a backup.
+        """
+        try:
+            if self.library_store.track_count() == 0:
+                legacy = ImportedTrackStore(Path(SETTINGS_FILE).with_name('imported_tracks.json')).load()
+                self.library_store.upsert_tracks(legacy.values())
+            self.saved_imports = self.library_store.imported_tracks()
+            saved_library = self.library_store.load_list(LIBRARY_LIST)
+            saved_playlist = self.library_store.load_list(PLAYLIST_LIST) or []
+        except sqlite3.Error as error:
+            # Never overwrite the saved lists after a failed read; run without them.
+            self.status_bar.showMessage(f'Could not read {self.library_store.path}: {error}')
+            self.table = self._load_library(self.data_manager.load_default_data())
+            return
+        if saved_library is None:
+            self.table = self._load_library(self.data_manager.load_default_data())
+            self._save_library()
+        else:
+            self.table = enrich_ratings(pd.DataFrame(saved_library), self.importer.collection)
+        self.data_manager.table = self.table
+        for record in saved_playlist:
+            self._add_to_playlist(record)
+
+    def _save_list(self, name, records):
+        """Persist one list; returns an error message, or '' on success."""
+        try:
+            self.library_store.save_list(name, records)
+            return ''
+        except (sqlite3.Error, OSError) as error:
+            message = f'Could not save the {name.lower()} list: {error}'
+            self.status_bar.showMessage(message)
+            return message
+
+    def _save_library(self):
+        return self._save_list(LIBRARY_LIST, self.table.to_dict('records') if self.table is not None else [])
+
+    def _save_playlist(self):
+        keys = [canonical_path(self.playlist_tree.topLevelItem(i).text(HEADER_INDEX['Path']))
+                for i in range(self.playlist_tree.topLevelItemCount())]
+        records = {}
+        if self.table is not None and 'File_Path' in self.table:
+            subset = self.table[self.table['File_Path'].map(canonical_path).isin(keys)]
+            for row in subset.to_dict('records'):
+                records.setdefault(canonical_path(row['File_Path']), row)
+        return self._save_list(PLAYLIST_LIST, [records[key] for key in keys if key in records])
+
+    def delete_duplicate_tracks(self):
+        """Remove library rows whose path repeats an earlier row. Files on disk are untouched."""
+        self.table, removed = drop_duplicate_paths(self.table)
+        error = ''
+        if removed:
+            self.data_manager.table = self.table
+            error = self._save_library()
+            self.populate_tree()
+        message = (f'Removed {removed} duplicate row(s) from the list; files on disk were not changed'
+                   if removed else 'No duplicate paths in the list')
+        self.status_label.setStyleSheet('color: red; font-weight: bold;' if error else 'color: green; font-weight: bold;')
+        self.status_label.setText(error or message)
+        return removed
+
+    def library_context_menu(self):
+        menu = QMenu(self)
+        delete_duplicates = menu.addAction('Delete duplicates from the list')
+        delete_duplicates.setToolTip('Remove rows with the same file path. Files on disk are not deleted.')
+        delete_duplicates.triggered.connect(self.delete_duplicate_tracks)
+        return menu
+
+    def show_library_context_menu(self, pos):
+        self.library_context_menu().exec_(self.candidate_tree.viewport().mapToGlobal(pos))
+
     def refresh_data(self):
-        """Reload data and refresh the tree"""
+        """Rebuild the library list from the default CSV plus all imported tracks"""
         self.table = self._load_library(self.data_manager.load_default_data())
+        self._save_library()
         self.populate_tree()
         
         # Re-apply current sort
@@ -706,6 +792,7 @@ class TraktorKeyCalculator(QMainWindow):
             result = self.data_manager.load_csv(file_path)
             if result is not None:
                 self.table = self._load_library(result)
+                self._save_library()
                 self.populate_tree()
                 
                 # Re-apply current sort
@@ -820,6 +907,7 @@ class TraktorKeyCalculator(QMainWindow):
 
     def closeEvent(self, event):
         """Save settings before closing the app"""
+        self._save_playlist()
         HEADER_LABELS = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
 
         # Save visible columns
@@ -895,6 +983,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.importer = importer
         self.settings['Traktor collection'] = path
         self.table = enrich_ratings(self.table, importer.collection)
+        self._save_library()
         self.populate_tree()
         self.status_label.setText(f'Linked {len(importer.collection.by_path)} Traktor tracks')
         self.status_bar.showMessage(path)
@@ -936,11 +1025,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.saved_imports.update(records)
         self.table = merge_tracks(self.table, records.values())
         self.data_manager.table = self.table
-        persistence_error = ''
-        try:
-            self.imported_store.save(self.saved_imports)
-        except (OSError, ValueError) as error:
-            persistence_error = f'Could not save imported tracks: {error}'
+        persistence_error = self._save_library()
         # A dropped file should be immediately visible even if a previous filter excluded it.
         self.search_bar.clear()
         self.current_advanced_search['enabled'] = False
@@ -949,6 +1034,7 @@ class TraktorKeyCalculator(QMainWindow):
         if to_playlist:
             for record in records.values():
                 self._add_to_playlist(record)
+            persistence_error = self._save_playlist() or persistence_error
             self.filter_items()
         else:
             first_path = next(iter(records))
@@ -985,8 +1071,13 @@ class TraktorKeyCalculator(QMainWindow):
             return str(value)
 
     def _rows_by_path(self):
-        return {canonical_path(row.get('File_Path')): row for _, row in self.table.iterrows()
-                if canonical_path(row.get('File_Path'))}
+        """Rows by canonical path; for a duplicated path the first row wins."""
+        rows = {}
+        for _, row in self.table.iterrows():
+            key = canonical_path(row.get('File_Path'))
+            if key:
+                rows.setdefault(key, row)
+        return rows
 
     def _track_item(self, row, item=None):
         item = item if item is not None else QTreeWidgetItem()

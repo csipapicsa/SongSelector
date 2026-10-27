@@ -4,6 +4,20 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.6.0] - 2026-10-27
+
+- **Library and playlist are remembered.** New `library.sqlite` next to the settings
+  holds the app's own collection (every track ever loaded) and the saved Library
+  (right) and Playlist (left) lists. Both panels are restored on start.
+- First start migrates `imported_tracks.json` into the collection. The JSON file is
+  left untouched as a backup and is no longer written.
+- **Right-click → Delete duplicates from the list** in the library panel removes rows
+  with the same file path (case- and slash-insensitive), keeping the first.
+  Only the list changes; files on disk are never deleted.
+- Where a path occurs more than once, the first row is now used consistently
+  (previously the last row won when adding to the playlist).
+- Refresh and Load CSV tooltips explain that they rebuild or replace the library list.
+
 ## [4.5.0] - 2026-10-27
 
 Repository set up as a maintained project. App behavior is identical to the
