@@ -5,8 +5,9 @@
          executes traktor_key_calculator.selfcheck inside the frozen app.
       2. Native smoke test: starts the exe normally, waits for its real window,
          checks it responds, closes it and expects exit code 0.
-    Both stages use a throwaway data directory under build\verify\, so your real
-    settings and imported tracks are never touched.
+    Both stages use a throwaway data directory under %TEMP%\traktor-key-calculator-verify\,
+    so your real settings and imported tracks are never touched (and the exe unpacks there,
+    not on the project's disk).
 .PARAMETER Exe
     Path to the exe. Defaults to the newest dist\TraktorKeyCalculator-*.exe.
 .PARAMETER Model
@@ -25,7 +26,10 @@ if (-not $Exe) {
     $Exe = $found.FullName
 }
 $Exe = (Resolve-Path -LiteralPath $Exe).Path
-$runDir = Join-Path $root ('build\verify\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+# Long form of the temp folder: $env:TEMP can be an 8.3 short path (C:\Users\GERGOG~1\...),
+# which the app's path comparisons do not treat as the same folder.
+$tempRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'
+$runDir = Join-Path $tempRoot ('traktor-key-calculator-verify\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $runDir | Out-Null
 Write-Host "Verifying $Exe"
 Write-Host "Results in $runDir"
@@ -104,7 +108,7 @@ public static class TkcNativeWindow {
     # The one-file bootloader starts a child process that owns the window.
     $ownedIds = @($process.Id)
     try {
-        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        $deadline = [DateTime]::UtcNow.AddSeconds(60)  # a one-file exe unpacks first; slow on a busy disk
         $window = [IntPtr]::Zero
         do {
             $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" | ForEach-Object { [int]$_.ProcessId })

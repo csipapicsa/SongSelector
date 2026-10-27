@@ -6,7 +6,7 @@ CHANGELOG when they ship.
 ## Product
 
 - [ ] Show file details outside the main window (noted as "next step" in the v4 source `info.txt`).
-- [ ] Status messages use inconsistent colors (v4 `info.txt`: "some messages are green red whatever").
+- [x] Status messages use inconsistent colors: one theme-aware set since 4.10.0.
 - [ ] Make the Traktor collection path a visible setting. The default
       `E:\DJ\TRAKTOR\collection.nml` is hard-coded in `core/traktor_collection.py`.
 - [ ] Follow Traktor's live master BPM (idea only; nothing exists yet).
@@ -16,7 +16,15 @@ CHANGELOG when they ship.
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
 - [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
-- [ ] **Track similarity** from the embeddings (next step). Derive compact per-track vectors
+- [ ] **Similarity view (next task, requested 2026-10-27).** A second main view, switched with
+      the library list (View menu / toggle button): every track of the *filtered* library as a
+      dot in 2D (3D later), placed so that similar tracks (embeddings) are close together.
+      Dot colour: Song Selector colour first, then Traktor colour. Hover tooltip with fields
+      chosen in Settings (artist, title, genre, comment, colour, rating, ...). Optional edges:
+      same tempo-adjusted key, harmonic jumps (Mixed In Key table: perfect, ±1, energy boost,
+      scale change, diagonal, Jaws, mood shifter), same colour or rating. Reuse the harmonic
+      mixing calculator from the master thesis project.
+- [ ] **Track similarity** from the embeddings (the basis of the view above). Derive compact per-track vectors
       (e.g. mean / mean+std over time, or PCA fitted on the library) from `embeddings.sqlite`;
       the stored full-resolution data allows trying several methods without re-analysis.
 - [ ] Optional GPU exe flavour (onnxruntime-gpu or onnxruntime-directml) or a "download GPU

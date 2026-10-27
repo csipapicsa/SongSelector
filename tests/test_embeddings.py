@@ -92,6 +92,38 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(np.array_equal(decode(blob, 60), matrix.astype(np.float16)))
         self.assertLess(len(blob), matrix.astype(np.float16).nbytes / 3)
 
+    def test_gpu_batches_have_a_fixed_shape_and_padding_is_removed(self):
+        class StubSession:
+            shapes = []
+
+            def run(self, _outputs, feeds):
+                batch = feeds['audio']
+                StubSession.shapes.append(batch.shape)
+                return [np.repeat(batch[:, :1], EMBEDDING_DIM, axis=1)]  # row value = first sample
+
+        embedder = Cnn14Embedder.__new__(Cnn14Embedder)
+        embedder.session, embedder.input_name, embedder.batch_size = StubSession(), 'audio', 8
+        audio = np.zeros(10 * CHUNK_SAMPLES, dtype=np.float32)
+        audio[::CHUNK_SAMPLES] = np.arange(1, 11)  # first sample of chunk i is i + 1
+        matrix = embedder.embed(audio)
+        self.assertEqual(matrix.shape, (10, EMBEDDING_DIM))
+        self.assertEqual(list(matrix[:, 0]), list(range(1, 11)))
+        self.assertEqual(StubSession.shapes, [(8, CHUNK_SAMPLES), (8, CHUNK_SAMPLES)])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows priority classes')
+    def test_analysis_process_has_below_normal_cpu_and_very_low_io_priority(self):
+        import subprocess, sys
+        code = ('import ctypes; from ctypes import wintypes; '
+                'from traktor_key_calculator.core.embeddings import _lower_process_priority; '
+                '_lower_process_priority(); k = ctypes.WinDLL("kernel32"); '
+                'k.GetCurrentProcess.restype = wintypes.HANDLE; k.GetPriorityClass.argtypes = (wintypes.HANDLE,); '
+                'io = ctypes.c_ulong(); ctypes.WinDLL("ntdll").NtQueryInformationProcess('
+                'wintypes.HANDLE(-1), 33, ctypes.byref(io), 4, None); '  # 33 = ProcessIoPriority
+                'print(k.GetPriorityClass(k.GetCurrentProcess()), io.value)')
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1] / 'src'))
+        result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.stdout.split(), [str(0x4000), '0'], result.stderr)  # below normal, very low I/O
+
     def test_store_results_errors_and_fingerprints(self):
         store = EmbeddingStore(self.root / 'embeddings.sqlite')
         store.save('a', (1, 2), np.ones((3, EMBEDDING_DIM)))

@@ -118,6 +118,9 @@ class LibraryStore:
     @staticmethod
     def _migrate(connection):
         """Bring an older database up to SCHEMA_VERSION (new databases already are)."""
+        row = connection.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        if row is not None and row[0] == str(SCHEMA_VERSION):
+            return  # up to date: no write (this runs on every connection)
         existing = {row[1] for row in connection.execute('PRAGMA table_info(tracks)')}
         with connection:
             for column, kind in (('ss_rating', 'REAL'), ('ss_color', 'INTEGER')):  # 1 -> 2

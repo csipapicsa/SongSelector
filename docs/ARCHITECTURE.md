@@ -168,7 +168,16 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   of the values are exactly 0. A 6-minute track takes ~50 KB. WAL mode lets the
   UI read while the process writes.
 - **Device:** CUDA, then DirectML, then CPU, whichever the installed onnxruntime
-  supports. The GPU uses batches of 16 chunks. See README → GPU.
+  supports. The default package is `onnxruntime-directml`. Batch sizes are per device
+  (`BATCH_SIZES`), and batches are padded to a fixed shape, because GPU providers re-plan
+  the model for every new input shape.
+- **Background process:** `_lower_process_priority` uses `PROCESS_MODE_BACKGROUND_BEGIN`
+  (very low I/O priority) and then `BELOW_NORMAL_PRIORITY_CLASS`, in that order (background
+  mode resets the class). The ctypes argument types must be declared, or the 64-bit
+  process handle is truncated and the call silently fails.
+- **Disk writes:** the process keeps one connection (`EmbeddingStore(keep_open=True)`) with
+  `synchronous=NORMAL`, so it syncs at WAL checkpoints only. UI-side stores open and close a
+  connection per call, so no file stays locked.
 - `launcher.py` calls `multiprocessing.freeze_support()` first and `__main__.py`
   has a `__name__` guard, because the spawned process re-imports the entry module.
 
@@ -180,6 +189,13 @@ PyInstaller's build step, and the old DLLs would end up in the exe.
 `scripts/update_qt_msvc_runtime.ps1` (run by `setup.ps1`, checked by `build.ps1`)
 replaces them with the system's current v14 runtime, which Microsoft keeps
 backward compatible.
+
+### Theme
+
+`ui/theme.py`: Qt Fusion style with a dark (default) or light palette, `apply_theme` works
+at runtime. Status messages must use `status_style('info'|'ok'|'warning'|'error')`, never
+fixed colours, so they stay readable on both backgrounds. Row tint opacity comes from
+`row_tint_alpha()`.
 
 ## External files
 

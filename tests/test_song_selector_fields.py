@@ -385,3 +385,52 @@ class DefaultModelTests(GuiTestBase):
             chosen.write_bytes(b'x')
             window.settings['Embedding model'] = str(chosen)
             self.assertEqual(window.embedding_model_path(), chosen)
+
+
+class MissingFilesGuiTests(GuiTestBase):
+    def setUp(self):
+        super().setUp()
+        self.gone = self.root / 'gone.mp3'  # never created: a moved or deleted file
+        self.library = pd.DataFrame([track(self.song, 'Song'), track(self.gone, 'Gone'), track(self.other, 'Other')])
+
+    @staticmethod
+    def titles(tree):
+        return sorted(tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount()))
+
+    def test_library_removes_only_missing_files_after_confirmation_even_if_filtered_out(self):
+        from PyQt5.QtWidgets import QMessageBox
+        window = self.window()
+        window.search_bar.setText('Song')  # 'Gone' is hidden by the search but still removed
+        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes) as ask:
+            self.menu_action(window.library_context_menu(), 'Remove missing files from the list').trigger()
+        self.assertIn('1 missing file(s)', ask.call_args[0][2])
+        self.assertEqual(self.titles(window.candidate_tree), ['Other', 'Song'])
+        self.assertEqual(self.titles(self.restart(window).candidate_tree), ['Other', 'Song'])
+
+    def test_playlist_removes_missing_files_and_reports_when_there_are_none(self):
+        window = self.window()
+        for title in ('Song', 'Gone'):
+            window.candidate_tree.setCurrentItem(self.item(window.candidate_tree, title))
+            window.add_selected_to_playlist()
+        self.assertEqual(window.remove_missing_tracks(window.playlist_tree), 1)
+        self.assertEqual(self.titles(window.playlist_tree), ['Song'])
+        self.assertEqual(window.remove_missing_tracks(window.playlist_tree), 0)
+        self.assertEqual(window.status_label.text(), 'No missing files in the list')
+
+
+class ThemeTests(GuiTestBase):
+    def test_dark_theme_by_default_and_switchable_at_runtime(self):
+        from PyQt5.QtGui import QPalette
+        from PyQt5.QtWidgets import QApplication
+        from traktor_key_calculator.ui.theme import status_style
+        window = self.window()
+        palette = QApplication.instance().palette()
+        self.assertLess(palette.color(QPalette.Window).lightness(), 80)  # dark grey
+        self.assertTrue(window.dark_theme_action.isChecked())
+        self.assertIn('#ff7b72', status_style('error'))
+        window.dark_theme_action.setChecked(False)
+        self.assertGreater(QApplication.instance().palette().color(QPalette.Window).lightness(), 180)
+        self.assertEqual(window.settings['Theme'], 'light')
+        self.assertIn('#cf222e', status_style('error'))
+        self.assertEqual(status_style('info'), 'font-weight: normal;')
+        window.dark_theme_action.setChecked(True)  # leave the shared QApplication dark

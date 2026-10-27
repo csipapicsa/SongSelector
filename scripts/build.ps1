@@ -19,7 +19,10 @@ if (& $python -c "import importlib.util as u; print(bool(u.find_spec('onnxruntim
 
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:PYTHONHASHSEED = '0'
-$env:PYINSTALLER_CONFIG_DIR = Join-Path $root 'build\pyinstaller-cache'
+# Intermediate files (hundreds of MB) go to the system temp folder, not next to the
+# project: keeps the build off slow or busy data disks. Only the exe lands in dist\.
+$work = Join-Path $env:TEMP 'traktor-key-calculator-build'
+$env:PYINSTALLER_CONFIG_DIR = Join-Path $work 'pyinstaller-cache'
 
 Push-Location $root
 try {
@@ -28,7 +31,7 @@ try {
     $ErrorActionPreference = 'Continue'
     & $python -B -m PyInstaller --noconfirm --clean `
         --distpath (Join-Path $root 'dist') `
-        --workpath (Join-Path $root 'build') `
+        --workpath $work `
         (Join-Path $root 'packaging\TraktorKeyCalculator.spec')
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
     $ErrorActionPreference = 'Stop'

@@ -13,7 +13,8 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
   (never files); *right-click → Delete duplicates from the list*
 - Your own *Rating - Song Selector* and *Color - Song Selector*, independent of Traktor (right-click to set)
 - Edit Artist / Title / Genre / Comment; the change is written into the audio file's tags
-- Background audio embeddings (CNN14, one vector per 5 s) for every library track, CPU or NVIDIA GPU
+- Background audio embeddings (CNN14, one vector per 5 s) for every library track, on the GPU (DirectML) or CPU
+- Dark grey theme (*View → Dark theme* toggles light)
 
 Current version: **4.7.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
@@ -63,13 +64,14 @@ status bar shows progress, and *Analysis → Analyse embeddings in background* p
 - **Model:** `cnn14.onnx` (327 MB, not in the repo or the exe). Default:
   `E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx` (the DJ mix segmentation project's model).
   A `models\cnn14.onnx` next to the data, or *Analysis → Choose embedding model…*, takes precedence.
-- **Speed (6-minute track):** about 6.4 s on the CPU, about 1.5 s on an NVIDIA
-  GTX 1650 Ti. A first full pass over ~5,000 tracks takes hours, but only once;
+- **Device:** the GPU through DirectML (any DirectX 12 graphics card, no CUDA needed),
+  otherwise the CPU. The status bar shows which one is used.
+- **Speed (6-minute track):** about 1.4 s on a GTX 1650 Ti (0.6 s model + 0.8 s decoding),
+  about 6.4 s on the CPU. A first pass over ~3,000 tracks takes about 1–1.5 h on the GPU;
   later only new or changed files are analysed.
-- **GPU (from source):** see `requirements-gpu.txt`. Install `onnxruntime-gpu==1.22.0`
-  in place of `onnxruntime`, and provide the CUDA 12 / cuDNN 9 DLLs, e.g. by setting
-  `TRAKTOR_CUDA_DLL_DIR` to the `torch\lib` folder of a CUDA PyTorch install.
-  The release exe uses the CPU.
+- **Impact on other programs:** the analysis runs as a Windows background process (low CPU
+  and disk priority), so Traktor or a media player reading the same disk go first.
+- **CUDA (optional, from source):** see `requirements-gpu.txt`. Not needed for speed.
 
 Release checklist:
 

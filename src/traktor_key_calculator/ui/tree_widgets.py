@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QTreeWidget, QTreeWidgetItem, QAbstractItemView,
                              QMessageBox, QApplication)
 
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
+from traktor_key_calculator.ui.theme import status_style
 from traktor_key_calculator.config import HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN
 from traktor_key_calculator.core.audio_metadata import get_file_extension, extract_audio_metadata
 
@@ -137,7 +138,7 @@ class PoolTreeWidget(AudioDropMixin, DraggableTreeWidget):
             return
         path = items[0].text(HEADER_INDEX['Path'])
         missing = not path or not os.path.isfile(path)
-        self.parent_app.status_bar.setStyleSheet('color: red;' if missing else '')
+        self.parent_app.status_bar.setStyleSheet(status_style('error') if missing else '')
         self.parent_app.status_bar.showMessage(f'File not found: {path}' if missing else '')
 
 

@@ -18,7 +18,7 @@ import os
 import queue
 import sqlite3
 import zlib
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -82,10 +82,14 @@ def decode(blob, frames, dim=EMBEDDING_DIM):
     return np.frombuffer(zlib.decompress(blob), dtype=np.float16).reshape(frames, dim)
 
 
-# Fastest first. Which ones exist depends on the installed package: onnxruntime (CPU),
-# onnxruntime-gpu (CUDA, needs CUDA 12 + cuDNN 9 DLLs) or onnxruntime-directml (any DX12 GPU).
+# Fastest first. Which ones exist depends on the installed package: onnxruntime-directml
+# (default; any DirectX 12 GPU, plus CPU), onnxruntime-gpu (CUDA, needs CUDA 12 + cuDNN 9 DLLs)
+# or onnxruntime (CPU only).
 PREFERRED_PROVIDERS = ('CUDAExecutionProvider', 'DmlExecutionProvider', 'CPUExecutionProvider')
-GPU_BATCH_SIZE = 16            # 16 x 5 s chunks; fits easily in 4 GB of video memory
+# 5 s chunks per model call, measured on a GTX 1650 Ti (4 GB), 6-minute track:
+# CUDA batch 16: 0.58 s; DirectML batch 8: 0.58 s (batch 16: 4.2 s); CPU: 5.5 s at any batch
+# size, so 1 there, which also lets a pause take effect sooner.
+BATCH_SIZES = {'CUDAExecutionProvider': 16, 'DmlExecutionProvider': 8, 'CPUExecutionProvider': 1}
 # Folder with CUDA 12 / cuDNN 9 DLLs to use, e.g. ...\site-packages\torch\lib of a CUDA PyTorch.
 CUDA_DLL_DIR_VARIABLE = 'TRAKTOR_CUDA_DLL_DIR'
 
@@ -100,34 +104,46 @@ class Cnn14Embedder:
                 onnxruntime.preload_dlls(directory=os.environ.get(CUDA_DLL_DIR_VARIABLE) or None)
             except Exception:
                 pass
+        available = onnxruntime.get_available_providers()
+        providers = [name for name in PREFERRED_PROVIDERS if name in available] or ['CPUExecutionProvider']
+        try:
+            self.session = onnxruntime.InferenceSession(str(model_path), self._options(onnxruntime, threads),
+                                                        providers=providers)
+        except Exception:
+            if providers == ['CPUExecutionProvider']:
+                raise
+            # e.g. CUDA DLLs missing or no DirectX 12 GPU: fall back to the CPU
+            self.session = onnxruntime.InferenceSession(str(model_path), self._options(onnxruntime, threads),
+                                                        providers=['CPUExecutionProvider'])
+        self.provider = self.session.get_providers()[0]
+        self.input_name = self.session.get_inputs()[0].name
+        self.batch_size = BATCH_SIZES.get(self.provider, 1)
+
+    @staticmethod
+    def _options(onnxruntime, threads):
         options = onnxruntime.SessionOptions()
         # Leave half the CPU to the UI and the rest of the system.
         options.intra_op_num_threads = threads or max(1, (os.cpu_count() or 2) // 2)
         options.inter_op_num_threads = 1
-        available = onnxruntime.get_available_providers()
-        providers = [name for name in PREFERRED_PROVIDERS if name in available] or ['CPUExecutionProvider']
-        try:
-            self.session = onnxruntime.InferenceSession(str(model_path), options, providers=providers)
-        except Exception:
-            if providers == ['CPUExecutionProvider']:
-                raise
-            # e.g. CUDA provider present but its DLLs are missing: fall back to the CPU
-            self.session = onnxruntime.InferenceSession(str(model_path), options, providers=['CPUExecutionProvider'])
-        self.provider = self.session.get_providers()[0]
-        self.input_name = self.session.get_inputs()[0].name
-        # Batching makes a GPU ~2.5x faster; on the CPU it gains nothing, and single
-        # chunks let a pause take effect sooner.
-        self.batch_size = 1 if self.provider == 'CPUExecutionProvider' else GPU_BATCH_SIZE
+        # Required by the DirectML provider; harmless for the others.
+        options.enable_mem_pattern = False
+        options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+        return options
 
     def embed(self, audio, should_stop=lambda: False):
         """(n_chunks, 2048) float32 embeddings of mono 32 kHz audio."""
         chunks = split_chunks(audio)
+        count, size = len(chunks), self.batch_size
+        if size > 1 and count % size:
+            # Every call gets the same shape: GPU providers re-plan the model for each new
+            # input shape. The zero padding is cut off again below.
+            chunks = np.concatenate([chunks, np.zeros((size - count % size, CHUNK_SAMPLES), dtype=np.float32)])
         batches = []
-        for start in range(0, len(chunks), self.batch_size):
+        for start in range(0, len(chunks), size):
             if should_stop():
                 raise Cancelled()
-            batches.append(self.session.run(['embedding'], {self.input_name: chunks[start:start + self.batch_size]})[0])
-        return np.concatenate(batches)
+            batches.append(self.session.run(['embedding'], {self.input_name: chunks[start:start + size]})[0])
+        return np.concatenate(batches)[:count]
 
 
 class EmbeddingStore:
@@ -150,20 +166,42 @@ class EmbeddingStore:
     );
     """
 
-    def __init__(self, path):
+    def __init__(self, path, keep_open=False):
+        """keep_open: hold one connection for the store's lifetime (the analysis process).
+        Otherwise every call opens and closes its own, so no file stays locked."""
         self.path = Path(path)
+        self._keep_open = keep_open
+        self._connection = None
 
     def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        # The UI reads while the background worker writes; WAL lets both proceed.
         connection = sqlite3.connect(self.path, timeout=30)
+        # WAL: the UI reads while the analysis process writes. synchronous=NORMAL: with WAL
+        # this is still crash-safe, but syncs to disk only at checkpoints (every ~1000 pages)
+        # instead of on every commit, which matters on slow SSDs.
         connection.execute('PRAGMA journal_mode=WAL')
+        connection.execute('PRAGMA synchronous=NORMAL')
         connection.executescript(self._SCHEMA)
         return connection
 
+    @contextmanager
+    def _open(self):
+        if not self._keep_open:
+            with closing(self._connect()) as connection:
+                yield connection
+            return
+        if self._connection is None:
+            self._connection = self._connect()
+        yield self._connection
+
+    def close(self):
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
     def fingerprints(self, model=MODEL_ID):
         """{path_key: (size, mtime_ns)} of stored results (embeddings and errors) for a model."""
-        with closing(self._connect()) as connection:
+        with self._open() as connection:
             rows = connection.execute('SELECT path_key, file_size, file_mtime_ns FROM embeddings WHERE model = ?',
                                       (model,)).fetchall()
         return {key: (size, mtime) for key, size, mtime in rows}
@@ -175,7 +213,7 @@ class EmbeddingStore:
         self._write(path_key, fingerprint, model, 0, None, str(error)[:500])
 
     def _write(self, path_key, fingerprint, model, frames, data, error):
-        with closing(self._connect()) as connection, connection:
+        with self._open() as connection, connection:
             connection.execute('INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                                (path_key, model, fingerprint[0], fingerprint[1], SAMPLE_RATE, CHUNK_SECONDS,
                                 frames, EMBEDDING_DIM, ENCODING, data, error,
@@ -183,29 +221,46 @@ class EmbeddingStore:
 
     def load(self, path_key, model=MODEL_ID):
         """(frames, 2048) float16 array, or None if missing or failed."""
-        with closing(self._connect()) as connection:
+        with self._open() as connection:
             row = connection.execute('SELECT frames, dim, data FROM embeddings WHERE path_key = ? AND model = ? '
                                      'AND data IS NOT NULL', (path_key, model)).fetchone()
         return decode(row[2], row[0], row[1]) if row else None
 
     def update_fingerprint(self, path_key, fingerprint):
         """After a tag-only edit the audio is unchanged: keep the embedding current."""
-        with closing(self._connect()) as connection, connection:
+        with self._open() as connection, connection:
             connection.execute('UPDATE embeddings SET file_size = ?, file_mtime_ns = ? WHERE path_key = ?',
                                (fingerprint[0], fingerprint[1], path_key))
 
     def counts(self, model=MODEL_ID):
         """(analysed, failed) number of tracks."""
-        with closing(self._connect()) as connection:
+        with self._open() as connection:
             return connection.execute('SELECT COUNT(data), COUNT(error) FROM embeddings WHERE model = ?',
                                       (model,)).fetchone()
 
 
+BELOW_NORMAL_PRIORITY_CLASS = 0x4000
+PROCESS_MODE_BACKGROUND_BEGIN = 0x00100000
+
+
 def _lower_process_priority():
-    if os.name == 'nt':  # keep the UI and DJ software responsive while analysing
-        import ctypes
-        below_normal = 0x4000
-        ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), below_normal)
+    """Run as a Windows background process: low CPU, disk and memory priority, so
+    the UI, Traktor or a media player reading from the same disk always go first."""
+    if os.name != 'nt':
+        return
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    # Declare the types: without them ctypes passes the 64-bit process handle as a
+    # 32-bit int, and Windows silently ignores the call.
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.SetPriorityClass.restype = wintypes.BOOL
+    process = kernel32.GetCurrentProcess()
+    # Background mode lowers the I/O priority, which a priority class alone does not.
+    # It resets the class to normal, so set below-normal afterwards.
+    kernel32.SetPriorityClass(process, PROCESS_MODE_BACKGROUND_BEGIN)
+    kernel32.SetPriorityClass(process, BELOW_NORMAL_PRIORITY_CLASS)
 
 
 def run_analysis(model_path, store_path, jobs, events, stop, embedder_factory=Cnn14Embedder):
@@ -221,7 +276,7 @@ def run_analysis(model_path, store_path, jobs, events, stop, embedder_factory=Cn
     _lower_process_priority()
     try:
         embedder = embedder_factory(model_path)
-        store = EmbeddingStore(store_path)
+        store = EmbeddingStore(store_path, keep_open=True)
         known = store.fingerprints()
     except Exception as error:
         events.put(('fatal', f'{type(error).__name__}: {error}'))
@@ -253,3 +308,4 @@ def run_analysis(model_path, store_path, jobs, events, stop, embedder_factory=Cn
             status = 'failed'
         known[key] = fingerprint
         events.put(('done', key, status))
+    store.close()  # checkpoints the WAL file back into embeddings.sqlite

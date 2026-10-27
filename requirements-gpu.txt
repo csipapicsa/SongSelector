@@ -1,6 +1,7 @@
-# Optional: run embedding analysis on an NVIDIA GPU when running from source.
-# Replaces the CPU onnxruntime from requirements.txt (the two cannot be installed together):
-#   .venv\Scripts\python.exe -m pip uninstall -y onnxruntime
+# Optional: CUDA instead of DirectML when running from source. Usually not needed:
+# the default onnxruntime-directml already uses the GPU (GTX 1650 Ti: same speed, 0.58 s/track).
+# Replaces onnxruntime-directml from requirements.txt (the two cannot be installed together):
+#   .venv\Scripts\python.exe -m pip uninstall -y onnxruntime-directml
 #   .venv\Scripts\python.exe -m pip install -r requirements-gpu.txt
 #
 # 1.22 is built for CUDA 12, which works with NVIDIA drivers >= 525. Newer releases (1.31)

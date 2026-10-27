@@ -10,7 +10,8 @@ VERSION = re.search(r"__version__ = '([^']+)'", (PACKAGE / '__init__.py').read_t
 
 # Heavy libraries that may exist in the environment but are not used by the app.
 EXCLUDES = ['matplotlib', 'scipy', 'IPython', 'pytest', 'numba', 'llvmlite', 'torch',
-            'tensorflow', 'sklearn', 'jax', 'librosa', 'pyarrow', 'tkinter']
+            'tensorflow', 'sklearn', 'jax', 'librosa', 'pyarrow', 'tkinter',
+            'sympy', 'mpmath']  # onnxruntime needs sympy only for its offline tools
 
 a = Analysis(
     [str(ROOT / 'packaging' / 'launcher.py')],

@@ -37,6 +37,7 @@ from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
 from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
 from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
+from traktor_key_calculator.ui.theme import DEFAULT_THEME, apply_theme, row_tint_alpha, status_style
 from mutagen import MutagenError
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
@@ -134,8 +135,10 @@ class TraktorKeyCalculator(QMainWindow):
         self.setAcceptDrops(True)
 
         # Initialize UI
+        apply_theme(self.settings.get('Theme', DEFAULT_THEME))
         self.init_ui()
         self._init_import_menu()
+        self._init_view_menu()
 
         # Load data: restore both panels as they were last saved
         self.library_store = LibraryStore(Path(SETTINGS_FILE).with_name('library.sqlite'))
@@ -162,7 +165,7 @@ class TraktorKeyCalculator(QMainWindow):
         brush = QBrush()
         if color is not None:
             shaded = QColor(color)
-            shaded.setAlpha(40)
+            shaded.setAlpha(row_tint_alpha())
             brush = QBrush(shaded)
         for column in range(item.columnCount()):
             item.setBackground(column, brush)
@@ -430,7 +433,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.candidate_tree.header().setSectionsMovable(True)
         # self.status_bar.showMessage("Ready")
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: black; font-weight: normal;")
+        self.status_label.setStyleSheet(status_style('info'))
         self.status_bar.addPermanentWidget(self.status_label)
         self.embedding_label = QLabel('')
         self.status_bar.addPermanentWidget(self.embedding_label)
@@ -562,10 +565,10 @@ class TraktorKeyCalculator(QMainWindow):
             item.setHidden(not matches)
         visible = sum(not self.candidate_tree.topLevelItem(i).isHidden()
                       for i in range(self.candidate_tree.topLevelItemCount()))
-        self.status_label.setStyleSheet('color: green; font-weight: bold;')
+        self.status_label.setStyleSheet(status_style('ok'))
         self.status_label.setText(f'Displaying {visible} of {self.candidate_tree.topLevelItemCount()} tracks')
         if color_query.error or ss_color_query.error:
-            self.status_label.setStyleSheet('color: red; font-weight: bold;')
+            self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(color_query.error or ss_color_query.error)
 
 
@@ -633,7 +636,7 @@ class TraktorKeyCalculator(QMainWindow):
             
             # self.status_bar.showMessage(f"Sorting by {column_name} ({direction})...")
             message = f"Sorting by {column_name} ({direction})..."
-            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.status_label.setStyleSheet(status_style('ok'))
             self.status_label.setText(message)
             
             
@@ -703,7 +706,7 @@ class TraktorKeyCalculator(QMainWindow):
             
             # self.status_bar.showMessage(f"Sorted by {column_name} ({direction}). Displaying {visible_count} of {total_count} tracks")
             message = f"Sorted by {column_name} ({direction}). Displaying {visible_count} of {total_count} tracks"
-            self.status_label.setStyleSheet("color: black; font-weight: bold;")
+            self.status_label.setStyleSheet(status_style('info'))
             self.status_label.setText(message)
             
         except Exception as e:
@@ -718,12 +721,12 @@ class TraktorKeyCalculator(QMainWindow):
             os.startfile(file_path)
             self.status_bar.showMessage(f"Opened file: {os.path.basename(file_path)}")
             message = f"Opened file: {os.path.basename(file_path)}"
-            self.status_label.setStyleSheet("color: black;")
+            self.status_label.setStyleSheet(status_style('info'))
             self.status_label.setText(message)
         else:
             self.status_bar.showMessage(f"🔴 File not found: {file_path}")
             message = f"🔴 File not found: {file_path}"
-            self.status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(message)
     
     def _load_library(self, table):
@@ -791,7 +794,7 @@ class TraktorKeyCalculator(QMainWindow):
             self.populate_tree()
         message = (f'Removed {removed} duplicate row(s) from the list; files on disk were not changed'
                    if removed else 'No duplicate paths in the list')
-        self.status_label.setStyleSheet('color: red; font-weight: bold;' if error else 'color: green; font-weight: bold;')
+        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
         self.status_label.setText(error or message)
         return removed
 
@@ -831,6 +834,9 @@ class TraktorKeyCalculator(QMainWindow):
         remove.setToolTip('Removes the rows from this list only. Files on disk are not deleted.')
         remove.setEnabled(bool(paths))
         remove.triggered.connect(lambda: self.remove_selected_tracks(tree))
+        remove_missing = menu.addAction('Remove missing files from the list')
+        remove_missing.setToolTip('Removes every row whose file no longer exists on disk.')
+        remove_missing.triggered.connect(lambda: self.remove_missing_tracks(tree))
         if tree is self.candidate_tree:
             delete_duplicates = menu.addAction('Delete duplicates from the list')
             delete_duplicates.setToolTip('Remove rows with the same file path. Files on disk are not deleted.')
@@ -838,18 +844,37 @@ class TraktorKeyCalculator(QMainWindow):
         return menu
 
     def remove_selected_tracks(self, tree, confirm=True):
-        """Remove the selected rows from the library or playlist list (Delete key).
+        """Remove the selected rows from the library or playlist list (Delete key)."""
+        return self._remove_tracks(tree, tree.selected_paths(), confirm, 'track(s)')
+
+    def remove_missing_tracks(self, tree, confirm=True):
+        """Remove every row of this panel's list whose file no longer exists, including
+        rows hidden by the current search."""
+        if tree is self.playlist_tree:
+            paths = [tree.topLevelItem(i).text(HEADER_INDEX['Path']) for i in range(tree.topLevelItemCount())]
+        else:
+            paths = [path for path in self.table['File_Path'] if isinstance(path, str)] \
+                if self.table is not None and 'File_Path' in self.table else []
+        missing = [path for path in paths if path and not os.path.isfile(path)]
+        if not missing:
+            self.status_label.setStyleSheet(status_style('ok'))
+            self.status_label.setText('No missing files in the list')
+            return 0
+        return self._remove_tracks(tree, missing, confirm, 'missing file(s)')
+
+    def _remove_tracks(self, tree, paths, confirm, what):
+        """Remove rows with these paths from the library or playlist list.
 
         Only the list changes: the tracks stay in the collection (library.sqlite) with
         their ratings and embeddings, and files on disk are untouched.
         """
-        paths = tree.selected_paths()
         if not paths:
             return 0
         keys = {canonical_path(path) for path in paths}
         if tree is self.playlist_tree:
-            for item in tree.selectedItems():
-                tree.takeTopLevelItem(tree.indexOfTopLevelItem(item))
+            for index in reversed(range(tree.topLevelItemCount())):
+                if canonical_path(tree.topLevelItem(index).text(HEADER_INDEX['Path'])) in keys:
+                    tree.takeTopLevelItem(index)
             self.playlist_paths = {path for path in self.playlist_paths if canonical_path(path) not in keys}
             error = self._save_playlist()
             self.filter_items()  # removed playlist tracks show up in the library again
@@ -857,7 +882,7 @@ class TraktorKeyCalculator(QMainWindow):
         else:
             if confirm and QMessageBox.question(
                     self, 'Remove from library',
-                    f'Remove {len(keys)} track(s) from the library list?\n\n'
+                    f'Remove {len(keys)} {what} from the library list?\n\n'
                     'The files on disk are not deleted. Refresh rebuilds the full list.',
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
                 return 0
@@ -867,8 +892,8 @@ class TraktorKeyCalculator(QMainWindow):
             error = self._save_library()
             self.populate_tree()
             where = 'library'
-        self.status_label.setStyleSheet('color: red; font-weight: bold;' if error else 'color: green; font-weight: bold;')
-        self.status_label.setText(error or f'Removed {len(keys)} track(s) from the {where}; files on disk were not changed')
+        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
+        self.status_label.setText(error or f'Removed {len(keys)} {what} from the {where}; files on disk were not changed')
         return len(keys)
 
     def library_context_menu(self):
@@ -928,7 +953,7 @@ class TraktorKeyCalculator(QMainWindow):
         try:
             self.library_store.set_user_fields(updated.loc[mask].to_dict('records'), **fields)
         except (sqlite3.Error, OSError, ValueError) as error:
-            self.status_label.setStyleSheet('color: red; font-weight: bold;')
+            self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(f'Could not save: {error}')
             return False
         self.table = updated
@@ -990,11 +1015,22 @@ class TraktorKeyCalculator(QMainWindow):
             except (OSError, sqlite3.Error):
                 pass
         self._rerender([path])
-        self.status_label.setStyleSheet('color: red; font-weight: bold;' if error else 'color: green; font-weight: bold;')
+        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
         self.status_label.setText(error or f'Saved {", ".join(values)} to {Path(path).name}')
         return not error
 
     # -- embeddings ---------------------------------------------------------
+
+    def _init_view_menu(self):
+        menu = self.menuBar().addMenu('View')
+        self.dark_theme_action = menu.addAction('Dark theme')
+        self.dark_theme_action.setCheckable(True)
+        self.dark_theme_action.setChecked(self.settings.get('Theme', DEFAULT_THEME) == 'dark')
+        self.dark_theme_action.toggled.connect(lambda dark: self.set_theme('dark' if dark else 'light'))
+
+    def set_theme(self, name):
+        self.settings['Theme'] = apply_theme(name)
+        self.populate_tree()  # re-tint rows for the new background
 
     def _init_analysis_menu(self):
         menu = self.menuBar().addMenu('Analysis')
@@ -1176,7 +1212,7 @@ class TraktorKeyCalculator(QMainWindow):
         if dialog.exec_() == QDialog.Accepted:
             self.music_paths = dialog.get_paths()
             message = f"Music paths updated: {len(self.music_paths)} folder(s)"
-            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.status_label.setStyleSheet(status_style('ok'))
             self.status_label.setText(message)
 
     def open_coloring_dialog(self):
@@ -1187,7 +1223,7 @@ class TraktorKeyCalculator(QMainWindow):
             self.coloring_mode = dialog.get_selected_mode()
             self.populate_tree()
             message = f"Coloring mode set to: {self.coloring_mode}"
-            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.status_label.setStyleSheet(status_style('ok'))
             self.status_label.setText(message)
 
     # def open_coloring_dialog(self):
@@ -1343,7 +1379,7 @@ class TraktorKeyCalculator(QMainWindow):
             message += f'; {missing} need key/BPM analysis in Traktor'
         if failures:
             message += f'; {len(failures)} file(s) skipped'
-        self.status_label.setStyleSheet('color: darkorange;' if missing or failures else 'color: green;')
+        self.status_label.setStyleSheet(status_style('warning') if missing or failures else status_style('ok'))
         self.status_label.setText(message)
         self.status_bar.showMessage(persistence_error or self.importer.collection.error or message)
         return list(records.values())

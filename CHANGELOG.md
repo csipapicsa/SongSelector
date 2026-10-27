@@ -4,6 +4,30 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.10.0] - 2026-10-27
+
+- **Dark grey theme** (Qt Fusion style), default; *View → Dark theme* switches to light while
+  the app runs. Row tints adapt to the background.
+- Status messages use one set of theme-aware colours (info / ok / warning / error) instead of
+  hard-coded black, green and red, which were unreadable on dark backgrounds.
+
+## [4.9.0] - 2026-10-27
+
+- **Embeddings on the GPU in the exe** through DirectML (`onnxruntime-directml`): works on any
+  DirectX 12 GPU, falls back to the CPU. GTX 1650 Ti: 0.58 s instead of 5.5 s model time per
+  6-minute track (same speed as CUDA, but no CUDA install and +10 MB instead of +1 GB).
+  Batch size per device (DirectML 8, CUDA 16, CPU 1), with fixed-shape padded batches.
+- **Fix: the analysis process really runs at low priority now**: below-normal CPU and very low
+  disk I/O (Windows background mode). The earlier priority call silently failed, because a
+  64-bit handle was passed as a 32-bit integer.
+- **Fewer disk writes:** the analysis process keeps one database connection with
+  `synchronous=NORMAL` (syncs only at checkpoints), and `library.sqlite` no longer rewrites its
+  schema version on every connection. This matters on slow SATA SSDs, where a stalled disk made
+  playback stutter in other programs.
+- **Right-click → Remove missing files from the list** (library asks first, playlist does not).
+- Build intermediates and release verification now use the system temp folder instead of the
+  project disk; the verification window wait is 60 s.
+
 ## [4.8.0] - 2026-10-27
 
 - **Multi-selection** in both panels: Shift+click (range) and Ctrl+click (toggle).

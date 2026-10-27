@@ -12,6 +12,7 @@ from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
 from traktor_key_calculator.core.track_import import TrackImporter, ImportedTrackStore, merge_tracks
 from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
 from traktor_key_calculator.core.library_store import LibraryStore
+from traktor_key_calculator.ui.theme import row_tint_alpha
 
 
 def tagged_file(path, key='C', bpm='100'):
@@ -329,7 +330,7 @@ class ColorGuiTests(unittest.TestCase):
             for column in range(tree.columnCount()):
                 color=item.background(column).color()
                 self.assertEqual(color.rgb(),COLOR_MAPPING_CATEGORY[5].rgb())
-                self.assertEqual(color.alpha(),40)
+                self.assertEqual(color.alpha(),row_tint_alpha())  # depends on the theme
             self.assertIn('Color: Traktor collection',item.toolTip(HEADER_INDEX['Color']))
 
     def test_key_colors_change_with_tempo_in_both_panels(self):
