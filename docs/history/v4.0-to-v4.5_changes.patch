@@ -1,0 +1,2012 @@
+--- original_snapshot/advanced_search_panel.py
++++ source/advanced_search_panel.py
+@@ -5,9 +5,11 @@
+ 
+ from PyQt5.QtWidgets import (
+     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QComboBox,
+-    QLineEdit, QPushButton, QCheckBox
++    QLineEdit, QPushButton, QCheckBox, QMessageBox, QCompleter
+ )
+ from PyQt5.QtCore import Qt
++from color_search import COLOR_NAMES, COLOR_HELP, parse_color_values
++from search_filters import NUMERIC_COLUMNS, TEXT_CONDITIONS, NUMERIC_COMPARISONS, parse_number
+ 
+ 
+ class AdvancedSearchRow(QWidget):
+@@ -18,15 +20,40 @@
+         self.column_combo.addItems(column_names)
+ 
+         self.condition_combo = QComboBox()
+-        self.condition_combo.addItems(['contains', 'does not contain', 'is', 'is not'])
++        self.condition_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+ 
+         self.value_edit = QLineEdit()
++        self.color_completer = QCompleter(list(COLOR_NAMES.values()) + ['purple', 'magenta'], self)
++        self.color_completer.setCaseSensitivity(Qt.CaseInsensitive)
+ 
+         layout.addWidget(self.column_combo)
+         layout.addWidget(self.condition_combo)
+         layout.addWidget(self.value_edit)
+         layout.setContentsMargins(0, 0, 0, 0)
+         self.setLayout(layout)
++        self.column_combo.currentTextChanged.connect(self.update_conditions)
++        self.condition_combo.currentTextChanged.connect(self.update_value_hint)
++        self.update_conditions()
++
++    def update_conditions(self, _column=None):
++        selected = self.condition_combo.currentText()
++        conditions = list(TEXT_CONDITIONS)
++        if self.column_combo.currentText() in NUMERIC_COLUMNS:
++            conditions += list(NUMERIC_COMPARISONS)
++        self.condition_combo.blockSignals(True)
++        self.condition_combo.clear()
++        self.condition_combo.addItems(conditions)
++        if selected in conditions:
++            self.condition_combo.setCurrentText(selected)
++        self.condition_combo.blockSignals(False)
++        self.update_value_hint()
++
++    def update_value_hint(self, _condition=None):
++        numeric = self.condition_combo.currentText() in NUMERIC_COMPARISONS
++        color = self.column_combo.currentText() == 'Color'
++        self.value_edit.setCompleter(self.color_completer if color and not numeric else None)
++        self.value_edit.setPlaceholderText('e.g. 5' if color and numeric else 'e.g. blue or red,orange' if color else 'e.g. 128.5' if numeric else '')
++        self.value_edit.setToolTip('Traktor category colors: ' + COLOR_HELP if color else '')
+ 
+     def get_filter(self):
+         return {
+@@ -66,7 +93,7 @@
+         main_layout.addLayout(button_layout)
+         self.setLayout(main_layout)
+ 
+-        self.button_ok.clicked.connect(self.accept)
++        self.button_ok.clicked.connect(self.accept_filters)
+         self.button_cancel.clicked.connect(self.reject)
+ 
+     def get_active_filters(self):
+@@ -76,3 +103,20 @@
+             if filter_data['value']:
+                 filters.append(filter_data)
+         return filters
++
++    def accept_filters(self):
++        if self.checkbox_enable.isChecked():
++            for row in self.filter_rows:
++                value = row.value_edit.text().strip()
++                if value and row.column_combo.currentText() == 'Color' and row.condition_combo.currentText() not in NUMERIC_COMPARISONS:
++                    _, error = parse_color_values(value)
++                    if error:
++                        QMessageBox.warning(self, 'Invalid color filter', error)
++                        row.value_edit.setFocus()
++                        return
++                if value and row.condition_combo.currentText() in NUMERIC_COMPARISONS and parse_number(value) is None:
++                    QMessageBox.warning(self, 'Invalid numeric filter',
++                                        f'Enter a number for {row.column_combo.currentText()}, for example 128.5.')
++                    row.value_edit.setFocus()
++                    return
++        self.accept()
+--- original_snapshot/color_search.py
++++ source/color_search.py
+@@ -0,0 +1,76 @@
++"""Named Traktor category colors and search-bar color filters."""
++from dataclasses import dataclass, field
++import math
++import re
++
++COLOR_NAMES = {0: 'none', 1: 'red', 2: 'orange', 3: 'yellow', 4: 'green',
++               5: 'blue', 6: 'indigo', 7: 'violet', 8: 'pink', 9: 'brown'}
++COLOR_ALIASES = {name: number for number, name in COLOR_NAMES.items()}
++COLOR_ALIASES.update({'purple':7, 'magenta':7, 'uncolored':0, 'uncoloured':0,
++                      'no color':0, 'no colour':0})
++COLOR_HELP = 'red, orange, yellow, green, blue, indigo, violet (purple), pink, brown, none'
++# Tokens start at a word boundary; ordinary title text like "discolor:blue" stays text.
++COLOR_TOKEN = re.compile(r'(?<!\S)(?P<exclude>-?)(?:color|colour)\s*:\s*(?P<values>[^\s,|]*(?:\s*[,|]\s*[^\s,|]*)*)', re.IGNORECASE)
++
++
++def parse_color_values(value):
++    colors = set()
++    for part in re.split(r'[,|]', str(value)):
++        name = part.strip().casefold()
++        if name in COLOR_ALIASES:
++            colors.add(COLOR_ALIASES[name])
++        elif name.isdigit() and int(name) in COLOR_NAMES:
++            colors.add(int(name))
++        else:
++            return set(), f'Unknown color "{part.strip()}". Choose: {COLOR_HELP}.'
++    return colors, ''
++
++
++def color_id(value):
++    text = str(value).strip().casefold() if value is not None else ''
++    if text in ('', 'none', 'nan'):
++        return 0
++    try:
++        number = float(text)
++        return int(number) if math.isfinite(number) and number.is_integer() and int(number) in COLOR_NAMES else None
++    except (ValueError, TypeError, OverflowError):
++        return None
++
++
++@dataclass
++class ColorSearch:
++    text: str = ''
++    included: set = field(default_factory=set)
++    excluded: set = field(default_factory=set)
++    has_included: bool = False
++    error: str = ''
++
++    def matches(self, value):
++        if self.error:
++            return False
++        number = color_id(value)
++        return (not self.has_included or number in self.included) and number not in self.excluded
++
++
++def parse_color_search(text):
++    result = ColorSearch()
++    def consume(match):
++        colors, error = parse_color_values(match.group('values'))
++        result.error = result.error or error
++        if match.group('exclude'):
++            result.excluded.update(colors)
++        else:
++            result.has_included = True
++            result.included.update(colors)
++        return ''
++    remaining = COLOR_TOKEN.sub(consume, text).strip()
++    result.text = re.sub(r'[ \t]+', ' ', remaining) if result.has_included or result.excluded or result.error else remaining
++    return result
++
++
++def replace_color_filter(text, selected):
++    """Replace positive color tokens, retaining plain text and exclusions."""
++    remaining = COLOR_TOKEN.sub(lambda match: match.group(0) if match.group('exclude') else '', text).strip()
++    remaining = re.sub(r'[ \t]+', ' ', remaining)
++    names = ','.join(COLOR_NAMES[number] for number in sorted(selected))
++    return (remaining + (' color:' + names if names else '')).strip()
+--- original_snapshot/config.py
++++ source/config.py
+@@ -1,5 +1,7 @@
+ import os
+ import json
++import sys
++from pathlib import Path
+ 
+ """
+ Configuration and constants for the Traktor Key Calculator
+@@ -100,7 +102,10 @@
+ MAX_BPM = 200
+ 
+ 
+-SETTINGS_FILE = "SpotNextTrack_settings.json"
++APP_DATA_DIR = Path(os.environ.get('TRAKTOR_APP_DATA_DIR') or
++                    (Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False)
++                     else Path(__file__).resolve().parent))
++SETTINGS_FILE = str(APP_DATA_DIR / 'SpotNextTrack_settings.json')
+ 
+ HEADER_LABELS = [
+     "Artist", "Title", "Original BPM", "Original Key", "New Key",
+@@ -121,6 +126,8 @@
+     "Color": 10
+ }
+ 
++HEADER_LABELS += ['Album', 'Rating']
++HEADER_INDEX.update({'Album': len(HEADER_LABELS) - 2, 'Rating': len(HEADER_LABELS) - 1})
+ COLOR_COLUMN_INDEX = HEADER_INDEX.get("Color", 10)
+ 
+ test = 100
+@@ -136,6 +143,7 @@
+ def init_settings():
+     """Create default settings file if not exists"""
+     try:
++        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+         if not os.path.exists(SETTINGS_FILE):
+             with open(SETTINGS_FILE, "w") as f:
+                 json.dump(SETTINGS_DEFAULT, f, indent=4)
+--- original_snapshot/delegates.py
++++ source/delegates.py
+@@ -1,181 +1,35 @@
+-"""
+-Custom delegates for the Traktor Key Calculator
+-"""
+-from PyQt5.QtWidgets import QStyledItemDelegate, QStyle
+-from PyQt5.QtCore import Qt, QSize, QRect
+-from PyQt5.QtGui import QPainter, QBrush, QPen
+-
++"""Draw Traktor category dots while respecting row backgrounds and selection."""
++from PyQt5.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QStyle, QApplication
++from PyQt5.QtCore import QSize, Qt
++from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
+ from config import COLOR_MAPPING_CATEGORY
+ 
++
+ class ColorDotDelegate(QStyledItemDelegate):
+-    """Delegate to display colored dots instead of numbers in the color column"""
+-    
+     def __init__(self, parent=None):
+         super().__init__(parent)
+-        self.dot_size = 16  # Size of the colored dot
+-        
+-    # def paint(self, painter, option, index):
+-    #     """Paint a colored dot instead of text for the color column"""
+-    #     # Get the color value from the model
+-    #     color_value = index.data(Qt.DisplayRole)
+-        
+-    #     try:
+-    #         # Convert to integer and get the corresponding color
+-    #         color_number = int(float(color_value)) if color_value and color_value != 'nan' else 0
+-    #         color = COLOR_MAPPING_CATEGORY.get(color_number)
+-            
+-    #         # If color is found, draw a dot
+-    #         if color:
+-    #             # First fill with background color based on selection state
+-    #             if option.state & QStyle.State_Selected:
+-    #                 painter.fillRect(option.rect, option.palette.highlight())
+-    #             else:
+-    #                 painter.fillRect(option.rect, option.palette.base())
+-                
+-    #             # Calculate the dot position (center in the cell)
+-    #             x = option.rect.x() + (option.rect.width() - self.dot_size) // 2
+-    #             y = option.rect.y() + (option.rect.height() - self.dot_size) // 2
+-                
+-    #             # Draw the dot
+-    #             painter.setRenderHint(QPainter.Antialiasing)
+-    #             painter.setBrush(QBrush(color))
+-    #             painter.setPen(QPen(Qt.black, 1))
+-    #             painter.drawEllipse(x, y, self.dot_size, self.dot_size)
+-    #         else:
+-    #             # If no color or invalid, fall back to standard drawing
+-    #             super().paint(painter, option, index)
+-    #     except (ValueError, TypeError):
+-    #         # If any error, fall back to standard drawing
+-    #         super().paint(painter, option, index)
+-    
++        self.dot_size = 16
++
+     def sizeHint(self, option, index):
+-        """Return the size needed for the dot"""
+-        return QSize(self.dot_size + 8, self.dot_size + 4)  # Add some padding
+-    
+-    # dots are missing
+-    # def paint(self, painter, option, index):
+-    #     """Paint method with enhanced background handling"""
+-    #     painter.save()
+-        
+-    #     # Method 1: Try to get background from UserRole data (if stored there)
+-    #     background_color = index.data(Qt.UserRole + 1)
+-    #     if background_color and isinstance(background_color, QColor):
+-    #         painter.fillRect(option.rect, background_color)
+-    #     else:
+-    #         # Method 2: Check for BackgroundRole
+-    #         bg_brush = index.data(Qt.BackgroundRole)
+-    #         if bg_brush and isinstance(bg_brush, QBrush):
+-    #             painter.fillRect(option.rect, bg_brush)
+-    #         else:
+-    #             # Method 3: Use option's background
+-    #             if option.backgroundBrush and option.backgroundBrush.style() != Qt.NoBrush:
+-    #                 painter.fillRect(option.rect, option.backgroundBrush)
+-        
+-    #     # Draw the color dot
+-    #     try:
+-    #         color_text = index.data(Qt.DisplayRole)
+-    #         if color_text:
+-    #             color_index = int(float(str(color_text)))
+-                
+-    #             # Try to get color from UserRole first (if stored)
+-    #             dot_color = index.data(Qt.UserRole)
+-    #             if not dot_color:
+-    #                 dot_color = COLOR_MAPPING_CATEGORY.get(color_index)
+-                
+-    #             if dot_color:
+-    #                 painter.setRenderHint(QPainter.Antialiasing, True)
+-                    
+-    #                 # Calculate center
+-    #                 rect = option.rect
+-    #                 center = rect.center()
+-                    
+-    #                 # Draw the dot
+-    #                 painter.setPen(QPen(QColor(80, 80, 80), 1))
+-    #                 painter.setBrush(QBrush(QColor(dot_color)))
+-    #                 painter.drawEllipse(
+-    #                     center.x() - self.dot_size // 2,
+-    #                     center.y() - self.dot_size // 2,
+-    #                     self.dot_size,
+-    #                     self.dot_size
+-    #                 )
+-    #     except Exception:
+-    #         # Fall back to text display
+-    #         super().paint(painter, option, index)
+-        
+-    #     painter.restore()
+-
+-    # almost, but shading doesnt work 
+-    # def paint(self, painter, option, index):
+-    #     painter.save()
+-
+-    #     # Fill the background softly if there's a background brush
+-    #     background_color = index.data(Qt.UserRole + 1)
+-    #     if background_color and isinstance(background_color, QColor):
+-    #         painter.fillRect(option.rect, background_color)
+-    #     else:
+-    #         bg_brush = index.data(Qt.BackgroundRole)
+-    #         if bg_brush and isinstance(bg_brush, QBrush):
+-    #             painter.fillRect(option.rect, bg_brush)
+-    #         elif option.backgroundBrush and option.backgroundBrush.style() != Qt.NoBrush:
+-    #             painter.fillRect(option.rect, option.backgroundBrush)
+-
+-    #     # Try drawing a dot instead of text
+-    #     color_text = index.data(Qt.DisplayRole)
+-    #     try:
+-    #         color_index = int(float(color_text)) if color_text and color_text != "nan" else None
+-    #         dot_color = COLOR_MAPPING_CATEGORY.get(color_index) if color_index is not None else None
+-
+-    #         if dot_color:
+-    #             painter.setRenderHint(QPainter.Antialiasing, True)
+-    #             center = option.rect.center()
+-
+-    #             painter.setPen(QPen(Qt.black, 1))
+-    #             painter.setBrush(QBrush(dot_color))
+-    #             painter.drawEllipse(
+-    #                 center.x() - self.dot_size // 2,
+-    #                 center.y() - self.dot_size // 2,
+-    #                 self.dot_size,
+-    #                 self.dot_size
+-    #             )
+-    #     except Exception:
+-    #         pass  # Don't fall back to text
+-
+-    #     painter.restore()
++        return QSize(self.dot_size + 12, self.dot_size + 8)
+ 
+     def paint(self, painter, option, index):
+         painter.save()
+-
+-        # Get background brush from model
+-        bg_brush = index.data(Qt.BackgroundRole)
+-        if bg_brush and isinstance(bg_brush, QBrush):
+-            painter.fillRect(option.rect, bg_brush)
+-        else:
+-            # Default background handling
+-            if option.state & QStyle.State_Selected:
+-                painter.fillRect(option.rect, option.palette.highlight())
+-            else:
+-                painter.fillRect(option.rect, option.palette.base())
+-
+-        # Draw the dot (no text)
+-        color_text = index.data(Qt.DisplayRole)
++        styled = QStyleOptionViewItem(option)
++        self.initStyleOption(styled, index)
++        styled.text = ''
++        style = styled.widget.style() if styled.widget is not None else QApplication.style()
++        style.drawControl(QStyle.CE_ItemViewItem, styled, painter, styled.widget)
+         try:
+-            color_index = int(float(color_text)) if color_text and color_text != "nan" else None
+-            dot_color = COLOR_MAPPING_CATEGORY.get(color_index) if color_index is not None else None
+-
+-            if dot_color:
+-                painter.setRenderHint(QPainter.Antialiasing, True)
+-                center = option.rect.center()
+-                painter.setPen(QPen(Qt.black, 1))
+-                painter.setBrush(QBrush(dot_color))
+-                painter.drawEllipse(
+-                    center.x() - self.dot_size // 2,
+-                    center.y() - self.dot_size // 2,
+-                    self.dot_size,
+-                    self.dot_size
+-                )
+-        except Exception:
+-            pass
+-
++            color = COLOR_MAPPING_CATEGORY.get(int(float(index.data(Qt.DisplayRole))))
++        except (TypeError, ValueError, OverflowError):
++            color = None
++        if color is not None:
++            painter.setRenderHint(QPainter.Antialiasing, True)
++            painter.setPen(QPen(QColor(60, 60, 60), 1))
++            painter.setBrush(QBrush(color))
++            center = option.rect.center()
++            painter.drawEllipse(center.x() - self.dot_size // 2,
++                                center.y() - self.dot_size // 2,
++                                self.dot_size, self.dot_size)
+         painter.restore()
+-
+-
+--- original_snapshot/functions_app.py
++++ source/functions_app.py
+@@ -1,156 +1,101 @@
+-import os
++"""Read audio metadata without changing tags or audio files."""
+ from pathlib import Path
+-from mutagen.easyid3 import EasyID3
+ from mutagen.id3 import ID3, ID3NoHeaderError
+ from mutagen.flac import FLAC
+ from mutagen.wave import WAVE
++from config import AudioMetadata
++from key_formats import parse_key, parse_bpm
+ 
+-from config import AUDIO_EXTENSIONS, AudioMetadata
+ 
+ def get_file_extension(path):
+-    """Get file extension from path without the dot"""
+-    _, extension = os.path.splitext(path)
+-    return extension.lstrip('.').lower()  # Returns 'mp3', 'wav', etc.
++    return Path(path).suffix.lstrip('.').lower()
+ 
+ 
+-# Traktor MEtadata
+-# https://community.mp3tag.de/t/native-instrument-traktor-pro-4-v4-1-1-23-tag-compatibility-with-mp3tag/67494
+-# ---------------------------------------------
+-#                       METADATA EXTRACTION
+-# ---------------------------------------------
++def popm_byte_to_stars(value):
++    value = int(value)
++    if value <= 0:
++        return None
++    return 1 if value <= 32 else 2 if value <= 96 else 3 if value <= 162 else 4 if value <= 226 else 5
++
++
++def _rating(tags):
++    frames = tags.getall('POPM')
++    if not frames:
++        return None
++    frame = next((f for f in frames if 'traktor' in f.email.lower()),
++                 next((f for f in frames if 'windows media player' in f.email.lower()), frames[0]))
++    return popm_byte_to_stars(frame.rating)
++
++
++def get_mp3_rating(filepath):
++    try:
++        return _rating(ID3(str(filepath)))
++    except ID3NoHeaderError:
++        return None
++
++
++def get_flac_rating(tags):
++    for field in ('rating wmp', 'rating', 'fmps_rating'):
++        values = tags.get(field)
++        if not values:
++            continue
++        try:
++            value = float(values[0])
++            if field == 'fmps_rating' or value <= 1:
++                return round(value * 5)
++            return round(value / 51) if value > 5 else round(value)
++        except (ValueError, TypeError):
++            continue
++    return None
++
++
++def _read_id3(tags, metadata):
++    for attribute, frame in (('title', 'TIT2'), ('artist', 'TPE1'), ('album', 'TALB'), ('genre', 'TCON')):
++        value = str(tags.get(frame, '')).strip()
++        setattr(metadata, attribute, value or None)
++    comments = tags.getall('COMM')
++    if comments:
++        comment = next((f for f in comments if f.lang.lower() in ('eng', 'xxx')), comments[0])
++        metadata.comment = ' / '.join(comment.text) or None
++    user_tags = {frame.desc.casefold(): str(frame) for frame in tags.getall('TXXX')}
++    keys = [str(tags.get('TKEY', ''))] + [user_tags.get(k) for k in ('initialkey', 'initial key', 'key')]
++    metadata.key = next((k for k in keys if parse_key(k)), next((k for k in keys if k), None))
++    bpms = [str(tags.get('TBPM', ''))] + [user_tags.get(k) for k in ('bpm', 'tempo')]
++    metadata.bpm = next((b for b in bpms if parse_bpm(b)), None)
++    metadata.rating = _rating(tags)
+ 
+ 
+ def extract_wav_metadata(filepath):
+     metadata = AudioMetadata()
+-    
+     try:
+-        wav = WAVE(filepath)
+-        
+-        if wav.tags:
+-            metadata.title = str(wav.tags.get('TIT2', '')) or None
+-            metadata.artist = str(wav.tags.get('TPE1', '')) or None
+-            metadata.genre = str(wav.tags.get('TCON', '')) or None
+-            metadata.bpm = str(wav.tags.get('TBPM', '')) or None
+-            metadata.key = str(wav.tags.get('TKEY', '')) or None
+-            
+-            # Handle comments
+-            comm = wav.tags.get('COMM::XXX') or wav.tags.get('COMM::eng')
+-            metadata.comment = str(comm.text[0]) if comm else None
+-            
+-            # Rating (POPM frame)
+-            if 'POPM:Windows Media Player 9 Series' in wav.tags:
+-                metadata.rating = wav.tags['POPM:Windows Media Player 9 Series'].rating
+-            
+-    except Exception as e:
+-        print(f"[DEBUG] Error reading WAV: {e}")
+-        metadata.error = str(e)
+-    
++        tags = WAVE(str(filepath)).tags
++        if tags is not None:
++            _read_id3(tags, metadata)
++    except Exception as error:
++        metadata.error = str(error)
+     return metadata
+-
+-def popm_byte_to_stars(v: int) -> int:
+-    """
+-    Convert ID3 POPM rating byte (0–255) to 1–5 stars using
+-    canonical WMP/Traktor buckets. Works for exact and in-between values.
+-    """
+-    # Canonical POPM anchors (WMP/Traktor)
+-    anchors = [1, 64, 128, 196, 255]
+-    stars   = [1,  2,   3,   4,   5]
+-
+-    # Fast exact match
+-    if v in {1, 64, 128, 196, 255}:
+-        return {1:1, 64:2, 128:3, 196:4, 255:5}[v]
+-
+-    # Midpoint thresholds between anchors:
+-    # (1,64)->32.5 ; (64,128)->96 ; (128,196)->162 ; (196,255)->225.5
+-    if v <= 32:
+-        return 1
+-    elif v <= 96:
+-        return 2
+-    elif v <= 162:
+-        return 3
+-    elif v <= 226:
+-        return 4
+-    else:
+-        return 5
+-
+-def get_mp3_rating(filepath):
+-    tags = ID3(filepath)
+-    popms = tags.getall("POPM")
+-    if not popms:
+-        return None
+-
+-    # Prefer WMP owner if present (what Traktor often writes)
+-    preferred = next(
+-        (p for p in popms if p.email and "Windows Media Player" in p.email),
+-        popms[0]
+-    )
+-    byte_val = preferred.rating
+-    res = popm_byte_to_stars(byte_val)
+-    # print("-----")
+-    # print(res)
+-    # print("----")
+-    return int(res)
+-
+-
+-def get_flac_rating(tags):
+-    """
+-    Extract rating from FLAC Vorbis comments written by Traktor or other apps.
+-    Normalizes 0–255 (Traktor/WMP) to 1–5 stars.
+-    """
+-    rating = (tags.get('rating wmp', [None])[0] or
+-              tags.get('rating', [None])[0] or
+-              tags.get('fmps_rating', [None])[0])
+-
+-    if rating is None:
+-        return None
+-
+-    try:
+-        val = float(rating)
+-        # Traktor/WMP scale 0–255 → 0–5
+-        if val > 5:
+-            val = round(val / 51)
+-        elif val <= 1:
+-            val = round(val * 5)
+-        return int(val)
+-    except ValueError:
+-        return int(rating)
+-
+ 
+ 
+ def extract_audio_metadata(filepath):
+-    """Read metadata from audio files (MP3, FLAC, WAV)"""
++    metadata = AudioMetadata()
+     filepath = Path(filepath)
+-    ext = filepath.suffix.lower()
+-    
+-    metadata = AudioMetadata()
+-
+     try:
+-        if ext == ".mp3":
+-            tags = ID3(str(filepath))
+-            
+-            metadata.title = str(tags.get('TIT2', '')) or None
+-            metadata.artist = str(tags.get('TPE1', '')) or None
+-            metadata.genre = str(tags.get('TCON', '')) or None
+-            metadata.comment = str(tags.get('COMM::eng', '')) or None
+-            metadata.key = str(tags.get('TKEY', '')) or None
+-            metadata.bpm = str(tags.get('TBPM', '')) or None
+-            metadata.rating = str(get_mp3_rating(filepath))
+-
+-        elif ext == ".flac":
++        extension = filepath.suffix.lower()
++        if extension == '.mp3':
++            try:
++                _read_id3(ID3(str(filepath)), metadata)
++            except ID3NoHeaderError:
++                pass
++        elif extension == '.wav':
++            return extract_wav_metadata(filepath)
++        elif extension == '.flac':
+             tags = FLAC(str(filepath))
+-            
+-            metadata.title = tags.get('title', [None])[0]
+-            metadata.artist = tags.get('artist', [None])[0]
+-            metadata.genre = tags.get('genre', [None])[0]
+-            metadata.comment = tags.get('comment', [None])[0]
+-            metadata.key = tags.get('initialkey', [None])[0]
+-            metadata.bpm = (tags.get('bpm', [None])[0])
+-            metadata.rating = str(get_flac_rating(tags))
+-
+-        elif ext == ".wav":
+-            metadata = extract_wav_metadata(filepath)
+-
+-    except Exception as e:
+-        metadata.error = str(e)
+-
+-    return metadata+            for attribute in ('title', 'artist', 'album', 'genre', 'comment'):
++                setattr(metadata, attribute, (tags.get(attribute) or [None])[0])
++            metadata.key = next(((tags.get(k) or [None])[0] for k in ('initialkey', 'key')
++                                 if parse_key((tags.get(k) or [None])[0])), None)
++            metadata.bpm = (tags.get('bpm') or [None])[0]
++            metadata.rating = get_flac_rating(tags)
++    except Exception as error:
++        metadata.error = str(error)
++    return metadata
+--- original_snapshot/key_formats.py
++++ source/key_formats.py
+@@ -0,0 +1,51 @@
++"""Normalize musical, Camelot, Open Key, and NML analyzed keys."""
++import math
++import re
++
++NOTES = ('C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B')
++CAMELOT_MAJOR = ('B', 'F#', 'C#', 'G#', 'D#', 'A#', 'F', 'C', 'G', 'D', 'A', 'E')
++CAMELOT_MINOR = ('G#', 'D#', 'A#', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#')
++OPEN_MAJOR = ('C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'G#', 'D#', 'A#', 'F')
++OPEN_MINOR = ('A', 'E', 'B', 'F#', 'C#', 'G#', 'D#', 'A#', 'F', 'C', 'G', 'D')
++
++
++def parse_key(value):
++    if value is None:
++        return None
++    text = str(value).strip().replace('\u266f', '#').replace('\u266d', 'b')
++    numeric = re.fullmatch(r'(1[0-2]|[1-9])\s*([aAbBdDmM])', text)
++    if numeric:
++        number = int(numeric.group(1)) - 1
++        suffix = numeric.group(2).lower()
++        mapping, scale = {'a': (CAMELOT_MINOR, 'minor'), 'b': (CAMELOT_MAJOR, 'major'),
++                          'd': (OPEN_MAJOR, 'major'), 'm': (OPEN_MINOR, 'minor')}[suffix]
++        return mapping[number], scale
++    musical = re.fullmatch(r'([a-gA-G])([#bB]?)(?:\s*(m|min|minor|maj|major))?', text, re.I)
++    if not musical:
++        return None
++    note, accidental, suffix = musical.groups()
++    semitone = NOTES.index(note.upper())
++    if accidental == '#':
++        semitone += 1
++    elif accidental:
++        semitone -= 1
++    scale = 'minor' if suffix and suffix.lower() in ('m', 'min', 'minor') else 'major'
++    return NOTES[semitone % 12], scale
++
++
++def nml_key(value):
++    try:
++        number = int(value)
++    except (TypeError, ValueError):
++        return None
++    if 0 <= number < 24:
++        return NOTES[number % 12], 'minor' if number >= 12 else 'major'
++    return None
++
++
++def parse_bpm(value):
++    try:
++        bpm = float(str(value).strip().replace(',', '.'))
++    except (TypeError, ValueError):
++        return None
++    return bpm if math.isfinite(bpm) and bpm > 0 else None
+--- original_snapshot/main.py
++++ source/main.py
+@@ -1,38 +1,20 @@
+-"""
+-Traktor Key Calculator - Main Application Entry Point
+-"""
++"""Entry point for the independent drag-and-drop development version."""
+ import sys
+-from PyQt5.QtWidgets import QApplication
+-
+-# - drag and drop doesnt work to the another window
+-# + But list can be organized even right click -> show / not show columns as well 
+-# from main_window_bad_1 import TraktorKeyCalculator
+-
+-# - drag and drop doesnt work to the another window
+-# + But list can be organized even right click -> show / not show columns as well 
+-# - worse than main_windows_bad_1
+-# + Drag and drop to Traktor works However
+-# from main_window_good_2 import TraktorKeyCalculator
+-
+-# - drag and drop doesnt work to the another window
+-# + But list can be organized even right click -> show / not show columns as well 
+-# - worse than main_windows_bad_1
+-# + Drag and drop to Traktor works However
+-# from main_window_good_3 import TraktorKeyCalculator
+-
+-# This is the best so far. However details of the song do not appear in the left window
++from PyQt5.QtWidgets import QApplication, QMessageBox
+ from config import init_settings
+ from main_window import TraktorKeyCalculator
+ 
++
+ def main():
+-    """Main application entry point"""
+-    print("???")
+-    res, e = init_settings()
+-    if res:
+-        app = QApplication(sys.argv)
+-        calculator = TraktorKeyCalculator()
+-        calculator.show()
+-        sys.exit(app.exec_())
++    application = QApplication(sys.argv)
++    ok, error = init_settings()
++    if not ok:
++        QMessageBox.critical(None, 'Cannot start', str(error))
++        return 1
++    window = TraktorKeyCalculator()
++    window.show()
++    return application.exec_()
+ 
+-if __name__ == "__main__":
+-    main()+
++if __name__ == '__main__':
++    sys.exit(main())
+--- original_snapshot/main_window.py
++++ source/main_window.py
+@@ -13,10 +13,10 @@
+ from PyQt5.QtWidgets import QApplication
+ from PyQt5.QtWidgets import QToolButton, QMenu, QAction
+ 
+-from PyQt5.QtGui import QColor, QBrush
++from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
+ 
+ from config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
+-from config import COLOR_COLUMN_INDEX, HEADER_INDEX
++from config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
+ from delegates import ColorDotDelegate
+ from tree_widgets import PoolTreeWidget, PlaylistTreeWidget
+ from data_manager import DataManager
+@@ -26,6 +26,14 @@
+ from menu_bar import AppMenuBar
+ from music_paths_dialog import MusicPathsDialog
+ from coloring_dialog import ColoringDialog
++from pathlib import Path
++import pandas as pd
++from track_import import TrackImporter, ImportedTrackStore, merge_tracks, enrich_ratings
++from traktor_collection import canonical_path, discover_collection
++from key_formats import parse_key, parse_bpm
++from search_filters import matches_condition
++from color_search import COLOR_NAMES, parse_color_search, replace_color_filter
++from tree_widgets import audio_paths
+ 
+ 
+ class TraktorKeyCalculator(QMainWindow):
+@@ -68,31 +76,66 @@
+         # Load music paths and coloring settings
+         self.music_paths = self.settings.get("Music paths", [])
+         self.coloring_mode = self.settings.get("Coloring mode", "song")
+-
+-
+-        
++        # Upgrade this independent app's settings once so both panels show category dots.
++        if not self.settings.get('Color display version'):
++            for side in ('left', 'right'):
++                visible = self.settings.setdefault('Visible column ' + side, list(HEADER_LABELS))
++                if 'Color' not in visible:
++                    visible.append('Color')
++                self.settings.setdefault('Column sizes ' + side, {})['Color'] = 45
++            self.settings['Color display version'] = 1
++
++        # Enable the new rating column once, retaining subsequent user preferences.
++        if not self.settings.get('Rating display version'):
++            for side in ('left', 'right'):
++                visible = self.settings.setdefault('Visible column ' + side, list(HEADER_LABELS))
++                if 'Rating' not in visible:
++                    visible.append('Rating')
++                sizes = self.settings.setdefault('Column sizes ' + side, {})
++                if sizes.get('Rating', 0) <= 0:
++                    sizes['Rating'] = 70
++            searchable = self.settings.setdefault('Search columns', list(HEADER_LABELS))
++            if 'Rating' not in searchable:
++                searchable.append('Rating')
++            self.settings['Rating display version'] = 1
++
++
++        
++        self.playlist_paths = set()
++        self.imported_store = ImportedTrackStore(Path(SETTINGS_FILE).with_name('imported_tracks.json'))
++        self.saved_imports = self.imported_store.load()
++        collection_path = self.settings.get('Traktor collection') or discover_collection()
++        self.settings['Traktor collection'] = collection_path
++        self.importer = TrackImporter(collection_path)
++        self.setAcceptDrops(True)
++
+         # Initialize UI
+         self.init_ui()
++        self._init_import_menu()
+         
+         # Load data
+-        self.table = self.data_manager.load_default_data()
++        self.table = self._load_library(self.data_manager.load_default_data())
+         
+         # Populate the tree
+         self.populate_tree()
+ 
+     def apply_row_shading_from_color(self, item):
+-        try:
+-            color_index = int(float(item.text(COLOR_COLUMN_INDEX)))
+-            color = COLOR_MAPPING_CATEGORY.get(color_index)
+-            if color:
+-                shaded = QColor(color)
+-                shaded.setAlpha(40)  # Apply transparency for row background
+-
+-                for col in range(item.columnCount()):
+-                    item.setBackground(col, QBrush(shaded))
+-
+-        except Exception as e:
+-            pass
++        color = None
++        if self.coloring_mode == 'key':
++            color = OPEN_KEY_COLOR_MAPPING.get(item.text(HEADER_INDEX['Open Key New']).lower())
++        else:
++            try:
++                color = COLOR_MAPPING_CATEGORY.get(int(float(item.text(COLOR_COLUMN_INDEX))))
++            except (TypeError, ValueError, OverflowError):
++                pass
++        brush = QBrush()
++        if color is not None:
++            shaded = QColor(color)
++            shaded.setAlpha(40)
++            brush = QBrush(shaded)
++        for column in range(item.columnCount()):
++            item.setBackground(column, brush)
++
+ 
+     def status_message(self, message):
+         """Display a message in the status bar"""
+@@ -181,7 +224,9 @@
+         search_layout = QHBoxLayout()
+         search_layout.addWidget(QLabel("Search:"))
+         self.search_bar = QLineEdit()
+-        self.search_bar.setPlaceholderText("Enter search text...")
++        self.search_bar.setPlaceholderText("Search text or color:blue; e.g. tribal color:red,orange")
++        self.search_bar.setClearButtonEnabled(True)
++        self.search_bar.setToolTip("Filter Traktor category dots: color:blue, color:red,orange, color:none, or -color:blue.\nCombine with text; Colors lets you choose several swatches. Color filters work regardless of Search Columns.")
+         self.search_bar.textChanged.connect(self.filter_items)
+         search_layout.addWidget(self.search_bar)
+         right_layout.addLayout(search_layout)
+@@ -213,6 +258,34 @@
+ 
+         # Add to layout (replace/add to your top layout)
+         search_layout.addWidget(self.search_column_button)
++        self.color_search_button = QToolButton()
++        self.color_search_button.setText('Colors')
++        self.color_search_button.setToolTip('Filter Traktor category dots; choose one or more colors.')
++        self.color_search_menu = QMenu(self.color_search_button)
++        clear_colors = self.color_search_menu.addAction('Clear color selection')
++        clear_colors.triggered.connect(lambda: self.search_bar.setText(replace_color_filter(self.search_bar.text(), set())))
++        self.color_search_menu.addSeparator()
++        self.color_search_actions = {}
++        for number, name in COLOR_NAMES.items():
++            action = QAction('No color' if number == 0 else name.title(), self)
++            if number:
++                swatch = QPixmap(18, 18)
++                swatch.fill(Qt.transparent)
++                painter = QPainter(swatch)
++                painter.setRenderHint(QPainter.Antialiasing)
++                painter.setPen(Qt.NoPen)
++                painter.setBrush(COLOR_MAPPING_CATEGORY[number])
++                painter.drawEllipse(2, 2, 14, 14)
++                painter.end()
++                action.setIcon(QIcon(swatch))
++            action.setCheckable(True)
++            action.toggled.connect(self.update_color_search)
++            self.color_search_menu.addAction(action)
++            self.color_search_actions[number] = action
++        self.color_search_button.setMenu(self.color_search_menu)
++        self.color_search_button.setPopupMode(QToolButton.InstantPopup)
++        search_layout.addWidget(self.color_search_button)
++
+ 
+         # -----------------
+         # SEARCH BAR ADVACNED
+@@ -380,72 +453,24 @@
+         tree_widget.setColumnHidden(column, not checked)
+ 
+     def add_selected_to_playlist(self):
+-        """Add the selected item from the pool to the playlist and remove from main view"""
+-        selected_items = self.candidate_tree.selectedItems()
+-        if not selected_items:
+-            # self.status_bar.showMessage("No item selected")
+-            message = 'No item selected'
+-            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+-            self.status_label.setText(message)
++        items = self.candidate_tree.selectedItems()
++        if not items:
++            self.status_label.setText('Select a track first')
+             return
+-            
+-        # Clone the selected item
+-        source_item = selected_items[0]
+-        new_item = QTreeWidgetItem()
+-        
+-        # Explicitly copy ALL column values
+-        for col in range(self.candidate_tree.columnCount()):
+-            value = source_item.text(col)
+-            new_item.setText(col, value)
+-        
+-        # Add to playlist
+-        self.playlist_tree.addTopLevelItem(new_item)
+-        
+-        # Hide from main view - get the path for identification
+-        path = source_item.text(HEADER_INDEX.get("Path"))  # Path column
+-        
+-        # Hide the item in the main tree
+-        source_item.setHidden(True)
+-        
+-        # Store the path in a set for tracking
+-        if not hasattr(self, 'playlist_paths'):
+-            self.playlist_paths = set()
+-        self.playlist_paths.add(path)
+-        
+-        # Force update of the playlist tree
+-        self.playlist_tree.resizeColumnToContents(0)  # Resize columns to ensure content is visible
+-        self.playlist_tree.update()
+-        
+-        # self.status_bar.showMessage(f"Added '{source_item.text(0)} - {source_item.text(1)}' to playlist")
+-        message = f"Added '{source_item.text(0)} - {source_item.text(1)}' to playlist"
+-        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+-        self.status_label.setText(message)
++        rows = self._rows_by_path()
++        for item in items:
++            row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
++            if row is not None:
++                self._add_to_playlist(row)
++        self.filter_items()
++
+     
+     def clear_playlist(self):
+-        """Clear all items from the playlist and restore them to the main view"""
+-        # Get paths from playlist before clearing
+-        paths_to_restore = []
+-        for i in range(self.playlist_tree.topLevelItemCount()):
+-            item = self.playlist_tree.topLevelItem(i)
+-            paths_to_restore.append(item.text(6))
+-        
+-        # Clear playlist
+         self.playlist_tree.clear()
+-        
+-        # Unhide items in main view
+-        for i in range(self.candidate_tree.topLevelItemCount()):
+-            item = self.candidate_tree.topLevelItem(i)
+-            if item.text(6) in paths_to_restore:
+-                item.setHidden(False)
+-        
+-        # Clear the tracked paths
+-        if hasattr(self, 'playlist_paths'):
+-            self.playlist_paths.clear()
+-        
+-        # self.status_bar.showMessage("Playlist cleared")
+-        message = "Playlist cleared"
+-        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+-        self.status_label.setText(message)
++        self.playlist_paths.clear()
++        self.filter_items()
++        self.status_label.setText('Playlist cleared')
++
+     
+     def update_bpm_label(self):
+         """Update only the BPM label when slider moves"""
+@@ -459,83 +484,52 @@
+ 
+ 
+     def apply_advanced_filters_tree(self, item):
+-        """Apply all advanced filters to a QTreeWidgetItem - ALL must match"""
+-        # Map column names to indices
+-        column_indices = {self.candidate_tree.headerItem().text(i): i 
+-                        for i in range(self.candidate_tree.columnCount())}
+-        
+-        for filter_data in self.advanced_filters:
+-            column = filter_data['column']
+-            condition = filter_data['condition']
+-            value = filter_data['value'].lower()
+-            
+-            # Find column index
+-            col_index = column_indices.get(column)
+-            if col_index is None:
++        """Every active text or numeric condition must match."""
++        columns = {self.candidate_tree.headerItem().text(index): index
++                   for index in range(self.candidate_tree.columnCount())}
++        for condition in self.advanced_filters:
++            column = condition['column']
++            index = columns.get(column)
++            if index is None:
+                 continue
+-            
+-            cell_value = item.text(col_index).lower()
+-            
+-            # Apply condition
+-            match = False
+-            if condition == 'contains':
+-                match = value in cell_value
+-            elif condition == 'does not contain':
+-                match = value not in cell_value
+-            elif condition == 'is':
+-                match = value == cell_value
+-            elif condition == 'is not':
+-                match = value != cell_value
+-            
+-            if not match:
+-                return False  # If any filter fails, hide item
+-        
+-        return True  # All filters passed
++            if not matches_condition(item.text(index), condition['condition'], condition['value'], column):
++                return False
++        return True
++
+ 
+     def filter_items(self):
+-        """Filter tree items based on search text and advanced filters"""
+-        search_text = self.search_bar.text().lower()
+-        
+-        # Map column names to indices
+-        column_indices = {name: idx for idx, name in enumerate(HEADER_LABELS)}
+-        
+-        for i in range(self.candidate_tree.topLevelItemCount()):
+-            item = self.candidate_tree.topLevelItem(i)
+-            path = item.text(6)  # Path column
+-            
+-            # Always hide items in playlist
+-            if hasattr(self, 'playlist_paths') and path in self.playlist_paths:
+-                item.setHidden(True)
+-                continue
+-            
+-            show_item = False
+-            
+-            # If search bar is empty, use advanced filters
+-            if not search_text and self.advanced_filters:
+-                show_item = self.apply_advanced_filters_tree(item)
+-            # If search bar has text, use simple search
+-            elif search_text:
+-                search_indices = [column_indices[col] for col in self.search_columns if col in column_indices]
+-                for col in search_indices:
+-                    if search_text in item.text(col).lower():
+-                        show_item = True
+-                        break
+-            else:
+-                # No search criteria - show all
+-                show_item = True
+-            
+-            item.setHidden(not show_item)
+-        
+-        # Update status
+-        visible_count = sum(
+-            1 for i in range(self.candidate_tree.topLevelItemCount())
+-            if not self.candidate_tree.topLevelItem(i).isHidden()
+-        )
+-        total_count = self.candidate_tree.topLevelItemCount()
+-        
+-        message = f"Displaying {visible_count} of {total_count} tracks"
+-        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+-        self.status_label.setText(message)
++        color_query = parse_color_search(self.search_bar.text())
++        search_text = color_query.text.casefold()
++        if hasattr(self, 'color_search_actions'):
++            for number, action in self.color_search_actions.items():
++                action.blockSignals(True)
++                action.setChecked(number in color_query.included)
++                action.blockSignals(False)
++            count = len(color_query.included)
++            self.color_search_button.setText(f'Colors ({count})' if count else 'Colors')
++        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in HEADER_INDEX]
++        playlist_paths = {canonical_path(path) for path in self.playlist_paths}
++        for index in range(self.candidate_tree.topLevelItemCount()):
++            item = self.candidate_tree.topLevelItem(index)
++            path = canonical_path(item.text(HEADER_INDEX['Path']))
++            matches = path not in playlist_paths and color_query.matches(item.text(COLOR_COLUMN_INDEX))
++            if matches and search_text:
++                matches = any(search_text in item.text(column).casefold() for column in search_indices)
++            if matches and self.current_advanced_search.get('enabled') and self.advanced_filters:
++                matches = self.apply_advanced_filters_tree(item)
++            item.setHidden(not matches)
++        visible = sum(not self.candidate_tree.topLevelItem(i).isHidden()
++                      for i in range(self.candidate_tree.topLevelItemCount()))
++        self.status_label.setStyleSheet('color: green; font-weight: bold;')
++        self.status_label.setText(f'Displaying {visible} of {self.candidate_tree.topLevelItemCount()} tracks')
++        if color_query.error:
++            self.status_label.setStyleSheet('color: red; font-weight: bold;')
++            self.status_label.setText(color_query.error)
++
++
++    def update_color_search(self, _checked=False):
++        selected = {number for number, action in self.color_search_actions.items() if action.isChecked()}
++        self.search_bar.setText(replace_color_filter(self.search_bar.text(), selected))
+ 
+     def apply_advanced_filters(self, row):
+         """Apply all advanced filters to a row - ALL must match"""
+@@ -617,7 +611,7 @@
+                         return (0, int(float(text.strip())))
+                     except:
+                         return (1, 999)  # Put errors at the end too
+-            elif column == HEADER_INDEX.get("Original BPM"):  # BPM columns (numeric)
++            elif column in (HEADER_INDEX.get("Original BPM"), HEADER_INDEX.get("Rating")):  # Numeric columns
+                 def get_sort_key(item):
+                     try:
+                         # Extract numeric value
+@@ -689,9 +683,13 @@
+             self.status_label.setStyleSheet("color: red; font-weight: bold;")
+             self.status_label.setText(message)
+     
++    def _load_library(self, table):
++        merged = merge_tracks(table, self.saved_imports.values())
++        return enrich_ratings(merged, self.importer.collection)
++
+     def refresh_data(self):
+         """Reload data and refresh the tree"""
+-        self.table = self.data_manager.load_default_data()
++        self.table = self._load_library(self.data_manager.load_default_data())
+         self.populate_tree()
+         
+         # Re-apply current sort
+@@ -707,7 +705,7 @@
+         if file_path:
+             result = self.data_manager.load_csv(file_path)
+             if result is not None:
+-                self.table = result
++                self.table = self._load_library(result)
+                 self.populate_tree()
+                 
+                 # Re-apply current sort
+@@ -765,155 +763,23 @@
+         return filters
+     
+     def populate_tree(self):
+-        """Populate the tree widget with tracks"""
+-
+-        print("populate_tree() called")
+-
+-        # Save sort state before clearing
+         sort_column = self.candidate_tree.sort_column
+         sort_order = Qt.AscendingOrder if self.candidate_tree.sort_order else Qt.DescendingOrder
+-
+-        print(sort_column)
+-        print(sort_order)
+-        print(40* "*")
+-        # Store current search text
+-        search_text = self.search_bar.text()
+-        
+-        # Show calculation in progress in status bar
+-        self.status_bar.showMessage(f"Calculating keys for {len(self.table)} tracks...")
+-        QApplication.processEvents()  # Just a single process events call
+-        
+-        # Clear tree
++        self.candidate_tree.setSortingEnabled(False)
+         self.candidate_tree.clear()
+-        self.all_items = []  # Clear stored items
+-        
+-        # Get master tempo
+-        master_tempo = self.bpm_slider.value()
+-        
+-        # Process all rows without UI updates
+-        items_to_add = []
+-        for _, row in self.table.iterrows():
+-            try:
+-                # Calculate semitone shift
+-                original_bpm = row['BPM']
+-                semitone_shift = self.key_calculator.calculate_semitone_shift(original_bpm, master_tempo)
+-                
+-                # Calculate new key
+-                original_key = row['Musical_Key_Base']
+-                scale = row['BaseMinorOrMajor']
+-                new_key = self.key_calculator.key_shifter(original_key, semitone_shift)
+-                
+-                # Format keys with scale
+-                original_key_display = f"{original_key} {scale}"
+-                new_key_display = f"{new_key} {scale}"
+-                
+-                # Get harmonic key
+-                harmonic_key = self.key_calculator.get_harmonic_key(new_key, scale)
+-
+-                # Convert Camelot to Open Key
+-                open_key = self.key_calculator.camelot_to_open_key(harmonic_key)
+-                
+-                # Generate full path
+-                full_path = self.get_full_path(row)
+-                
+-                # Get color value (default to 0 if not present)
+-                color_value = row.get('Color', 0)
+-                
+-                # Create tree item
+-                item = QTreeWidgetItem()
+-
+-                """
+-                
+-                self.playlist_tree.header().setStretchLastSection(False)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Artist"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Title"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Original BPM"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Original Key"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["New Key"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Camelot Key New"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Open Key New"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Path"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Comment"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Genre"], QHeaderView.Stretch)
+-                self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Color"], QHeaderView.Stretch)
+-                """
+-
+-                # item.setText(0, str(row['Artist']))
+-                # item.setText(1, str(row['Title']))
+-                # item.setText(2, f"{original_bpm:.1f}")
+-                # item.setText(3, str(original_key_display))
+-                # item.setText(4, str(new_key_display))
+-                # item.setText(5, str(harmonic_key))
+-                # item.setText(6, str(open_key))  # NEW - Open Key
+-                # item.setText(7, str(full_path)) 
+-                
+-                # # Handle Comment and Genre fields
+-                # comment = row.get('Comment', '')
+-                # genre = row.get('Genre', '')
+-                # item.setText(8, str(comment) if comment is not None else '')
+-                # item.setText(9, str(genre) if genre is not None else '')
+-                
+-                # # Set color value
+-                # item.setText(10, str(color_value))
+-
+-                                # Handle Comment and Genre fields
+-                comment = row.get('Comment', '')
+-                genre = row.get('Genre', '')
+-
+-                item.setText(HEADER_INDEX["Artist"], str(row['Artist']))
+-                item.setText(HEADER_INDEX["Title"], str(row['Title']))
+-                item.setText(HEADER_INDEX["Original BPM"], f"{original_bpm:.1f}")
+-                item.setText(HEADER_INDEX["Original Key"], str(original_key_display))
+-                item.setText(HEADER_INDEX["New Key"], str(new_key_display))
+-                item.setText(HEADER_INDEX["Camelot Key New"], str(harmonic_key))
+-                item.setText(HEADER_INDEX["Open Key New"], str(open_key))
+-                item.setText(HEADER_INDEX["Path"], str(full_path))
+-                item.setText(HEADER_INDEX["Comment"], str(comment) if comment is not None else '')
+-                item.setText(HEADER_INDEX["Genre"], str(genre) if genre is not None else '')
+-                item.setText(HEADER_INDEX["Color"], str(color_value))
+-
+-                # Ad colors
+-                self.apply_row_shading_from_color(item)  # THEN apply color
+-                
+-                # Add to list for later batch addition
+-                items_to_add.append(item)
+-                
+-            except Exception as e:
+-                print(f"Error processing row: {str(e)}")
+-                continue
+-        
+-        # Now add all items to the tree at once (more efficient)
+-        for item in items_to_add:
+-            self.candidate_tree.addTopLevelItem(item)
+-            self.all_items.append(item)
+-            
+-            # Check if this item should be hidden because it's in the playlist
+-            path = item.text(7)
+-            if hasattr(self, 'playlist_paths') and path in self.playlist_paths:
+-                item.setHidden(True)
+-        
+-        # Reapply search filter if there was any
+-    # Reapply search filter if there was any
+-        if search_text:
+-            # Clear the search bar and set it again to trigger the filter
+-            self.search_bar.blockSignals(True)  # Block signals temporarily
+-            self.search_bar.setText("")         # Clear text
+-            self.search_bar.blockSignals(False) # Re-enable signals
+-            self.search_bar.setText(search_text) # Set text back - this will trigger filter_items
+-        
+-        self.status_bar.showMessage(f"Displaying {self.candidate_tree.topLevelItemCount()} tracks at {master_tempo:.1f} BPM")
+-
+-        if self.current_advanced_search.get('enabled', False):
+-            
+-            message = f"Complex search is active! "
+-            self.status_bar.showMessage(message)
+-            self.status_label.setStyleSheet("color: blue; font-weight: bold;")
+-            self.status_label.setText(message)
+-            
+-            self.advanced_filters = [f for f in self.current_advanced_search['filters'] if f['value']]
+-            self.filter_items()
+-
++        self.all_items = []
++        if self.table is not None:
++            for _, row in self.table.iterrows():
++                item = self._track_item(row)
++                self.candidate_tree.addTopLevelItem(item)
++                self.all_items.append(item)
++        self.candidate_tree.setSortingEnabled(True)
+         self.candidate_tree.sortItems(sort_column, sort_order)
++        self.advanced_filters = [f for f in self.current_advanced_search.get('filters', []) if f.get('value')]
++        self._refresh_playlist()
++        self.filter_items()
++        self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
++
+ 
+     def reset_settings(self):
+         """Reset all settings to default"""
+@@ -942,6 +808,7 @@
+         
+         if dialog.exec_() == QDialog.Accepted:
+             self.coloring_mode = dialog.get_selected_mode()
++            self.populate_tree()
+             message = f"Coloring mode set to: {self.coloring_mode}"
+             self.status_label.setStyleSheet("color: green; font-weight: bold;")
+             self.status_label.setText(message)
+@@ -1000,4 +867,181 @@
+             json.dump(self.settings, f, indent=4)
+ 
+         # Accept the close event so the app exits
+-        event.accept()+        event.accept()
++    def _init_import_menu(self):
++        menu = self.menuBar().addMenu('Import')
++        add_files = menu.addAction('Add audio files...')
++        add_files.triggered.connect(self.choose_audio_files)
++        collection = menu.addAction('Link Traktor collection...')
++        collection.triggered.connect(self.choose_traktor_collection)
++
++    def choose_audio_files(self):
++        paths, _ = QFileDialog.getOpenFileNames(self, 'Add audio files', '',
++                                               'Audio files (*.mp3 *.MP3 *.flac *.wav);;All files (*)')
++        if paths:
++            self.import_audio_files(paths)
++
++    def choose_traktor_collection(self):
++        path, _ = QFileDialog.getOpenFileName(self, 'Link Traktor collection',
++                                              self.settings.get('Traktor collection', ''),
++                                              'Traktor collections (*.nml)')
++        if not path:
++            return
++        importer = TrackImporter(path)
++        importer.collection._load()
++        if importer.collection.error:
++            QMessageBox.warning(self, 'Cannot read collection', importer.collection.error)
++            return
++        self.importer = importer
++        self.settings['Traktor collection'] = path
++        self.table = enrich_ratings(self.table, importer.collection)
++        self.populate_tree()
++        self.status_label.setText(f'Linked {len(importer.collection.by_path)} Traktor tracks')
++        self.status_bar.showMessage(path)
++
++    def dragEnterEvent(self, event):
++        if audio_paths(event.mimeData()):
++            event.setDropAction(Qt.CopyAction)
++            event.accept()
++        else:
++            event.ignore()
++
++    def dragMoveEvent(self, event):
++        self.dragEnterEvent(event)
++
++    def dropEvent(self, event):
++        paths = audio_paths(event.mimeData())
++        if paths:
++            self.import_audio_files(paths)
++            event.setDropAction(Qt.CopyAction)
++            event.accept()
++        else:
++            event.ignore()
++
++    def import_audio_files(self, paths, to_playlist=False):
++        records, failures = {}, []
++        previous_rows = self._rows_by_path()
++        for path in paths:
++            key = canonical_path(path)
++            if key in records:
++                continue
++            try:
++                record = self.importer.read(path, existing=previous_rows.get(key))
++                records[canonical_path(record['File_Path'])] = record
++            except (OSError, ValueError) as error:
++                failures.append(str(error))
++        if not records:
++            self.status_label.setText(failures[0] if failures else 'No audio files to import')
++            return []
++        self.saved_imports.update(records)
++        self.table = merge_tracks(self.table, records.values())
++        self.data_manager.table = self.table
++        persistence_error = ''
++        try:
++            self.imported_store.save(self.saved_imports)
++        except (OSError, ValueError) as error:
++            persistence_error = f'Could not save imported tracks: {error}'
++        # A dropped file should be immediately visible even if a previous filter excluded it.
++        self.search_bar.clear()
++        self.current_advanced_search['enabled'] = False
++        self.advanced_filters = []
++        self.populate_tree()
++        if to_playlist:
++            for record in records.values():
++                self._add_to_playlist(record)
++            self.filter_items()
++        else:
++            first_path = next(iter(records))
++            for index in range(self.candidate_tree.topLevelItemCount()):
++                item = self.candidate_tree.topLevelItem(index)
++                if canonical_path(item.text(HEADER_INDEX['Path'])) == first_path:
++                    self.candidate_tree.setCurrentItem(item)
++                    self.candidate_tree.scrollToItem(item)
++                    break
++        missing = sum(not row['Musical_Key_Base'] or row['BPM'] is None for row in records.values())
++        message = f'Imported {len(records)} track(s)'
++        if missing:
++            message += f'; {missing} need key/BPM analysis in Traktor'
++        if failures:
++            message += f'; {len(failures)} file(s) skipped'
++        self.status_label.setStyleSheet('color: darkorange;' if missing or failures else 'color: green;')
++        self.status_label.setText(message)
++        self.status_bar.showMessage(persistence_error or self.importer.collection.error or message)
++        return list(records.values())
++
++    @staticmethod
++    def _text(value):
++        if value is None or pd.isna(value):
++            return ''
++        return str(value)
++
++    @staticmethod
++    def _rating_text(value):
++        if value is None or pd.isna(value):
++            return ''
++        try:
++            return str(int(float(value)))
++        except (ValueError, TypeError):
++            return str(value)
++
++    def _rows_by_path(self):
++        return {canonical_path(row.get('File_Path')): row for _, row in self.table.iterrows()
++                if canonical_path(row.get('File_Path'))}
++
++    def _track_item(self, row, item=None):
++        item = item if item is not None else QTreeWidgetItem()
++        base, scale = self._text(row.get('Musical_Key_Base')), self._text(row.get('BaseMinorOrMajor'))
++        key = parse_key(f'{base} {scale}') or parse_key(base)
++        bpm = parse_bpm(row.get('BPM'))
++        original_key, new_key, camelot, open_key = 'Unknown', 'Unknown', 'Unknown', 'Unknown'
++        if key:
++            base, scale = key
++            original_key = f'{base} {scale}'
++            if bpm is not None:
++                shift = self.key_calculator.calculate_semitone_shift(bpm, self.bpm_slider.value())
++                shifted = self.key_calculator.key_shifter(base, shift)
++                new_key = f'{shifted} {scale}'
++                camelot = self.key_calculator.get_harmonic_key(shifted, scale)
++                open_key = self.key_calculator.camelot_to_open_key(camelot)
++        values = {'Artist': self._text(row.get('Artist')), 'Title': self._text(row.get('Title')),
++                  'Original BPM': f'{bpm:.2f}'.rstrip('0').rstrip('.') if bpm is not None else 'Unknown',
++                  'Original Key': original_key, 'New Key': new_key,
++                  'Camelot Key New': camelot, 'Open Key New': open_key,
++                  'Path': self._text(row.get('File_Path')), 'Comment': self._text(row.get('Comment')),
++                  'Genre': self._text(row.get('Genre')), 'Color': self._rating_text(row.get('Color')) or '0',
++                  'Album': self._text(row.get('Album')), 'Rating': self._rating_text(row.get('Rating'))}
++        key_source = self._text(row.get('Key_Source')) or ('Loaded CSV' if key else 'Not available')
++        bpm_source = self._text(row.get('BPM_Source')) or ('Loaded CSV' if bpm else 'Not available')
++        color_source = self._text(row.get('Color_Source')) or ('Saved import' if self._text(row.get('Imported')) else 'Loaded CSV')
++        color_detail = color_source if values['Color'] != '0' else 'No category color assigned'
++        tooltip = f'Key: {key_source}\nBPM: {bpm_source}\nColor: {color_detail}'
++        if row.get('Metadata_Error') and self._text(row.get('Metadata_Error')):
++            tooltip += '\n' + self._text(row.get('Metadata_Error'))
++        for column, value in values.items():
++            item.setText(HEADER_INDEX[column], value)
++            item.setToolTip(HEADER_INDEX[column], tooltip)
++        self.apply_row_shading_from_color(item)
++        for column in ('Original Key', 'Original BPM'):
++            item.setForeground(HEADER_INDEX[column], QBrush())
++        if not key or bpm is None:
++            item.setForeground(HEADER_INDEX['Original Key'] if not key else HEADER_INDEX['Original BPM'],
++                               QBrush(QColor('darkorange')))
++        return item
++
++    def _add_to_playlist(self, row):
++        path = canonical_path(row.get('File_Path'))
++        for index in range(self.playlist_tree.topLevelItemCount()):
++            item = self.playlist_tree.topLevelItem(index)
++            if canonical_path(item.text(HEADER_INDEX['Path'])) == path:
++                self._track_item(row, item)
++                return
++        self.playlist_tree.addTopLevelItem(self._track_item(row))
++        self.playlist_paths.add(self._text(row.get('File_Path')))
++
++    def _refresh_playlist(self):
++        rows = self._rows_by_path()
++        for index in range(self.playlist_tree.topLevelItemCount()):
++            item = self.playlist_tree.topLevelItem(index)
++            row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
++            if row is not None:
++                self._track_item(row, item)
+--- original_snapshot/search_filters.py
++++ source/search_filters.py
+@@ -0,0 +1,48 @@
++"""Shared complex-search comparison rules."""
++import math
++import operator
++from color_search import color_id, parse_color_values
++
++NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color'}
++TEXT_CONDITIONS = ['contains', 'does not contain', 'is', 'is not']
++NUMERIC_COMPARISONS = {
++    'greater than': operator.gt,
++    'less than': operator.lt,
++    'at least (>=)': operator.ge,
++    'at most (<=)': operator.le,
++}
++
++
++def parse_number(value):
++    try:
++        number = float(str(value).strip().replace(',', '.'))
++    except (ValueError, TypeError):
++        return None
++    return number if math.isfinite(number) else None
++
++
++def matches_condition(cell, condition, value, column):
++    if condition in NUMERIC_COMPARISONS:
++        if column not in NUMERIC_COLUMNS:
++            return False
++        actual, threshold = parse_number(cell), parse_number(value)
++        return actual is not None and threshold is not None and NUMERIC_COMPARISONS[condition](actual, threshold)
++    if column == 'Color' and str(value).strip():
++        colors, error = parse_color_values(value)
++        actual = color_id(cell)
++        if error or actual is None:
++            return False
++        if condition in ('contains', 'is'):
++            return actual in colors
++        if condition in ('does not contain', 'is not'):
++            return actual not in colors
++    actual, expected = str(cell).casefold(), str(value).casefold()
++    if condition == 'contains':
++        return expected in actual
++    if condition == 'does not contain':
++        return expected not in actual
++    if condition == 'is':
++        return actual == expected
++    if condition == 'is not':
++        return actual != expected
++    return False
+--- original_snapshot/track_import.py
++++ source/track_import.py
+@@ -0,0 +1,157 @@
++"""Turn dropped files into library rows; keep user imports in this app's own data."""
++import json
++import os
++from pathlib import Path
++import tempfile
++import pandas as pd
++from config import AUDIO_EXTENSIONS
++from functions_app import extract_audio_metadata
++from key_formats import parse_key, parse_bpm
++from traktor_collection import TraktorCollection, canonical_path
++
++
++class TrackImporter:
++    def __init__(self, collection_path=''):
++        self.collection = TraktorCollection(collection_path)
++
++    def read(self, path, existing=None):
++        path = Path(path).resolve()
++        if not path.is_file() or path.suffix.lower().lstrip('.') not in AUDIO_EXTENSIONS:
++            raise ValueError(f'Unsupported or missing audio file: {path}')
++        tags = extract_audio_metadata(path)
++        collection = self.collection.find(path) or {}
++        existing = {} if existing is None else existing
++
++        def available(value):
++            return value is not None and not pd.isna(value) and str(value).strip().lower() not in ('', 'none', 'nan')
++
++        previous_source = 'Saved import' if available(existing.get('Imported')) and existing.get('Imported') else 'Loaded CSV'
++        key = parse_key(tags.key)
++        key_source = 'File tags' if key else ''
++        if key is None and collection.get('key'):
++            key = collection['key']
++            key_source = 'Traktor collection'
++        if key is None:
++            key = parse_key(f"{existing.get('Musical_Key_Base', '')} {existing.get('BaseMinorOrMajor', '')}")
++            if key:
++                key_source = previous_source
++        bpm = parse_bpm(tags.bpm)
++        bpm_source = 'File tags' if bpm is not None else ''
++        analyzed_bpm = collection.get('bpm')
++        if analyzed_bpm is not None and (bpm is None or abs(bpm - round(analyzed_bpm)) < 0.000001):
++            bpm = analyzed_bpm
++            bpm_source = 'Traktor collection'
++        if bpm is None:
++            bpm = parse_bpm(existing.get('BPM'))
++            if bpm is not None:
++                bpm_source = previous_source
++
++        fields = {'artist': 'Artist', 'title': 'Title', 'album': 'Album', 'rating': 'Rating',
++                  'genre': 'Genre', 'comment': 'Comment'}
++        def field(name):
++            for value in (getattr(tags, name, None), collection.get(name), existing.get(fields[name])):
++                if available(value):
++                    return value
++            return None
++
++        color_source = ''
++        # A collection value of zero is an explicit cleared color, not missing metadata.
++        color_value = collection.get('color')
++        if color_value is not None:
++            color_source = 'Traktor collection'
++        elif available(tags.color):
++            color_value = tags.color
++            color_source = 'File tags'
++        elif available(existing.get('Color')):
++            color_value = existing['Color']
++            color_source = previous_source
++        try:
++            color = int(float(color_value)) if color_value is not None else 0
++        except (ValueError, TypeError, OverflowError):
++            color = 0
++        return {'Artist': field('artist') or '', 'Title': field('title') or path.stem,
++                'Album': field('album') or '', 'Rating': field('rating'),
++                'File_Path': str(path), 'BPM': bpm,
++                'Musical_Key_Base': key[0] if key else None,
++                'BaseMinorOrMajor': key[1] if key else None,
++                'Genre': field('genre') or '', 'Comment': field('comment') or '', 'Color': color,
++                'Key_Source': key_source, 'BPM_Source': bpm_source, 'Color_Source': color_source,
++                'Metadata_Error': tags.error or '', 'Imported': True}
++
++
++def merge_tracks(table, records):
++    result = table.copy() if table is not None else pd.DataFrame()
++    indexes = {}
++    if 'File_Path' in result:
++        indexes = {canonical_path(path): index for index, path in result['File_Path'].items()
++                   if canonical_path(path)}
++    new_records = []
++    for record in records:
++        key = canonical_path(record.get('File_Path'))
++        if not key:
++            continue
++        if key in indexes:
++            for name, value in record.items():
++                if name not in result:
++                    result[name] = None
++                result.at[indexes[key], name] = value
++        else:
++            new_records.append(record)
++    if new_records:
++        # Keep one row per normalized path in a batch, including paths differing only in case.
++        unique = {canonical_path(row['File_Path']): row for row in new_records}
++        result = pd.concat([result, pd.DataFrame(unique.values())], ignore_index=True)
++    return result
++
++
++def enrich_ratings(table, collection):
++    """Fill absent CSV ratings from exact collection paths without reading audio files."""
++    result = table.copy()
++    if 'Rating' not in result:
++        result['Rating'] = None
++    if result.empty or 'File_Path' not in result:
++        return result
++    missing = result['Rating'].isna() | result['Rating'].astype(str).str.strip().str.lower().isin(('', 'none', 'nan'))
++    if not missing.any():
++        return result
++    collection._load()
++    if not collection.by_path:
++        return result
++    ratings = result.loc[missing, 'File_Path'].map(
++        lambda path: collection.by_path.get(canonical_path(path), {}).get('rating'))
++    # Only exact paths match: identically named songs must never receive another song's rating.
++    result.loc[missing, 'Rating'] = ratings
++    return result
++
++
++class ImportedTrackStore:
++    def __init__(self, path):
++        self.path = Path(path)
++        self.error = ''
++
++    def load(self):
++        if not self.path.exists():
++            return {}
++        try:
++            data = json.loads(self.path.read_text(encoding='utf-8'))
++            if not isinstance(data, list):
++                raise ValueError('Expected a list of imported tracks')
++            return {canonical_path(row['File_Path']): row for row in data
++                    if isinstance(row, dict) and isinstance(row.get('File_Path'), str)}
++        except (OSError, ValueError) as error:
++            self.error = f'Cannot load saved imports: {error}'
++            return {}
++
++    def save(self, records):
++        self.path.parent.mkdir(parents=True, exist_ok=True)
++        temporary_path = None
++        try:
++            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.path.parent,
++                                             prefix='imports_', suffix='.tmp', delete=False) as handle:
++                temporary_path = Path(handle.name)
++                json.dump(list(records.values()), handle, ensure_ascii=False, indent=2, allow_nan=False)
++            os.replace(temporary_path, self.path)
++            self.error = ''
++        finally:
++            if temporary_path is not None and temporary_path.exists():
++                temporary_path.unlink()
+--- original_snapshot/traktor_collection.py
++++ source/traktor_collection.py
+@@ -0,0 +1,105 @@
++"""Read-only, cached access to Traktor's NML collection."""
++import ntpath
++import os
++from pathlib import Path
++from xml.etree import ElementTree as ET
++from key_formats import nml_key, parse_key, parse_bpm
++
++
++def canonical_path(path):
++    if path is None:
++        return ''
++    text = str(path).strip()
++    if not text or text.lower() == 'nan':
++        return ''
++    return ntpath.normcase(ntpath.normpath(text))
++
++
++def discover_collection():
++    candidates = [Path(r'E:\DJ\TRAKTOR\collection.nml')]
++    home = Path.home()
++    for documents in (home / 'Documents', home / 'OneDrive' / 'Documents', home / 'OneDrive' / 'Dokumentumok'):
++        parent = documents / 'Native Instruments'
++        if parent.is_dir():
++            candidates.extend(parent.glob('Traktor*/collection.nml'))
++    existing = [path for path in candidates if path.is_file()]
++    return str(max(existing, key=lambda path: path.stat().st_mtime)) if existing else ''
++
++
++class TraktorCollection:
++    def __init__(self, path=''):
++        self.path = str(path or '')
++        self.error = ''
++        self.by_path = {}
++        self.by_filename = {}
++        self._signature = None
++
++    def _load(self):
++        if not self.path:
++            return
++        try:
++            stat = Path(self.path).stat()
++            signature = (stat.st_mtime_ns, stat.st_size)
++            if signature == self._signature:
++                return
++            paths, names = {}, {}
++            for event, entry in ET.iterparse(self.path, events=('end',)):
++                if entry.tag != 'ENTRY':
++                    continue
++                location = entry.find('LOCATION')
++                if location is None:
++                    entry.clear()
++                    continue
++                filename = location.get('FILE', '')
++                directory = location.get('DIR', '').replace('/:', '/').replace('/', '\\')
++                volume = location.get('VOLUME', '')
++                if len(volume) == 1 and volume.isalpha():
++                    volume += ':'
++                path = ntpath.normpath(volume + directory + filename)
++                info = entry.find('INFO')
++                info = info.attrib if info is not None else {}
++                tempo = entry.find('TEMPO')
++                musical = entry.find('MUSICAL_KEY')
++                parsed_key = nml_key(musical.get('VALUE')) if musical is not None else None
++                if parsed_key is None:
++                    parsed_key = parse_key(info.get('KEY'))
++                album = entry.find('ALBUM')
++                record = {'path': path, 'artist': entry.get('ARTIST'), 'title': entry.get('TITLE'),
++                          'album': album.get('TITLE') if album is not None else None,
++                          'genre': info.get('GENRE'), 'comment': info.get('COMMENT'),
++                          'bpm': parse_bpm(tempo.get('BPM')) if tempo is not None else None,
++                          'key': parsed_key, 'color': info.get('COLOR'),
++                          'rating': self._ranking(info.get('RANKING')), 'size_kb': info.get('FILESIZE')}
++                paths[canonical_path(path)] = record
++                names.setdefault(filename.casefold(), []).append(record)
++                entry.clear()
++            self.by_path, self.by_filename = paths, names
++            self._signature = signature
++            self.error = ''
++        except (OSError, ET.ParseError) as error:
++            self.error = f'Cannot read Traktor collection: {error}'
++            # Retain the last valid index if Traktor is currently rewriting the NML.
++
++    @staticmethod
++    def _ranking(value):
++        try:
++            number = int(value)
++            return min(5, max(1, round(number / 51))) if number > 0 else None
++        except (TypeError, ValueError):
++            return None
++
++    def find(self, filepath):
++        self._load()
++        exact = self.by_path.get(canonical_path(filepath))
++        if exact is not None:
++            return exact
++        candidates = self.by_filename.get(ntpath.basename(str(filepath)).casefold(), [])
++        if len(candidates) != 1:
++            return None
++        record = candidates[0]
++        try:
++            if record['size_kb'] and abs(int(record['size_kb']) - os.path.getsize(filepath) / 1024) > 2:
++                return None
++        except (OSError, ValueError):
++            return None
++        return record
+--- original_snapshot/tree_widgets.py
++++ source/tree_widgets.py
+@@ -87,128 +87,57 @@
+             self.parent_app.status_bar.showMessage("Drag cancelled")
+ 
+ 
+-class PoolTreeWidget(DraggableTreeWidget):
+-    """Tree widget for the track pool that supports dragging to playlist and external apps"""
+-    def __init__(self, parent=None):
+-        super().__init__(parent)
++def audio_paths(mime):
++    """Only local audio files; incoming drops never move or edit them."""
++    if not mime.hasUrls():
++        return []
++    return [url.toLocalFile() for url in mime.urls()
++            if url.isLocalFile() and os.path.isfile(url.toLocalFile())
++            and get_file_extension(url.toLocalFile()) in AUDIO_EXTENSIONS]
+ 
+-        self.setAcceptDrops(True)
+ 
+-        self.selectionModel().selectionChanged.connect(self.handle_selection_feedback)
+-    
+-        # Add these methods:
++class AudioDropMixin:
++    playlist_drop = False
++
+     def dragEnterEvent(self, event):
+-        """Handle when a drag enters this widget"""
+-        if event.mimeData().hasUrls():
+-            event.acceptProposedAction()
++        if audio_paths(event.mimeData()):
++            event.setDropAction(Qt.CopyAction)
++            event.accept()
+         else:
+             event.ignore()
+-            
++
+     def dragMoveEvent(self, event):
+-        """Handle when a drag moves over this widget"""
+-        if event.mimeData().hasUrls():
+-            event.acceptProposedAction()
+-        else:
++        self.dragEnterEvent(event)
++
++    def dropEvent(self, event):
++        paths = audio_paths(event.mimeData())
++        if not paths:
+             event.ignore()
+-    
+-    def dropEvent(self, event):
+-        """Handle when files are dropped from Windows Explorer"""
+-        if event.mimeData().hasUrls():
+-            for url in event.mimeData().urls():
+-                filepath = url.toLocalFile()
+-                extension = get_file_extension(filepath)
+-                if extension in AUDIO_EXTENSIONS:
+-                    metadata = extract_audio_metadata(filepath)
+-                    # print(f" Metadata of the dropped files are: {metadata}")
+-                # print(f"[DEBUG] File dropped: {file_path} // Extension: {extension}")
+-            event.acceptProposedAction()
+-        else:
+-            event.ignore()
+-    
+-    # checks whenever the file is exist on path
+-    def handle_selection_feedback(self, selected, deselected):
+-        """Handle selection changes to provide feedback on file availability"""
+-        # print("[DEBUG] handle_selection_feedback triggered in PoolTreeWidget")
+-
+-        selected_items = self.selectedItems()
+-        if not selected_items:
+-            # print("[DEBUG] No item selected")
+             return
+-
+-        item = selected_items[0]
+-        path_col = HEADER_INDEX.get("Path", 7)
+-        file_path = item.text(path_col).strip()
+-
+-        if not file_path or not os.path.exists(file_path):
+-            # print(f"[DEBUG] File not found: {file_path}")
+-            self.parent_app.status_bar.setStyleSheet("color: red; font-weight: bold;")
+-            self.parent_app.status_bar.showMessage(f"❌ File not found: {file_path}")
+-        # else:
+-        #     print(f"[DEBUG] File found: {file_path}")
+-        #     self.parent_app.status_bar.setStyleSheet("color: black; font-weight: normal;")
+-        #     self.parent_app.status_bar.showMessage(f"✅ File found: {os.path.basename(file_path)}")
+-        else:
+-            # print(f"[DEBUG] File found: {file_path}")
+-            self.parent_app.status_bar.setStyleSheet("color: black; font-weight: normal;")
+-            self.parent_app.status_bar.showMessage(f"")
++        self.parent_app.import_audio_files(paths, to_playlist=self.playlist_drop)
++        event.setDropAction(Qt.CopyAction)
++        event.accept()
+ 
+ 
+-class PlaylistTreeWidget(DraggableTreeWidget):
+-    """Tree widget for the playlist that accepts drops from the pool"""
++class PoolTreeWidget(AudioDropMixin, DraggableTreeWidget):
+     def __init__(self, parent=None):
+         super().__init__(parent)
+         self.setAcceptDrops(True)
++        self.selectionModel().selectionChanged.connect(self.handle_selection_feedback)
+ 
+-        # show when file path doesnt exist
+-        # self.itemSelectionChanged.connect(self.handle_selection_feedback)
+-        # self.itemClicked.connect(self.handle_selection_feedback)
++    def handle_selection_feedback(self, selected, deselected):
++        items = self.selectedItems()
++        if not items:
++            return
++        path = items[0].text(HEADER_INDEX['Path'])
++        missing = not path or not os.path.isfile(path)
++        self.parent_app.status_bar.setStyleSheet('color: red;' if missing else '')
++        self.parent_app.status_bar.showMessage(f'File not found: {path}' if missing else '')
+ 
+-    def dragEnterEvent(self, event):
+-        """Handle when a drag enters this widget"""
+-        if event.mimeData().hasUrls():
+-            event.acceptProposedAction()
+-        else:
+-            event.ignore()
+-            
+-    def dragMoveEvent(self, event):
+-        """Handle when a drag moves over this widget"""
+-        if event.mimeData().hasUrls():
+-            event.acceptProposedAction()
+-        else:
+-            event.ignore()
+-            
+-    def dropEvent(self, event):
+-        """Handle when an item is dropped on this widget"""
+-        if event.mimeData().hasUrls():
+-            url = event.mimeData().urls()[0]
+-            file_path = url.toLocalFile()
+-            
+-            # Look for this file in the main tree to copy all metadata
+-            main_tree = self.parent_app.candidate_tree
+-            for i in range(main_tree.topLevelItemCount()):
+-                item = main_tree.topLevelItem(i)
+-                if item.text(HEADER_INDEX.get("Path")) == file_path: # Filepath column
+-                    # Create a new item with the same data
+-                    new_item = QTreeWidgetItem()
+-                    for col in range(main_tree.columnCount()):
+-                        new_item.setText(col, item.text(col))
+-                    
+-                    # Add to playlist
+-                    self.addTopLevelItem(new_item)
+-                    self.parent_app.status_bar.showMessage(f"Added track to playlist: {os.path.basename(file_path)}")
+-                    event.acceptProposedAction()
+-                    return
+-            
+-            # If we didn't find the item in the main tree, just create a basic one
+-            self.parent_app.status_bar.showMessage(f"File not found in library, adding with limited info")
+-            new_item = QTreeWidgetItem()
+-            file_name = os.path.basename(file_path)
+-            new_item.setText(HEADER_INDEX.get("Artist"), file_name.split('.')[0])  # Artist (just use filename)
+-            new_item.setText(HEADER_INDEX.get("Title"), "")  # Title
+-            new_item.setText(HEADER_INDEX.get("Path"), file_path)  # Path
+-            
+-            # Add to playlist
+-            self.addTopLevelItem(new_item)
+-            event.acceptProposedAction()
+-        else:
+-            event.ignore()+
++class PlaylistTreeWidget(AudioDropMixin, DraggableTreeWidget):
++    playlist_drop = True
++
++    def __init__(self, parent=None):
++        super().__init__(parent)
++        self.setAcceptDrops(True)

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traktor-key-calculator"
+dynamic = ["version"]
+description = "DJ helper that shows how a track's musical key shifts at a different playback tempo (Key Lock off)."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+authors = [{ name = "Gergo Gyori" }]
+# Exact, verified versions live in requirements.txt / requirements-dev.txt.
+dependencies = [
+    "PyQt5>=5.15,<5.16",
+    "mutagen>=1.47",
+    "pandas>=2.3,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6.16,<7"]
+
+[project.gui-scripts]
+traktor-key-calculator = "traktor_key_calculator.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "traktor_key_calculator.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+traktor_key_calculator = ["data/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

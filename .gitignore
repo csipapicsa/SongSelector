@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environment
+.venv/
+
+# Build output (PyInstaller work dir, verification runs, exes)
+build/
+dist/
+*.exe
+
+# Local app data when running from source (settings, imported tracks)
+.appdata/
+SpotNextTrack_settings.json
+imported_tracks.json
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
