@@ -4,6 +4,21 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.15.0] - 2026-10-28
+
+- **Playlist columns can be resized again.** They were all set to stretch, which blocks resizing by
+  hand; their widths were also never restored, because they were saved as *Column sizes left* and
+  read back as *Column Sizes left*.
+- **Similarity map, closest matches:**
+  - Clicking a match makes it stand out on the map: a pulsing magenta glow and a thick ring (magenta
+    because no Traktor colour is), and its harmonic edges drawn at half opacity next to the selected
+    track's edges. The selection stays. Double-click selects the match (it no longer adds it to the
+    playlist; drag it there instead).
+  - Matches already on the playlist are shown in italics.
+  - *Harmonic only* keeps tracks without a key in Traktor (Mix: *no key*): their sound can still
+    match, and the embeddings do not need Traktor's analysis. Before, they were dropped, and a selected
+    track without a key had an empty list.
+
 ## [4.14.0] - 2026-10-27
 
 - **Playlist tracks stay in the library list**, dimmed and in italics, so a search finds them.

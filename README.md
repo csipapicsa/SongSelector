@@ -109,14 +109,17 @@ it is filtered now (search, colours, Advanced Search), so narrow the list first 
 |---|---|
 | Hover a dot | Details; choose which in *View → Map hover details…* |
 | Click | Label and details of the track; its 15 most similar tracks: cyan rings, list on the right |
-| Click in the matches list | Orange ring on that track; the selection stays |
+| Click in the matches list | That track glows (magenta) and its edges show pale; the selection stays |
+| Double-click in the matches list | Select that track (its own matches) |
 | Drag a dot or matches | The files, e.g. into Traktor's deck or playlist |
 | Drop a track on the map (e.g. from the playlist) | Selects it there and shows its closest matches |
 | Column headers of the matches | Sort (click again to reverse) |
-| Double-click (dot or list) | Add to playlist |
+| Double-click a dot | Add to playlist |
 | Right-click | The usual track menu (rating, colour, edit, remove) |
 | Scroll / drag | Zoom / move |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour, same rating |
+| *Closest matches: harmonic only* | Only harmonic partners, plus tracks without a key in Traktor (*no key*) |
+| Italic match | Already on the playlist |
 | *Re-arrange map* | Recompute the layout from all analysed tracks (a few minutes for 3,000) |
 
 Distances on any 2D map are approximate; the closest-matches list uses the full embeddings and

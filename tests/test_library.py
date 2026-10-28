@@ -137,6 +137,16 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         from traktor_key_calculator.config import HEADER_INDEX
         return [tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount())]
 
+    def test_playlist_columns_can_be_resized_and_keep_their_width(self):
+        from PyQt5.QtWidgets import QHeaderView
+        from traktor_key_calculator.config import HEADER_INDEX
+        window = self.window()
+        header = window.playlist_tree.header()
+        self.assertTrue(all(header.sectionResizeMode(i) == QHeaderView.Interactive for i in range(header.count())))
+        window.playlist_tree.setColumnWidth(HEADER_INDEX['Title'], 333)
+        window = self.restart(window)
+        self.assertEqual(window.playlist_tree.columnWidth(HEADER_INDEX['Title']), 333)
+
     def test_library_and_playlist_are_restored_after_restart(self):
         from traktor_key_calculator.config import HEADER_INDEX
         window = self.window()

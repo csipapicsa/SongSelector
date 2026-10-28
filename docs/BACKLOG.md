@@ -18,7 +18,21 @@ CHANGELOG when they ship.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
 - [ ] Map: "edges only to the N closest matches" (harmonic *and* similar), likely the most useful edge mode.
-- [ ] Map: 3D view (pyqtgraph.opengl or vispy).
+- [ ] Map: 3D view (pyqtgraph.opengl or vispy). Rotate with the usual mouse + Shift / Ctrl
+      combinations, zoom with the wheel. 3D t-SNE may also split the "one big blob" better.
+- [ ] Map: **unsupervised clustering**, method chosen in the map settings, to try several
+      (user request 2026-10-28: the map is mostly one big blob, yet some groups are expected).
+      Colour dots by cluster as an alternative to the Traktor colour; cluster sizes in the status.
+      Lightweight candidates (numpy only, the exe has no scikit-learn; seconds on 5k tracks):
+      1. k-means (cosine) on the full vectors reduced by PCA to ~50 dims; k from the user or by
+         silhouette score.
+      2. Graph communities on the k-nearest-neighbour graph (label propagation or Louvain): finds
+         groups even inside a blob, because it follows neighbours instead of gaps in density.
+      3. Density clustering (HDBSCAN-style) on the 2D map positions: groups exactly what the eye
+         sees; tracks in sparse areas stay unclustered.
+      Possibly first: check whether the blob comes from the vectors themselves (PCA whitening,
+      dropping the first few dominant components) rather than from t-SNE; measure with the
+      genre/colour labels as in `docs/research/audio_embeddings.md`.
 - [ ] Map: faster layout for very large libraries (Barnes-Hut t-SNE, or arrange a sample + place_new).
 - [ ] Map: lasso selection, labels for the selected track's neighbours, a legend for the edge colours.
 - [ ] Re-check the per-track vector (`similarity.track_vectors`) once more styles are analysed.

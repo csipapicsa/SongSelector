@@ -199,15 +199,67 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         tree = self.map.suggestions
         return [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
 
-    def test_clicking_a_match_rings_it_but_keeps_the_selected_track(self):
+    def test_click_on_a_match_highlights_it_double_click_selects_it(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
         self.map.select(self.key(0))
+        tree = self.map.suggestions
         first = self.matches()[0]
-        self.map.suggestions.itemClicked.emit(first, 0)
-        self.assertEqual(self.map.selected_key, self.key(0))
-        self.assertEqual(self.map.preview_key, first.data(0, 0x0100))
-        self.assertEqual(self.map.dots[self.map.preview_key].pen().color().name(), '#ffb020')
-        self.assertEqual(self.map.dots[self.key(0)].pen().color().name(), '#ffffff')
-        self.assertEqual(self.map.suggestions.topLevelItemCount(), 15)  # list unchanged
+        match = first.data(0, 0x0100)
+        QTest.mouseClick(tree.viewport(), Qt.LeftButton, pos=tree.visualItemRect(first).center())
+        self.application.processEvents()
+        self.assertEqual(self.map.selected_key, self.key(0))  # the selection stays
+        self.assertEqual(self.map.preview_key, match)
+        self.assertEqual(self.map.dots[match].pen().color().name(), '#ff2bd6')
+        self.assertTrue(self.map.glow.isVisible())
+        self.assertEqual(self.map.glow.pos(), self.map.dots[match].pos())
+        self.assertEqual([item.data(0, 0x0100) for item in self.matches()][0], match)  # list unchanged
+        QTest.mouseDClick(tree.viewport(), Qt.LeftButton, pos=tree.visualItemRect(first).center())
+        self.application.processEvents()
+        self.assertEqual(self.map.selected_key, match)
+        self.assertEqual(self.map.dots[match].pen().color().name(), '#ffffff')
+        self.assertIsNone(self.map.preview_key)
+        self.assertFalse(self.map.glow.isVisible())
+        self.assertNotIn(match, [item.data(0, 0x0100) for item in self.matches()])  # its own matches now
+        self.assertEqual(self.window.playlist_tree.topLevelItemCount(), 0)  # does not add to the playlist
+
+    def test_clicked_match_gets_pale_edges_next_to_the_selected_tracks_edges(self):
+        for name, action in self.map.edge_actions.items():
+            action.setChecked(name == 'perfect_mix')
+        self.map.select(self.key(0))
+        alphas = lambda: sorted({item.pen().color().alpha() for item in self.map.edge_items})
+        self.assertEqual(alphas(), [170])
+        other_key_group = next(item.data(0, 0x0100) for item in self.matches()
+                               if int(item.data(0, 0x0100).split('track')[-1].split('.')[0]) % 3 == 1)
+        self.map.preview(other_key_group)
+        self.assertEqual(alphas(), [85, 170])  # the clicked match's edges at half strength
+        self.map.harmonic_only.setChecked(True)  # the list is rebuilt: highlight and pale edges go
+        self.assertIsNone(self.map.preview_key)
+        self.assertEqual(alphas(), [170])
+
+    def test_matches_on_the_playlist_are_italic(self):
+        self.map.request_add_to_playlist.emit(self.key(1))
+        self.map.select(self.key(0))
+        italic = {item.data(0, 0x0100) for item in self.matches() if item.font(0).italic()}
+        self.assertEqual(italic, {self.key(1)})
+
+    def test_harmonic_only_keeps_tracks_without_a_key(self):
+        self.map.harmonic_only.setChecked(True)
+        fields = {key: dict(values) for key, values in self.map.listed.items()}
+        fields[self.key(1)]['Camelot Key New'] = 'Unknown'  # not analysed in Traktor
+        self.map.set_tracks(fields)
+        self.map.select(self.key(0))
+        mixes = {item.data(0, 0x0100): item.text(1) for item in self.matches()}
+        self.assertEqual(mixes[self.key(1)], 'no key')
+        self.assertTrue(all(text for text in mixes.values()))  # every other match is harmonic
+        fields[self.key(0)]['Camelot Key New'] = 'Unknown'  # the selected track itself has no key
+        self.map.set_tracks(fields)
+        self.map.select(self.key(0))
+        self.assertEqual(len(self.matches()), 15)
+        self.assertEqual({item.text(1) for item in self.matches()}, {'no key'})
 
     def test_selected_track_shows_details_box_and_label_on_the_map(self):
         self.map.select(self.key(4))

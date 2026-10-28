@@ -206,7 +206,8 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   from `fields_provider` (`TraktorKeyCalculator._fields_for_key`).
 - **Edges** (`SimilarityMapWidget._edges`): tracks are grouped by tempo-adjusted Camelot key,
   colour and rating, and partners are looked up per group (no all-pairs loop); one edge per
-  pair, capped at `MAX_EDGES`.
+  pair, capped at `MAX_EDGES`. `_edge_sources` decides which tracks edges start from: all visible
+  tracks, or the selected track plus, at half opacity, a match clicked in the list (`preview_key`).
 - **Choices backed by measurements** (2026-10-27, ~450–700 analysed tracks; see
   `docs/research/audio_embeddings.md`): t-SNE kept 41–47 % of each track's 10 true neighbours as
   map neighbours (UMAP 37–42 %, PCA 26 %). The numpy t-SNE matches scikit-learn's quality

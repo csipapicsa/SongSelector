@@ -14,8 +14,8 @@ from html import escape
 from dataclasses import dataclass, field
 
 import numpy as np
-from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, QVariantAnimation, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QGraphicsEllipseItem,
                              QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene,
                              QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel, QMenu,
@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QGraphi
                              QVBoxLayout, QWidget)
 
 from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
-from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type
+from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.core.similarity import (EDGE_SAME_COLOR, EDGE_SAME_RATING, display_color,
                                                     nearest, place_new, track_vectors,
@@ -34,10 +34,14 @@ DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Sel
 DEFAULT_EDGES = ['perfect_mix', 'plus_1_mix', 'minus_1_mix', 'energy_boost']
 SCENE_SIZE = 1000.0          # the map is scaled to about this many scene units
 DOT_SIZE = 9                 # pixels, independent of zoom
+GLOW_SIZE = 44               # pixels: pulsing halo around a clicked closest match
 MAX_EDGES = 2500             # "between all visible tracks" is capped to stay readable
 SUGGESTIONS = 15
 NO_COLOR = QColor('#8a8f98')
-SELECTED_RING, MATCH_RING, PREVIEW_RING = '#ffffff', '#40e0ff', '#ffb020'
+# The clicked match is magenta: no Traktor colour is, so it stands out on orange/yellow-heavy maps.
+SELECTED_RING, MATCH_RING, PREVIEW_RING = '#ffffff', '#40e0ff', '#ff2bd6'
+EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clicked match's edges: half
+NO_KEY_TEXT = 'no key'       # Mix column when either track has no key in Traktor
 PATH_ROLE = Qt.UserRole + 1    # file path of a closest-match row (for dragging)
 SORT_ROLE = Qt.UserRole + 2    # value a closest-match column sorts by (number or text)
 EDGE_COLORS = {
@@ -210,9 +214,11 @@ class SimilarityMapWidget(QWidget):
         self.reference = None
         # key -> {column: text} for any library or playlist track; set by the main window.
         self.fields_provider = lambda key: None
+        # path_keys of the playlist tracks (set by the main window): italic in the closest matches.
+        self.playlist_keys = lambda: set()
         self.dots = {}
         self.selected_key = None
-        self.preview_key = None   # a closest match clicked in the list: ringed, not selected
+        self.preview_key = None   # a closest match clicked in the list: glows, the selection stays
         self.match_keys = []      # closest matches of the selected track, ringed on the map
         self._base_status = ''
         self._loading = False
@@ -234,6 +240,26 @@ class SimilarityMapWidget(QWidget):
         self.label_text.setBrush(QBrush(QColor('#f0f0f0')))
         self.label.hide()
         self.scene.addItem(self.label)
+        # Pulsing halo behind a clicked closest match, so it is easy to find on a busy map.
+        self.glow = QGraphicsEllipseItem(-GLOW_SIZE / 2, -GLOW_SIZE / 2, GLOW_SIZE, GLOW_SIZE)
+        self.glow.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+        self.glow.setAcceptedMouseButtons(Qt.NoButton)  # clicks reach the dots underneath
+        gradient = QRadialGradient(0, 0, GLOW_SIZE / 2)
+        for stop, alpha in ((0, 240), (0.3, 170), (1, 0)):
+            colour = QColor(PREVIEW_RING)
+            colour.setAlpha(alpha)
+            gradient.setColorAt(stop, colour)
+        self.glow.setBrush(QBrush(gradient))
+        self.glow.setPen(QPen(Qt.NoPen))
+        self.glow.setZValue(3.4)
+        self.glow.hide()
+        self.scene.addItem(self.glow)
+        self.pulse = QVariantAnimation(self)
+        self.pulse.setDuration(1200)
+        self.pulse.setLoopCount(-1)
+        for step, scale in ((0, 0.75), (0.5, 1.25), (1, 0.75)):
+            self.pulse.setKeyValueAt(step, scale)
+        self.pulse.valueChanged.connect(self.glow.setScale)
 
         self.status = QLabel('')
         self.edges_button = QToolButton()
@@ -253,6 +279,8 @@ class SimilarityMapWidget(QWidget):
         self.all_edges.setChecked(settings.get('Map edges between all', False))
         self.all_edges.toggled.connect(self._edges_changed)
         self.harmonic_only = QCheckBox('Closest matches: harmonic only')
+        self.harmonic_only.setToolTip('Tracks without a key in Traktor stay in the list (Mix: "no key"):\n'
+                                      'their sound can still match.')
         self.harmonic_only.setChecked(settings.get('Map harmonic only', False))
         self.harmonic_only.toggled.connect(self._update_suggestions)
         fit = QPushButton('Fit')
@@ -267,10 +295,10 @@ class SimilarityMapWidget(QWidget):
         self.suggestions = MatchList()
         self.suggestions.setHeaderLabels(['Similarity', 'Mix', 'Artist', 'Title'])
         self.suggestions.setRootIsDecorated(False)
-        # Clicking a match shows where it is but keeps the selected track selected.
+        # A click highlights the match on the map (the selected track stays); a double-click makes
+        # it the selected track. Dragging a match adds it to the playlist or Traktor.
         self.suggestions.itemClicked.connect(lambda item: self.preview(item.data(0, Qt.UserRole)))
-        self.suggestions.itemDoubleClicked.connect(
-            lambda item: self.request_add_to_playlist.emit(item.data(0, Qt.UserRole)))
+        self.suggestions.itemDoubleClicked.connect(lambda item: self.select_and_show(item.data(0, Qt.UserRole)))
 
         bar = QHBoxLayout()
         for widget in (self.edges_button, self.all_edges, self.harmonic_only):
@@ -282,8 +310,8 @@ class SimilarityMapWidget(QWidget):
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.addWidget(self.details)
-        side_layout.addWidget(QLabel('Closest matches (click: show on map, double-click: add to\n'
-                                     'playlist, drag: to Traktor or Explorer)'))
+        side_layout.addWidget(QLabel('Closest matches (click: show on the map, double-click: select,\n'
+                                     'drag: to the playlist, Traktor or Explorer; italic: on the playlist)'))
         side_layout.addWidget(self.suggestions)
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.view)
@@ -424,12 +452,12 @@ class SimilarityMapWidget(QWidget):
         if key is None or key not in self.dots:
             return
         previous, self.selected_key = self.selected_key, key
-        preview, self.preview_key = self.preview_key, None
+        self._clear_preview()
         if self.reference is not None and self.reference[0] != key:
             self.reference = None  # selecting another track: the reference dot goes away
             self._merge_reference()
             self._refresh()
-        for changed in (previous, preview, key):
+        for changed in (previous, key):
             self._outline(changed)
         self._draw_edges()
         self._update_suggestions()
@@ -437,12 +465,35 @@ class SimilarityMapWidget(QWidget):
         self.selected.emit(key)
 
     def preview(self, key):
-        """Ring a closest match on the map and bring it into view; the selection stays."""
+        """Highlight a closest match on the map: glow, orange ring, its edges pale. The selection stays."""
         previous, self.preview_key = self.preview_key, key
         for changed in (previous, key):
             self._outline(changed)
+        self._show_glow()
+        self._draw_edges()
         if key in self.dots:
             self.view.ensureVisible(QRectF(self.dots[key].pos(), self.dots[key].pos()).adjusted(-40, -40, 40, 40))
+
+    def _clear_preview(self):
+        previous, self.preview_key = self.preview_key, None
+        self._outline(previous)
+        self._show_glow()
+
+    def _show_glow(self):
+        dot = self.dots.get(self.preview_key)
+        if dot is not None and dot.isVisible():
+            self.glow.setPos(dot.pos())
+            self.glow.show()
+            self.pulse.start()
+        else:
+            self.pulse.stop()
+            self.glow.hide()
+
+    def select_and_show(self, key):
+        """Select a track and scroll the map to it (double-click in the closest matches)."""
+        self.select(key)
+        if key in self.dots:
+            self.view.centerOn(self.dots[key])
 
     def _show_selected_details(self):
         fields = self.fields.get(self.selected_key)
@@ -483,7 +534,8 @@ class SimilarityMapWidget(QWidget):
         return drag.exec_(Qt.CopyAction)
 
     def _outline(self, key):
-        """Selected track: white ring on top; its closest matches: cyan ring; others: thin dark edge."""
+        """Selected track: white ring on top; a clicked match: thick magenta ring (plus the glow);
+        the other closest matches: cyan ring; others: thin dark edge."""
         dot = self.dots.get(key)
         if dot is None:
             return
@@ -491,7 +543,7 @@ class SimilarityMapWidget(QWidget):
             dot.setPen(QPen(QColor(SELECTED_RING), 3))
             dot.setZValue(4)
         elif key == self.preview_key:
-            dot.setPen(QPen(QColor(PREVIEW_RING), 3))
+            dot.setPen(QPen(QColor(PREVIEW_RING), 3.5))
             dot.setZValue(3.5)
         elif key in self.match_keys:
             dot.setPen(QPen(QColor(MATCH_RING), 2.5))
@@ -508,15 +560,24 @@ class SimilarityMapWidget(QWidget):
         self.settings['Map edges between all'] = self.all_edges.isChecked()
         self._draw_edges()
 
-    def _edges(self, criteria):
-        """[(source, target, reason)] for the visible dots, at most MAX_EDGES.
+    def _edge_sources(self):
+        """[(sources, alpha)] to draw; pale first, so the selected track's edges lie on top."""
+        if self.all_edges.isChecked():
+            return [(list(self.dots), EDGE_ALPHA_ALL)]
+        return [([self.preview_key], EDGE_ALPHA_PREVIEW), ([self.selected_key], EDGE_ALPHA_SELECTED)]
+
+    def _edges(self, criteria, sources=None):
+        """[(source, target, reason)] from the visible sources to the visible dots, at most MAX_EDGES.
+        sources: by default all visible dots or the selected track, as the checkbox says.
 
         Tracks are grouped by tempo-adjusted Camelot key, colour and rating, so matches are
         looked up instead of comparing every pair (thousands of tracks stay fast).
         """
         visible = [key for key, dot in self.dots.items() if dot.isVisible()]
-        sources = visible if self.all_edges.isChecked() else \
-            ([self.selected_key] if self.selected_key in visible else [])
+        if sources is None:
+            sources = visible if self.all_edges.isChecked() else [self.selected_key]
+        shown = set(visible)
+        sources = [key for key in sources if key in shown]
         by_key, by_colour, by_rating = {}, {}, {}
         for key in visible:
             fields = self.fields[key]
@@ -554,8 +615,16 @@ class SimilarityMapWidget(QWidget):
         self.status.setText(self._base_status)
         if not criteria or self.data is None:
             return
+        for sources, alpha in self._edge_sources():
+            edges = self._edges(criteria, sources)
+            if len(edges) >= MAX_EDGES:
+                self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks. '
+                                    + self._base_status)
+            self._add_edge_items(edges, alpha)
+
+    def _add_edge_items(self, edges, alpha):
+        """One path item per reason and colour (thousands of single lines would be slow)."""
         paths = {}
-        edges = self._edges(criteria)
         for source, target, reason in edges:
             if reason == EDGE_SAME_COLOR:
                 colour = (COLOR_MAPPING_CATEGORY.get(display_color(self.fields[source])) or NO_COLOR).name()
@@ -564,16 +633,12 @@ class SimilarityMapWidget(QWidget):
             path = paths.setdefault((reason, colour), QPainterPath())
             path.moveTo(self._scaled(source))
             path.lineTo(self._scaled(target))
-        if len(edges) >= MAX_EDGES:
-            self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks. '
-                                + self._base_status)
         for (reason, colour), path in paths.items():
             weight = MIX_TYPES_BY_NAME[reason].weight if reason in MIX_TYPES_BY_NAME else 4
-            pen = QPen(QColor(colour), 0.6 + weight / 5)
-            pen.setCosmetic(True)                      # constant width at any zoom
             colour_alpha = QColor(colour)
-            colour_alpha.setAlpha(170 if not self.all_edges.isChecked() else 90)
-            pen.setColor(colour_alpha)
+            colour_alpha.setAlpha(alpha)
+            pen = QPen(colour_alpha, 0.6 + weight / 5)
+            pen.setCosmetic(True)                      # constant width at any zoom
             item = QGraphicsPathItem(path)
             item.setPen(pen)
             item.setZValue(0)
@@ -584,22 +649,28 @@ class SimilarityMapWidget(QWidget):
         self.settings['Map harmonic only'] = self.harmonic_only.isChecked()
         self.suggestions.clear()
         previous, self.match_keys = self.match_keys, []
-        preview, self.preview_key = self.preview_key, None
-        for key in previous + [preview]:
+        for key in previous:
             self._outline(key)
+        if self.preview_key is not None:  # the list is rebuilt: the clicked match is gone
+            self._clear_preview()
+            self._draw_edges()
         if self.data is None or self.selected_key not in self.data.row:
             return
         visible = [self.data.row[key] for key, dot in self.dots.items()
                    if dot.isVisible() and key in self.data.row]
         source = self.fields.get(self.selected_key, {})
+        on_playlist = self.playlist_keys()
         added = 0
         for row, score in nearest(self.data.vectors, self.data.row[self.selected_key], count=len(visible), among=visible):
             key = self.data.keys[row]
             target = self.fields.get(key, {})
             mix = mix_type(source.get('Camelot Key New'), target.get('Camelot Key New'))
-            if self.harmonic_only.isChecked() and mix is None:
+            # A track Traktor has not analysed has no key, but its sound can still match:
+            # "harmonic only" cannot rule it out, so it stays.
+            keys_known = all(parse_camelot(fields.get('Camelot Key New')) is not None for fields in (source, target))
+            if self.harmonic_only.isChecked() and mix is None and keys_known:
                 continue
-            item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else '',
+            item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else ('' if keys_known else NO_KEY_TEXT),
                               target.get('Artist', ''), target.get('Title', '')])
             item.setData(0, SORT_ROLE, score)
             item.setData(1, SORT_ROLE, mix.weight if mix else 0)
@@ -609,6 +680,14 @@ class SimilarityMapWidget(QWidget):
             item.setData(0, PATH_ROLE, target.get('Path', ''))
             if mix is not None:
                 item.setForeground(1, QBrush(QColor(EDGE_COLORS[mix.name])))
+            elif not keys_known:
+                item.setForeground(1, QBrush(NO_COLOR))
+            if key in on_playlist:
+                font = item.font(0)
+                font.setItalic(True)
+                for column in range(4):
+                    item.setFont(column, font)
+                    item.setToolTip(column, 'Already on the playlist')
             self.suggestions.addTopLevelItem(item)
             self.match_keys.append(key)
             self._outline(key)

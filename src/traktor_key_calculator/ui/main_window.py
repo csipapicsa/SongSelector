@@ -166,6 +166,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.similarity_map.request_context_menu.connect(self._map_context_menu)
         self.similarity_map.selected.connect(self._select_in_list)
         self.similarity_map.fields_provider = self._fields_for_key
+        self.similarity_map.playlist_keys = lambda: {canonical_path(path) for path in self.playlist_paths}
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
         self._map_stale = True
@@ -239,25 +240,15 @@ class TraktorKeyCalculator(QMainWindow):
             is_visible = name in visible_columns
             self.playlist_tree.setColumnHidden(col, not is_visible)
 
-        column_sizes = self.settings.get("Column Sizes left", {})
+        # Columns are resized by hand (Stretch mode made that impossible) and the widths are
+        # saved on close under the same key.
+        self.playlist_tree.header().setStretchLastSection(False)
+        self.playlist_tree.header().setSectionResizeMode(QHeaderView.Interactive)
+        column_sizes = self.settings.get("Column sizes left", {})
         for col, label in enumerate(HEADER_LABELS):
             width = column_sizes.get(label)
             if width is not None and width > 0:
                 self.playlist_tree.setColumnWidth(col, width)
-
-        # Set column widths for playlist tree
-        self.playlist_tree.header().setStretchLastSection(False)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Artist"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Title"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Original BPM"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Original Key"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["New Key"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Camelot Key New"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Open Key New"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Path"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Comment"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Genre"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Color"], QHeaderView.Stretch)
         left_layout.addWidget(self.playlist_tree)
 
 
