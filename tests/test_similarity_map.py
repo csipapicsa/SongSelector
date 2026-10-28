@@ -291,6 +291,18 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(len(self.matches()), 15)
         self.assertEqual({item.text(1) for item in self.matches()}, {'no key'})
 
+    def test_matches_panel_stays_visible_on_a_narrow_window_and_keeps_its_width(self):
+        # Long one-line texts (status, caption) used to set the minimum width: the map grew wider
+        # than the window and the splitter collapsed the matches panel to nothing.
+        bars = self.map.layout().itemAt(0).minimumSize().width() + 40
+        self.window.resize(bars, 900)
+        self.window.show()
+        self.application.processEvents()
+        self.assertLessEqual(self.map.width(), self.window.width())
+        self.assertGreaterEqual(self.map.splitter.sizes()[1], 220)
+        self.map.splitter.moveSplitter(self.map.splitter.width() - 400, 1)
+        self.assertEqual(self.window.settings['Map splitter'], self.map.splitter.sizes())
+
     def test_selected_track_glows_white_until_it_is_filtered_out(self):
         self.map.select(self.key(4))
         self.assertTrue(self.map.selected_glow.isVisible())

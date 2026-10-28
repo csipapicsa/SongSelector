@@ -4,6 +4,13 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.16.1] - 2026-10-28
+
+- **Fix: the closest-matches panel disappeared on narrower windows** (since 4.15.0). The longer
+  caption above the matches and the one-line status under the map set the map's minimum width; the
+  map then grew wider than the window and the splitter collapsed the panel to nothing. The caption
+  and status now wrap, the panel cannot collapse (at least 220 px), and its width is remembered.
+
 ## [4.16.0] - 2026-10-28
 
 - **Fewer, graded edge lines on the similarity map.** Edges from a track go only to the partners

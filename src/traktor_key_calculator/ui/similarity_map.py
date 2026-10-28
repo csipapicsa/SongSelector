@@ -22,7 +22,7 @@ from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen, QRa
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
                              QGraphicsEllipseItem, QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem,
                              QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel,
-                             QMenu, QPushButton, QSpinBox, QSplitter, QToolButton, QTreeWidget,
+                             QMenu, QPushButton, QSizePolicy, QSpinBox, QSplitter, QToolButton, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
@@ -43,6 +43,7 @@ MAX_EDGES = 2500             # "between all visible tracks" is capped to stay re
 LINES_PER_TRACK = 20         # default: edges from a track go to its N most similar partners
 STRENGTH_LEVELS = 6          # edge opacity steps, weakest to strongest similarity
 SUGGESTIONS = 15
+SIDE_MIN_WIDTH = 220         # pixels: the details and closest matches never collapse
 NO_COLOR = QColor('#8a8f98')
 UNGROUPED = QColor('#4a4e55')  # "Map density" leaves tracks in thin areas without a group
 # Distinct colours for groups 1, 2, ... (largest first); no magenta, white or grey, which mark
@@ -373,21 +374,30 @@ class SimilarityMapWidget(QWidget):
             group_bar.addWidget(widget)
         group_bar.addStretch()
         side = QWidget()
+        side.setMinimumWidth(SIDE_MIN_WIDTH)
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.addWidget(self.details)
-        side_layout.addWidget(QLabel('Closest matches (click: show on the map, double-click: select,\n'
-                                     'drag: to the playlist, Traktor or Explorer; italic: on the playlist)'))
+        caption = QLabel('Closest matches (click: show on the map, double-click: select, drag: to the '
+                         'playlist, Traktor or Explorer; italic: on the playlist)')
+        caption.setWordWrap(True)
+        side_layout.addWidget(caption)
         side_layout.addWidget(self.suggestions)
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.view)
-        splitter.addWidget(side)
-        splitter.setSizes([700, 300])
+        # Long one-line texts must not set the widget's minimum width: on a narrow window that
+        # pushed the map wider than the window, and the splitter collapsed the matches to nothing.
+        self.status.setWordWrap(True)
+        self.grouping_summary.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self.view)
+        self.splitter.addWidget(side)
+        self.splitter.setCollapsible(1, False)
+        self.splitter.setSizes(settings.get('Map splitter', [700, 300]))
+        self.splitter.splitterMoved.connect(lambda *_: self.settings.__setitem__('Map splitter', self.splitter.sizes()))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
         layout.addLayout(group_bar)
-        layout.addWidget(splitter, 1)  # the map gets all spare space
+        layout.addWidget(self.splitter, 1)  # the map gets all spare space
         layout.addWidget(self.status)
 
     # -- data ---------------------------------------------------------------
