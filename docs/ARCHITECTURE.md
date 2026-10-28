@@ -208,6 +208,11 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   colour and rating, and partners are looked up per group (no all-pairs loop); one edge per
   pair, capped at `MAX_EDGES`. `_edge_sources` decides which tracks edges start from: all visible
   tracks, or the selected track plus, at half opacity, a match clicked in the list (`preview_key`).
+  Per source only the `lines_per_track` partners with the highest cosine similarity are kept;
+  `_add_edge_items` maps similarity within a layer to `STRENGTH_LEVELS` opacity steps.
+- **Groups** (`core/clustering.py`, `SimilarityMapWidget._update_groups`): all analysed tracks are
+  grouped in a thread with the chosen method; a request counter drops results of superseded
+  choices. Groups only change the dot colours (`_dot_colour`), tooltips and details.
 - **Choices backed by measurements** (2026-10-27, ~450–700 analysed tracks; see
   `docs/research/audio_embeddings.md`): t-SNE kept 41–47 % of each track's 10 true neighbours as
   map neighbours (UMAP 37–42 %, PCA 26 %). The numpy t-SNE matches scikit-learn's quality

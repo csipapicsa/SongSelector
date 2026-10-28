@@ -7,6 +7,9 @@
   and reads their table texts, so keys are tempo-adjusted exactly as in the list.
 - "Closest matches" are exact (cosine similarity of the full vectors), because any 2D
   map distorts distances.
+- Edges go only to the N most similar partners of a track; weaker similarity is drawn more
+  transparent. Dots can be coloured by unsupervised groups (core.clustering) instead of
+  the Traktor colour.
 """
 import os
 import threading
@@ -16,13 +19,14 @@ from dataclasses import dataclass, field
 import numpy as np
 from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen, QRadialGradient
-from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QGraphicsEllipseItem,
-                             QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene,
-                             QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel, QMenu,
-                             QPushButton, QSplitter, QToolButton, QTreeWidget, QTreeWidgetItem,
-                             QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
+                             QGraphicsEllipseItem, QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem,
+                             QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel,
+                             QMenu, QPushButton, QSpinBox, QSplitter, QToolButton, QTreeWidget,
+                             QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
+from traktor_key_calculator.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.core.similarity import (EDGE_SAME_COLOR, EDGE_SAME_RATING, display_color,
@@ -34,10 +38,18 @@ DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Sel
 DEFAULT_EDGES = ['perfect_mix', 'plus_1_mix', 'minus_1_mix', 'energy_boost']
 SCENE_SIZE = 1000.0          # the map is scaled to about this many scene units
 DOT_SIZE = 9                 # pixels, independent of zoom
-GLOW_SIZE = 44               # pixels: pulsing halo around a clicked closest match
+GLOW_SIZE = 44               # pixels: pulsing halo around the selected track and a clicked match
 MAX_EDGES = 2500             # "between all visible tracks" is capped to stay readable
+LINES_PER_TRACK = 20         # default: edges from a track go to its N most similar partners
+STRENGTH_LEVELS = 6          # edge opacity steps, weakest to strongest similarity
 SUGGESTIONS = 15
 NO_COLOR = QColor('#8a8f98')
+UNGROUPED = QColor('#4a4e55')  # "Map density" leaves tracks in thin areas without a group
+# Distinct colours for groups 1, 2, ... (largest first); no magenta, white or grey, which mark
+# the clicked match, the selection and ungrouped tracks. Smaller groups beyond these are grey.
+GROUP_COLOURS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0',
+                 '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
+                 '#aaffc3', '#808000', '#ffd8b1']
 # The clicked match is magenta: no Traktor colour is, so it stands out on orange/yellow-heavy maps.
 SELECTED_RING, MATCH_RING, PREVIEW_RING = '#ffffff', '#40e0ff', '#ff2bd6'
 EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clicked match's edges: half
@@ -122,6 +134,40 @@ class DotItem(QGraphicsEllipseItem):
     def mouseDoubleClickEvent(self, event):
         self.owner.request_add_to_playlist.emit(self.key)
         event.accept()
+
+
+class Halo(QGraphicsEllipseItem):
+    """Pulsing glow behind a dot, so it stands out on a busy map (same pixel size at any zoom)."""
+
+    def __init__(self, colour, z, animation_parent):
+        super().__init__(-GLOW_SIZE / 2, -GLOW_SIZE / 2, GLOW_SIZE, GLOW_SIZE)
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+        self.setAcceptedMouseButtons(Qt.NoButton)  # clicks reach the dots underneath
+        gradient = QRadialGradient(0, 0, GLOW_SIZE / 2)
+        for stop, alpha in ((0, 240), (0.3, 170), (1, 0)):
+            shade = QColor(colour)
+            shade.setAlpha(alpha)
+            gradient.setColorAt(stop, shade)
+        self.setBrush(QBrush(gradient))
+        self.setPen(QPen(Qt.NoPen))
+        self.setZValue(z)
+        self.hide()
+        self.pulse = QVariantAnimation(animation_parent)
+        self.pulse.setDuration(1200)
+        self.pulse.setLoopCount(-1)
+        for step, scale in ((0, 0.75), (0.5, 1.25), (1, 0.75)):
+            self.pulse.setKeyValueAt(step, scale)
+        self.pulse.valueChanged.connect(self.setScale)
+
+    def follow(self, dot):
+        """Glow behind this dot; hidden when there is none or it is filtered out."""
+        if dot is not None and dot.isVisible():
+            self.setPos(dot.pos())
+            self.show()
+            self.pulse.start()
+        else:
+            self.pulse.stop()
+            self.hide()
 
 
 class MatchItem(QTreeWidgetItem):
@@ -219,6 +265,10 @@ class SimilarityMapWidget(QWidget):
         self.dots = {}
         self.selected_key = None
         self.preview_key = None   # a closest match clicked in the list: glows, the selection stays
+        self.groups = {}          # path_key -> group (0 = largest, -1 = none) while grouping is on
+        self._group_request = 0   # only the latest grouping result is used
+        self._grouper = _Loader()
+        self._grouper.done.connect(self._grouped)
         self.match_keys = []      # closest matches of the selected track, ringed on the map
         self._base_status = ''
         self._loading = False
@@ -240,26 +290,11 @@ class SimilarityMapWidget(QWidget):
         self.label_text.setBrush(QBrush(QColor('#f0f0f0')))
         self.label.hide()
         self.scene.addItem(self.label)
-        # Pulsing halo behind a clicked closest match, so it is easy to find on a busy map.
-        self.glow = QGraphicsEllipseItem(-GLOW_SIZE / 2, -GLOW_SIZE / 2, GLOW_SIZE, GLOW_SIZE)
-        self.glow.setFlag(QGraphicsItem.ItemIgnoresTransformations)
-        self.glow.setAcceptedMouseButtons(Qt.NoButton)  # clicks reach the dots underneath
-        gradient = QRadialGradient(0, 0, GLOW_SIZE / 2)
-        for stop, alpha in ((0, 240), (0.3, 170), (1, 0)):
-            colour = QColor(PREVIEW_RING)
-            colour.setAlpha(alpha)
-            gradient.setColorAt(stop, colour)
-        self.glow.setBrush(QBrush(gradient))
-        self.glow.setPen(QPen(Qt.NoPen))
-        self.glow.setZValue(3.4)
-        self.glow.hide()
-        self.scene.addItem(self.glow)
-        self.pulse = QVariantAnimation(self)
-        self.pulse.setDuration(1200)
-        self.pulse.setLoopCount(-1)
-        for step, scale in ((0, 0.75), (0.5, 1.25), (1, 0.75)):
-            self.pulse.setKeyValueAt(step, scale)
-        self.pulse.valueChanged.connect(self.glow.setScale)
+        # Glows behind the selected track (white) and a clicked closest match (magenta).
+        self.selected_glow = Halo(SELECTED_RING, 3.9, self)
+        self.preview_glow = Halo(PREVIEW_RING, 3.4, self)
+        for halo in (self.selected_glow, self.preview_glow):
+            self.scene.addItem(halo)
 
         self.status = QLabel('')
         self.edges_button = QToolButton()
@@ -274,6 +309,15 @@ class SimilarityMapWidget(QWidget):
             action.toggled.connect(self._edges_changed)
             self.edge_actions[name] = action
         self.edges_button.setMenu(edges_menu)
+        self.lines_per_track = QSpinBox()
+        self.lines_per_track.setRange(1, 500)
+        self.lines_per_track.setPrefix('to the ')
+        self.lines_per_track.setSuffix(' most similar')
+        self.lines_per_track.setToolTip('Edges from a track go only to this many partners: those that sound most\n'
+                                        'similar. The more similar, the more opaque the line.')
+        self.lines_per_track.setValue(settings.get('Map lines per track', LINES_PER_TRACK))
+        self.lines_per_track.setKeyboardTracking(False)
+        self.lines_per_track.valueChanged.connect(self._edges_changed)
         self.all_edges = QCheckBox('Edges between all visible tracks')
         self.all_edges.setToolTip('Otherwise edges start at the selected track only.')
         self.all_edges.setChecked(settings.get('Map edges between all', False))
@@ -300,12 +344,34 @@ class SimilarityMapWidget(QWidget):
         self.suggestions.itemClicked.connect(lambda item: self.preview(item.data(0, Qt.UserRole)))
         self.suggestions.itemDoubleClicked.connect(lambda item: self.select_and_show(item.data(0, Qt.UserRole)))
 
+        # Grouping: colour the dots by unsupervised groups instead of the Traktor colour.
+        self.grouping = QComboBox()
+        self.grouping.addItem('Off (Traktor colours)', None)
+        for method in GROUPING_METHODS:
+            self.grouping.addItem(method.label, method.name)
+        self.grouping.setToolTip('k-means: a fixed number of groups from the sound.\n'
+                                 'Neighbour communities: tracks linked to their most similar tracks, split\n'
+                                 '  where the links are sparse (resolution: higher gives more groups).\n'
+                                 'Map density: the clumps visible on the map; thin areas stay grey.')
+        self.grouping_parameter = QDoubleSpinBox()
+        self.grouping_parameter.setKeyboardTracking(False)
+        self.grouping_summary = QLabel('')
+        index = self.grouping.findData(settings.get('Map grouping'))
+        self.grouping.setCurrentIndex(max(index, 0))
+        self._configure_grouping_parameter()
+        self.grouping.currentIndexChanged.connect(self._grouping_method_changed)
+        self.grouping_parameter.valueChanged.connect(self._update_groups)
+
         bar = QHBoxLayout()
-        for widget in (self.edges_button, self.all_edges, self.harmonic_only):
+        for widget in (self.edges_button, self.lines_per_track, self.all_edges, self.harmonic_only):
             bar.addWidget(widget)
         bar.addStretch()
         bar.addWidget(fit)
         bar.addWidget(self.rearrange_button)
+        group_bar = QHBoxLayout()
+        for widget in (QLabel('Groups:'), self.grouping, self.grouping_parameter, self.grouping_summary):
+            group_bar.addWidget(widget)
+        group_bar.addStretch()
         side = QWidget()
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
@@ -320,6 +386,7 @@ class SimilarityMapWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
+        layout.addLayout(group_bar)
         layout.addWidget(splitter, 1)  # the map gets all spare space
         layout.addWidget(self.status)
 
@@ -359,6 +426,88 @@ class SimilarityMapWidget(QWidget):
         self._rebuild_dots()
         if first:
             self.fit()
+        self._update_groups()
+
+    # -- grouping -----------------------------------------------------------
+
+    def _configure_grouping_parameter(self):
+        """The parameter box shows the chosen method's parameter (or hides when grouping is off)."""
+        method = GROUPING_BY_NAME.get(self.grouping.currentData())
+        self.grouping_parameter.setVisible(method is not None)
+        if method is None:
+            return
+        self.grouping_parameter.blockSignals(True)
+        self.grouping_parameter.setDecimals(method.decimals)
+        self.grouping_parameter.setRange(method.minimum, method.maximum)
+        self.grouping_parameter.setSingleStep(method.step)
+        self.grouping_parameter.setPrefix(f'{method.parameter}: ')
+        self.grouping_parameter.setValue(self.settings.get('Map grouping parameters', {}).get(method.name, method.default))
+        self.grouping_parameter.blockSignals(False)
+
+    def _grouping_method_changed(self, _index=0):
+        self._configure_grouping_parameter()
+        self._update_groups()
+
+    def _update_groups(self, _value=None):
+        """Group all analysed tracks with the chosen method, in a thread (about a second for 3,500)."""
+        method = self.grouping.currentData()
+        self.settings['Map grouping'] = method
+        self._group_request += 1
+        if method is None or self.data is None:
+            self.grouping_summary.setText('')
+            if self.groups:
+                self.groups = {}
+                self._refresh()
+            return
+        parameter = self.grouping_parameter.value()
+        self.settings.setdefault('Map grouping parameters', {})[method] = parameter
+        request, data = self._group_request, self.data
+        self.grouping_summary.setText('Grouping...')
+
+        def work():
+            try:
+                points = np.array([data.positions.get(key, (0, 0)) for key in data.keys])
+                labels = group_tracks(method, data.vectors, points, parameter)
+                result = dict(zip(data.keys, labels.tolist()))
+            except Exception as error:  # report, keep the dots as they are
+                result = error
+            self._grouper.done.emit((request, result))
+        threading.Thread(target=work, name='similarity-groups', daemon=True).start()
+
+    def _grouped(self, answer):
+        request, result = answer
+        if request != self._group_request:
+            return  # the method or parameter changed meanwhile
+        if isinstance(result, Exception):
+            self.grouping_summary.setText(f'Could not group: {result}')
+            return
+        self.groups = result
+        labels = np.array(list(result.values()))
+        sizes = np.bincount(labels[labels >= 0]) if (labels >= 0).any() else np.zeros(0, int)
+        summary = f'{len(sizes)} groups of all {len(labels)} analysed tracks'
+        if len(sizes):
+            summary += f'; largest {sizes[0] / len(labels):.0%}'
+        if (labels < 0).any():
+            summary += f'; {np.mean(labels < 0):.0%} in no group (dark grey)'
+        if len(sizes) > len(GROUP_COLOURS):
+            summary += f'; groups after {len(GROUP_COLOURS)} are light grey'
+        self.grouping_summary.setText(summary)
+        self._refresh()
+
+    def _dot_colour(self, key, fields):
+        if not self.groups:
+            return COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR
+        group = self.groups.get(key, -1)
+        if group < 0:
+            return UNGROUPED
+        return QColor(GROUP_COLOURS[group]) if group < len(GROUP_COLOURS) else NO_COLOR
+
+    def _group_text(self, key):
+        """'Group 3' while grouping is on (1 = largest), else ''."""
+        if not self.groups:
+            return ''
+        group = self.groups.get(key, -1)
+        return f'Group {group + 1}' if group >= 0 else 'No group'
 
     def set_tracks(self, fields):
         """The rows the library list shows now: {path_key: {column: text}}."""
@@ -424,10 +573,10 @@ class SimilarityMapWidget(QWidget):
             if fields is None:
                 continue
             shown += 1
-            colour = COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR
-            dot.setBrush(QBrush(colour))
+            dot.setBrush(QBrush(self._dot_colour(key, fields)))
             self._outline(key)
-            dot.setToolTip('\n'.join(f'{name}: {text}' for name, text in shown_fields(fields, hover)))
+            lines = [f'{name}: {text}' for name, text in shown_fields(fields, hover)]
+            dot.setToolTip('\n'.join(lines + ([self._group_text(key)] if self.groups else [])))
         missing = len(self.fields) - shown
         self._base_status = (f'{shown} tracks on the map' +
                              (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '') +
@@ -469,7 +618,7 @@ class SimilarityMapWidget(QWidget):
         previous, self.preview_key = self.preview_key, key
         for changed in (previous, key):
             self._outline(changed)
-        self._show_glow()
+        self._show_halos()
         self._draw_edges()
         if key in self.dots:
             self.view.ensureVisible(QRectF(self.dots[key].pos(), self.dots[key].pos()).adjusted(-40, -40, 40, 40))
@@ -477,17 +626,11 @@ class SimilarityMapWidget(QWidget):
     def _clear_preview(self):
         previous, self.preview_key = self.preview_key, None
         self._outline(previous)
-        self._show_glow()
+        self._show_halos()
 
-    def _show_glow(self):
-        dot = self.dots.get(self.preview_key)
-        if dot is not None and dot.isVisible():
-            self.glow.setPos(dot.pos())
-            self.glow.show()
-            self.pulse.start()
-        else:
-            self.pulse.stop()
-            self.glow.hide()
+    def _show_halos(self):
+        self.selected_glow.follow(self.dots.get(self.selected_key) if self.selected_key in self.fields else None)
+        self.preview_glow.follow(self.dots.get(self.preview_key))
 
     def select_and_show(self, key):
         """Select a track and scroll the map to it (double-click in the closest matches)."""
@@ -496,6 +639,7 @@ class SimilarityMapWidget(QWidget):
             self.view.centerOn(self.dots[key])
 
     def _show_selected_details(self):
+        self._show_halos()
         fields = self.fields.get(self.selected_key)
         if fields is None or self.selected_key not in self.dots:
             self.label.hide()
@@ -516,8 +660,9 @@ class SimilarityMapWidget(QWidget):
                        for name, text in shown_fields(fields, hover))
         note = ('<i>Not in the list view (e.g. a playlist track); its matches come from the list.</i><br>'
                 if self.reference is not None and self.reference[0] == self.selected_key else '')
+        group = f'<br>{self._group_text(self.selected_key)}' if self.groups else ''
         self.details.setText(f'{note}<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
-                             f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM'
+                             f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM{group}'
                              f'<table cellspacing="4">{rows}</table>')
 
     def drag_files(self, keys):
@@ -558,6 +703,7 @@ class SimilarityMapWidget(QWidget):
     def _edges_changed(self, _checked=False):
         self.settings['Map edges'] = sorted(self.criteria())
         self.settings['Map edges between all'] = self.all_edges.isChecked()
+        self.settings['Map lines per track'] = self.lines_per_track.value()
         self._draw_edges()
 
     def _edge_sources(self):
@@ -567,7 +713,8 @@ class SimilarityMapWidget(QWidget):
         return [([self.preview_key], EDGE_ALPHA_PREVIEW), ([self.selected_key], EDGE_ALPHA_SELECTED)]
 
     def _edges(self, criteria, sources=None):
-        """[(source, target, reason)] from the visible sources to the visible dots, at most MAX_EDGES.
+        """[(source, target, reason, similarity)] from the visible sources to the visible dots:
+        per source, the partners that sound most similar (lines per track); at most MAX_EDGES.
         sources: by default all visible dots or the selected track, as the checkbox says.
 
         Tracks are grouped by tempo-adjusted Camelot key, colour and rating, so matches are
@@ -585,6 +732,7 @@ class SimilarityMapWidget(QWidget):
             by_colour.setdefault(display_color(fields), []).append(key)
             by_rating.setdefault(fields.get('Rating - Song Selector') or fields.get('Rating') or '', []).append(key)
         edges, seen = [], set()
+        limit = self.lines_per_track.value()
         for source in sources:
             fields = self.fields[source]
             candidates = []
@@ -597,12 +745,22 @@ class SimilarityMapWidget(QWidget):
             rating = fields.get('Rating - Song Selector') or fields.get('Rating') or ''
             if EDGE_SAME_RATING in criteria and rating:
                 candidates += [(target, EDGE_SAME_RATING) for target in by_rating[rating]]
+            reasons = {}
             for target, reason in candidates:
+                if target != source:
+                    reasons.setdefault(target, reason)  # one reason per partner, the first found
+            targets = list(reasons)
+            if not targets:
+                continue
+            similarity = self.data.vectors[[self.data.row[target] for target in targets]] @ \
+                self.data.vectors[self.data.row[source]]
+            for index in np.argsort(-similarity)[:limit]:
+                target = targets[index]
                 pair = frozenset((source, target))
-                if target == source or pair in seen:
-                    continue  # one edge per pair, strongest reason first
+                if pair in seen:
+                    continue  # one edge per pair
                 seen.add(pair)
-                edges.append((source, target, reason))
+                edges.append((source, target, reasons[target], float(similarity[index])))
                 if len(edges) >= MAX_EDGES:
                     return edges
         return edges
@@ -623,20 +781,25 @@ class SimilarityMapWidget(QWidget):
             self._add_edge_items(edges, alpha)
 
     def _add_edge_items(self, edges, alpha):
-        """One path item per reason and colour (thousands of single lines would be slow)."""
+        """One path item per reason, colour and opacity step (thousands of single lines would be
+        slow). The most similar pair of the layer gets `alpha`, the least similar 15 % of it."""
         paths = {}
-        for source, target, reason in edges:
+        strengths = [similarity for *_, similarity in edges]
+        low, high = (min(strengths), max(strengths)) if strengths else (0, 0)
+        for source, target, reason, similarity in edges:
             if reason == EDGE_SAME_COLOR:
                 colour = (COLOR_MAPPING_CATEGORY.get(display_color(self.fields[source])) or NO_COLOR).name()
             else:
                 colour = EDGE_COLORS[reason]
-            path = paths.setdefault((reason, colour), QPainterPath())
+            level = round((STRENGTH_LEVELS - 1) * (similarity - low) / (high - low)) if high > low \
+                else STRENGTH_LEVELS - 1
+            path = paths.setdefault((reason, colour, level), QPainterPath())
             path.moveTo(self._scaled(source))
             path.lineTo(self._scaled(target))
-        for (reason, colour), path in paths.items():
+        for (reason, colour, level), path in paths.items():
             weight = MIX_TYPES_BY_NAME[reason].weight if reason in MIX_TYPES_BY_NAME else 4
             colour_alpha = QColor(colour)
-            colour_alpha.setAlpha(alpha)
+            colour_alpha.setAlpha(round(alpha * (0.15 + 0.85 * level / (STRENGTH_LEVELS - 1))))
             pen = QPen(colour_alpha, 0.6 + weight / 5)
             pen.setCosmetic(True)                      # constant width at any zoom
             item = QGraphicsPathItem(path)

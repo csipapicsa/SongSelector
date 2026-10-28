@@ -118,6 +118,8 @@ it is filtered now (search, colours, Advanced Search), so narrow the list first 
 | Right-click | The usual track menu (rating, colour, edit, remove) |
 | Scroll / drag | Zoom / move |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour, same rating |
+| *to the N most similar* | Edges only to the N partners that sound most similar; more similar = more opaque |
+| *Groups* | Colour dots by unsupervised groups: k-means, neighbour communities or map density |
 | *Closest matches: harmonic only* | Only harmonic partners, plus tracks without a key in Traktor (*no key*) |
 | Italic match | Already on the playlist |
 | *Re-arrange map* | Recompute the layout from all analysed tracks (a few minutes for 3,000) |

@@ -17,10 +17,12 @@ CHANGELOG when they ship.
 - [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
-- [ ] Map: "edges only to the N closest matches" (harmonic *and* similar), likely the most useful edge mode.
+- [x] Map: "edges only to the N closest matches" (harmonic *and* similar): 4.16.0, with opacity by similarity.
 - [ ] Map: 3D view (pyqtgraph.opengl or vispy). Rotate with the usual mouse + Shift / Ctrl
       combinations, zoom with the wheel. 3D t-SNE may also split the "one big blob" better.
-- [ ] Map: **unsupervised clustering**, method chosen in the map settings, to try several
+- [x] Map: **unsupervised clustering**, shipped in 4.16.0 (k-means, neighbour communities, map
+      density). Follow-ups: name groups by their most common genre; filter the list by group.
+      Original plan, method chosen in the map settings, to try several
       (user request 2026-10-28: the map is mostly one big blob, yet some groups are expected).
       Colour dots by cluster as an alternative to the Traktor colour; cluster sizes in the status.
       Lightweight candidates (numpy only, the exe has no scikit-learn; seconds on 5k tracks):

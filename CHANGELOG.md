@@ -4,6 +4,20 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.16.0] - 2026-10-28
+
+- **Fewer, graded edge lines on the similarity map.** Edges from a track go only to the partners
+  that sound most similar (*to the 20 most similar*, adjustable next to *Edges*); the more similar,
+  the more opaque the line (the weakest at 15 %). Before, every harmonic / same-rating partner got a
+  line, hundreds for one track.
+- **The selected track glows white** (pulsing), like the magenta glow of a clicked match.
+- **Groups:** a new row colours the dots by unsupervised groups instead of the Traktor colour, to
+  compare three methods, each with one parameter: *k-means* (number of groups), *Neighbour
+  communities* (resolution) and *Map density* (dense %; thin areas stay dark grey). The summary shows
+  the number of groups and the largest; hover and the details box show a track's group. About a
+  second for 3,500 tracks, in the background. On the developer's library the groups match the
+  style (DnB / breaks / house) 75-83 % of the time, against 47 % for one group.
+
 ## [4.15.0] - 2026-10-28
 
 - **Playlist columns can be resized again.** They were all set to stretch, which blocks resizing by

@@ -69,6 +69,32 @@ class SimilarityTests(unittest.TestCase):
         self.assertIsNone(connection({'Camelot Key New': 'Unknown'}, b, {'plus_1_mix'}))
 
 
+class ClusteringTests(unittest.TestCase):
+    def test_kmeans_and_communities_find_the_two_styles(self):
+        from traktor_key_calculator.core.clustering import group_tracks
+        vectors = track_vectors(two_styles(per_style=20))
+        for method, parameter in (('kmeans', 2), ('communities', 1.0)):
+            labels = group_tracks(method, vectors, np.zeros((40, 2)), parameter)
+            self.assertEqual(len(set(labels[:20])), 1, method)
+            self.assertEqual(len(set(labels[20:])), 1, method)
+            self.assertNotEqual(labels[0], labels[20], method)
+
+    def test_density_groups_the_clumps_and_leaves_scattered_points_out(self):
+        from traktor_key_calculator.core.clustering import group_tracks
+        rng = np.random.default_rng(1)
+        clumps = [rng.normal(centre, 0.3, (40, 2)) for centre in ((0, 0), (10, 0))]
+        scattered = np.array([[5, 8], [-6, -7], [14, 9]])
+        labels = group_tracks('density', np.zeros((83, 4)), np.vstack(clumps + [scattered]), 50)
+        self.assertEqual(len(set(labels[:40]) - {-1}), 1)
+        self.assertEqual(len(set(labels[40:80]) - {-1}), 1)
+        self.assertNotEqual(set(labels[:40]) - {-1}, set(labels[40:80]) - {-1})
+        self.assertEqual(list(labels[80:]), [-1, -1, -1])
+
+    def test_groups_are_numbered_by_size(self):
+        from traktor_key_calculator.core.clustering import _by_size
+        self.assertEqual(list(_by_size([5, 7, 7, -1, 7, 5, 2])), [1, 0, 0, -1, 0, 1, 2])
+
+
 class LayoutStoreTests(unittest.TestCase):
     def test_load_many_and_layout_round_trip(self):
         with tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR']) as folder:
@@ -168,7 +194,7 @@ class SimilarityMapGuiTests(MapWindowTestBase):
             action.setChecked(name == 'perfect_mix')
         edges = self.map._edges(self.map.criteria())
         # same tempo-adjusted key as track 0 (keys repeat every 3 tracks)
-        self.assertEqual({target for _, target, _ in edges}, {self.key(i) for i in range(3, 24, 3)})
+        self.assertEqual({target for _, target, *_ in edges}, {self.key(i) for i in range(3, 24, 3)})
         self.assertTrue(self.map.edge_items)
         self.map.all_edges.setChecked(True)
         self.assertEqual(len(self.map._edges(self.map.criteria())), 3 * 28)  # 3 key groups of 8 tracks
@@ -214,15 +240,17 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(self.map.selected_key, self.key(0))  # the selection stays
         self.assertEqual(self.map.preview_key, match)
         self.assertEqual(self.map.dots[match].pen().color().name(), '#ff2bd6')
-        self.assertTrue(self.map.glow.isVisible())
-        self.assertEqual(self.map.glow.pos(), self.map.dots[match].pos())
+        self.assertTrue(self.map.preview_glow.isVisible())
+        self.assertEqual(self.map.preview_glow.pos(), self.map.dots[match].pos())
+        self.assertEqual(self.map.selected_glow.pos(), self.map.dots[self.key(0)].pos())
         self.assertEqual([item.data(0, 0x0100) for item in self.matches()][0], match)  # list unchanged
         QTest.mouseDClick(tree.viewport(), Qt.LeftButton, pos=tree.visualItemRect(first).center())
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, match)
         self.assertEqual(self.map.dots[match].pen().color().name(), '#ffffff')
         self.assertIsNone(self.map.preview_key)
-        self.assertFalse(self.map.glow.isVisible())
+        self.assertFalse(self.map.preview_glow.isVisible())
+        self.assertEqual(self.map.selected_glow.pos(), self.map.dots[match].pos())  # the white glow moved
         self.assertNotIn(match, [item.data(0, 0x0100) for item in self.matches()])  # its own matches now
         self.assertEqual(self.window.playlist_tree.topLevelItemCount(), 0)  # does not add to the playlist
 
@@ -230,15 +258,17 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         for name, action in self.map.edge_actions.items():
             action.setChecked(name == 'perfect_mix')
         self.map.select(self.key(0))
-        alphas = lambda: sorted({item.pen().color().alpha() for item in self.map.edge_items})
-        self.assertEqual(alphas(), [170])
+        alphas = lambda: {item.pen().color().alpha() for item in self.map.edge_items}
+        self.assertEqual(max(alphas()), 170)  # the selected track's strongest edges
+        self.assertNotIn(85, alphas())
         other_key_group = next(item.data(0, 0x0100) for item in self.matches()
                                if int(item.data(0, 0x0100).split('track')[-1].split('.')[0]) % 3 == 1)
         self.map.preview(other_key_group)
-        self.assertEqual(alphas(), [85, 170])  # the clicked match's edges at half strength
+        self.assertIn(85, alphas())  # the clicked match's strongest edges: half of 170
+        self.assertEqual(max(alphas()), 170)
         self.map.harmonic_only.setChecked(True)  # the list is rebuilt: highlight and pale edges go
         self.assertIsNone(self.map.preview_key)
-        self.assertEqual(alphas(), [170])
+        self.assertNotIn(85, alphas())
 
     def test_matches_on_the_playlist_are_italic(self):
         self.map.request_add_to_playlist.emit(self.key(1))
@@ -260,6 +290,61 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.map.select(self.key(0))
         self.assertEqual(len(self.matches()), 15)
         self.assertEqual({item.text(1) for item in self.matches()}, {'no key'})
+
+    def test_selected_track_glows_white_until_it_is_filtered_out(self):
+        self.map.select(self.key(4))
+        self.assertTrue(self.map.selected_glow.isVisible())
+        self.assertEqual(self.map.selected_glow.pos(), self.map.dots[self.key(4)].pos())
+        self.window.search_bar.setText('dnb')
+        self.assertFalse(self.map.selected_glow.isVisible())
+
+    def test_edges_go_to_the_most_similar_partners_more_similar_more_opaque(self):
+        for name, action in self.map.edge_actions.items():
+            action.setChecked(name in ('perfect_mix', 'plus_1_mix', 'minus_1_mix', 'energy_boost'))
+        self.map.select(self.key(0))
+        partners = self.map._edges(self.map.criteria())
+        self.assertEqual(len(partners), 20)  # 23 harmonic partners, the 20 most similar kept
+        self.map.lines_per_track.setValue(5)
+        edges = self.map._edges(self.map.criteria())
+        self.assertEqual([target for _, target, *_ in edges], [target for _, target, *_ in partners[:5]])
+        similarity = [value for *_, value in partners]
+        self.assertEqual(similarity, sorted(similarity, reverse=True))
+        self.assertEqual(self.window.settings['Map lines per track'], 5)
+        self.map.lines_per_track.setValue(20)
+        alphas = sorted({item.pen().color().alpha() for item in self.map.edge_items})
+        self.assertEqual((alphas[0], alphas[-1]), (round(170 * 0.15), 170))  # weakest faint, strongest full
+
+    def wait_for_groups(self):
+        deadline = time.monotonic() + 30
+        while self.map.grouping_summary.text() == 'Grouping...' and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.01)
+
+    def test_grouping_colours_dots_by_group_and_off_restores_traktor_colours(self):
+        traktor = {key: dot.brush().color().name() for key, dot in self.map.dots.items()}
+        self.map.grouping.setCurrentIndex(self.map.grouping.findData('kmeans'))
+        self.map.grouping_parameter.setValue(2)
+        self.wait_for_groups()
+        self.assertIn('2 groups of all 24 analysed tracks', self.map.grouping_summary.text())
+        groups = {self.map.groups[self.key(i)] for i in range(12)}, {self.map.groups[self.key(i)] for i in range(12, 24)}
+        self.assertEqual(len(groups[0]), 1)  # each style is one group
+        self.assertEqual(len(groups[1]), 1)
+        self.assertNotEqual(groups[0], groups[1])
+        colours = {dot.brush().color().name() for key, dot in self.map.dots.items() if dot.isVisible()}
+        self.assertEqual(colours, {'#e6194b', '#3cb44b'})
+        self.assertIn('Group ', self.map.dots[self.key(0)].toolTip())
+        self.assertEqual(self.window.settings['Map grouping'], 'kmeans')
+        self.assertEqual(self.window.settings['Map grouping parameters']['kmeans'], 2)
+        self.map.grouping.setCurrentIndex(0)
+        self.assertEqual({key: dot.brush().color().name() for key, dot in self.map.dots.items()}, traktor)
+        self.assertFalse(self.map.grouping_parameter.isVisible())
+
+    def test_every_grouping_method_runs_on_the_map(self):
+        for method in ('kmeans', 'communities', 'density'):
+            self.map.grouping.setCurrentIndex(self.map.grouping.findData(method))
+            self.wait_for_groups()
+            self.assertEqual(set(self.map.groups), set(self.map.data.keys), method)
+            self.assertIn('groups of all 24', self.map.grouping_summary.text(), method)
 
     def test_selected_track_shows_details_box_and_label_on_the_map(self):
         self.map.select(self.key(4))
