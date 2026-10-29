@@ -4,7 +4,7 @@ Status messages use status_style(kind) instead of fixed colours, so they stay
 readable on both backgrounds.
 """
 from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QToolTip
 
 THEMES = ('dark', 'light')
 DEFAULT_THEME = 'dark'
@@ -44,7 +44,12 @@ def apply_theme(name, application=None):
             palette.setColor(QPalette.Disabled, role, QColor(colour))
     else:
         palette = application.style().standardPalette()
+        # The standard tooltip is pale yellow; a plain light one fits the flat Fusion look.
+        palette.setColor(QPalette.ToolTipBase, QColor('#ffffff'))
+        palette.setColor(QPalette.ToolTipText, QColor('#1f2328'))
     application.setPalette(palette)
+    # Tooltips keep the platform's (yellow on Windows) palette unless given one.
+    QToolTip.setPalette(palette)
     return _current
 
 

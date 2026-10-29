@@ -4,6 +4,20 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.18.0] - 2026-10-29
+
+- **Ctrl+click a dot on the similarity map to compare it with the selected track.** The selected
+  (base) track stays selected; the clicked one glows magenta, gets a dashed line to the base in the
+  colour of their harmonic mix, and a card with its details, the mix (*Perfect mix*, *+1 mix*, ...)
+  and the similarity score. Its row in the closest matches is marked. Ctrl+click it again to end
+  the comparison; a plain click still selects. Clicking a closest match shows the same card.
+- **Hovering a dot shows a card** instead of the yellow tooltip: artist - title, key and BPM now,
+  the mix and similarity to the selected track, and the hover fields with colours as coloured dots
+  and ratings as stars.
+- **Colours are shown as a coloured dot and name** (● Orange) in the map details instead of the
+  number.
+- Tooltips everywhere use the theme's colours instead of the yellow Windows default.
+
 ## [4.17.0] - 2026-10-29
 
 - **Fix: empty, nameless gaps between playlist columns** (since 4.15.0). Every hidden column (e.g.

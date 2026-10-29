@@ -21,7 +21,7 @@ from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, QVariant
 from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
                              QGraphicsEllipseItem, QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem,
-                             QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel,
+                             QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel,
                              QMenu, QPushButton, QSizePolicy, QSpinBox, QSplitter, QToolButton, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
@@ -29,6 +29,7 @@ from traktor_key_calculator.config import (COLOR_MAPPING_CATEGORY, HEADER_LABELS
                                            SS_RATING_COLUMN)
 from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS
 from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
+from traktor_key_calculator.core.color_search import COLOR_NAMES
 from traktor_key_calculator.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from traktor_key_calculator.core.traktor_collection import canonical_path
@@ -61,6 +62,8 @@ GROUP_COLOURS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4
 # The clicked match is magenta: no Traktor colour is, so it stands out on orange/yellow-heavy maps.
 SELECTED_RING, MATCH_RING, PREVIEW_RING = '#ffffff', '#40e0ff', '#ff2bd6'
 EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clicked match's edges: half
+# Info cards on the map (hover, and a compared track): dark and rounded, like the selected label.
+CARD_BACKGROUND, CARD_TEXT, CARD_BORDER = QColor(24, 26, 30), '#e8eaed', '#5f6672'   # opaque: cards may overlap
 NO_KEY_TEXT = 'no key'       # Mix column when either track has no key in Traktor
 PATH_ROLE = Qt.UserRole + 1    # file path of a closest-match row (for dragging)
 SORT_ROLE = Qt.UserRole + 2    # value a closest-match column sorts by (number or text)
@@ -117,6 +120,53 @@ def shown_fields(fields, names):
     return [(name, stars(text, text) if name in ('Rating', SS_RATING_COLUMN) else text) for name, text in shown]
 
 
+def field_html(name, text):
+    """A field's value for the details box and the cards: colours as a coloured dot and name."""
+    if name in ('Color', SS_COLOR_COLUMN):
+        try:
+            number = int(float(text))
+        except ValueError:
+            return escape(text)
+        colour = COLOR_MAPPING_CATEGORY.get(number)
+        name = COLOR_NAMES.get(number, text).capitalize()
+        return f'<span style="color:{colour.name()}">&#9679;</span> {name}' if colour is not None else name
+    return escape(text)
+
+
+def fields_table(fields, names):
+    return ('<table cellspacing="0" cellpadding="1">' +
+            ''.join(f'<tr><td style="color:#9aa0a6; padding-right:8px"><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
+                    for name, text in shown_fields(fields, names)) + '</table>')
+
+
+class Card(QGraphicsPathItem):
+    """Rounded info card below and right of a dot (same pixel size at any zoom). Mouse clicks
+    and hovering go through it to the dots underneath."""
+
+    def __init__(self, border, z):
+        super().__init__()
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+        self.setAcceptedMouseButtons(Qt.NoButton)
+        self.setPen(QPen(QColor(border), 1.2))
+        self.setBrush(QBrush(CARD_BACKGROUND))
+        self.setZValue(z)
+        self.text = QGraphicsTextItem(self)
+        self.text.setAcceptedMouseButtons(Qt.NoButton)
+        self.text.setDefaultTextColor(QColor(CARD_TEXT))
+        self.text.document().setDocumentMargin(8)
+        self.hide()
+
+    def show_at(self, dot, html):
+        self.text.setHtml(html)
+        box = self.text.boundingRect()
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(DOT_SIZE, DOT_SIZE, box.width(), box.height()), 8, 8)
+        self.setPath(path)
+        self.text.setPos(DOT_SIZE, DOT_SIZE)
+        self.setPos(dot.pos())
+        self.show()
+
+
 class _Loader(QObject):
     done = pyqtSignal(object)
 
@@ -130,7 +180,10 @@ class DotItem(QGraphicsEllipseItem):
         self.setZValue(1)
 
     def mousePressEvent(self, event):
-        self.owner.select(self.key)
+        if event.modifiers() & Qt.ControlModifier and self.owner.selected_key not in (None, self.key):
+            self.owner.compare(self.key)  # the selection stays
+        else:
+            self.owner.select(self.key)
         self._press = event.screenPos() if event.button() == Qt.LeftButton else None
         if event.button() == Qt.RightButton:
             self.owner.request_context_menu.emit(self.key, event.screenPos())
@@ -145,6 +198,12 @@ class DotItem(QGraphicsEllipseItem):
     def mouseDoubleClickEvent(self, event):
         self.owner.request_add_to_playlist.emit(self.key)
         event.accept()
+
+    def hoverEnterEvent(self, event):
+        self.owner.hover(self.key)
+
+    def hoverLeaveEvent(self, event):
+        self.owner.hover(None)
 
 
 class Halo(QGraphicsEllipseItem):
@@ -314,7 +373,9 @@ class SimilarityMapWidget(QWidget):
         self.playlist_keys = lambda: set()
         self.dots = {}
         self.selected_key = None
-        self.preview_key = None   # a closest match clicked in the list: glows, the selection stays
+        self.preview_key = None   # a closest match clicked in the list, or a Ctrl+clicked dot: glows,
+                                  # gets a card and a line to the selected track; the selection stays
+        self.hover_key = None
         self.groups = {}          # path_key -> group (0 = largest, -1 = none) while grouping is on
         self._group_request = 0   # only the latest grouping result is used
         self._grouper = _Loader()
@@ -345,6 +406,11 @@ class SimilarityMapWidget(QWidget):
         self.preview_glow = Halo(PREVIEW_RING, 3.4, self)
         for halo in (self.selected_glow, self.preview_glow):
             self.scene.addItem(halo)
+        # Details of the hovered dot and of the compared track (replaces plain tooltips).
+        self.hover_card = Card(CARD_BORDER, 12)
+        self.preview_card = Card(PREVIEW_RING, 11)
+        for card in (self.hover_card, self.preview_card):
+            self.scene.addItem(card)
 
         self.status = QLabel('')
         self.edges_button = QToolButton()
@@ -647,18 +713,17 @@ class SimilarityMapWidget(QWidget):
             shown += 1
             dot.setBrush(QBrush(self._dot_colour(key, fields)))
             self._outline(key)
-            lines = [f'{name}: {text}' for name, text in shown_fields(fields, hover)]
-            dot.setToolTip('\n'.join(lines + ([self._group_text(key)] if self.groups else [])))
         missing = len(self.fields) - shown
         self._base_status = (f'{shown} tracks on the map' +
                              (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '') +
                              '. Scroll: zoom, drag background: move, drag dot: file to Traktor, '
-                             'hover: details, click: closest matches.')
+                             'hover: details, click: closest matches, Ctrl+click: compare with the selected track.')
         if self.selected_key not in self.fields:
             self.selected_key = None
         self._draw_edges()
         self._update_suggestions()
         self._show_selected_details()
+        self.hover(self.hover_key)
 
     def fit(self):
         visible = [dot for dot in self.dots.values() if dot.isVisible()] or list(self.dots.values())
@@ -686,14 +751,33 @@ class SimilarityMapWidget(QWidget):
         self.selected.emit(key)
 
     def preview(self, key):
-        """Highlight a closest match on the map: glow, orange ring, its edges pale. The selection stays."""
+        """Highlight a track next to the selected one: magenta glow and ring, its edges pale, a
+        line to the selected track and a card with its details, mix and similarity. The selection stays."""
         previous, self.preview_key = self.preview_key, key
         for changed in (previous, key):
             self._outline(changed)
         self._show_halos()
         self._draw_edges()
+        self.hover(self.hover_key)
         if key in self.dots:
             self.view.ensureVisible(QRectF(self.dots[key].pos(), self.dots[key].pos()).adjusted(-40, -40, 40, 40))
+
+    def compare(self, key):
+        """Ctrl+click on a dot: preview it, and mark its row if it is among the closest matches.
+        Ctrl+click on the compared dot again ends the comparison."""
+        if key == self.preview_key:
+            self._clear_preview()
+            self._draw_edges()
+            return
+        self.preview(key)
+        for index in range(self.suggestions.topLevelItemCount()):
+            item = self.suggestions.topLevelItem(index)
+            if item.data(0, Qt.UserRole) == key:
+                self.suggestions.setCurrentItem(item)
+                self.suggestions.scrollToItem(item)
+                break
+        else:
+            self.suggestions.clearSelection()
 
     def _clear_preview(self):
         previous, self.preview_key = self.preview_key, None
@@ -703,6 +787,57 @@ class SimilarityMapWidget(QWidget):
     def _show_halos(self):
         self.selected_glow.follow(self.dots.get(self.selected_key) if self.selected_key in self.fields else None)
         self.preview_glow.follow(self.dots.get(self.preview_key))
+        dot = self.dots.get(self.preview_key)
+        if dot is not None and dot.isVisible() and self.preview_key in self.fields:
+            self.preview_card.show_at(dot, self.card_html(self.preview_key))
+        else:
+            self.preview_card.hide()
+
+    def hover(self, key):
+        """Card for the dot under the mouse (None: hide it). The compared track has its own card."""
+        self.hover_key = key
+        dot = self.dots.get(key)
+        if dot is None or not dot.isVisible() or key not in self.fields or key == self.preview_key:
+            self.hover_card.hide()
+        else:
+            self.hover_card.show_at(dot, self.card_html(key))
+
+    def relation(self, key):
+        """(mix type or None, similarity or None) of a track to the selected track."""
+        if self.data is None or self.selected_key is None or key == self.selected_key:
+            return None, None
+        rows = self.data.row
+        similarity = (float(self.data.vectors[rows[key]] @ self.data.vectors[rows[self.selected_key]])
+                      if key in rows and self.selected_key in rows else None)
+        source, target = self.fields.get(self.selected_key, {}), self.fields.get(key, {})
+        return mix_type(source.get('Camelot Key New'), target.get('Camelot Key New')), similarity
+
+    def _relation_html(self, key):
+        """'Perfect mix · 72 % similar' to the selected track, in the mix's edge colour."""
+        if self.selected_key not in self.fields or key == self.selected_key:
+            return ''
+        mix, similarity = self.relation(key)
+        if mix is not None:
+            text = f'<span style="color:{EDGE_COLORS[mix.name]}">{escape(mix.label)}</span>'
+        else:
+            known = all(parse_camelot(self.fields.get(k, {}).get('Camelot Key New')) is not None
+                        for k in (key, self.selected_key))
+            text = f'<span style="color:{NO_COLOR.name()}">{"No harmonic mix" if known else "No key"}</span>'
+        if similarity is not None:
+            text += f' &middot; <b>{similarity * 100:.0f} %</b> similar'
+        return f'{text}<br><span style="color:#9aa0a6">to {escape(self.fields[self.selected_key].get("Title", ""))}</span>'
+
+    def card_html(self, key):
+        """Card text: artist - title, key and BPM now, mix and similarity to the selected track,
+        the hover fields (Settings) and the group."""
+        fields = self.fields.get(key, {})
+        key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
+        relation = self._relation_html(key)
+        group = f'<br>{self._group_text(key)}' if self.groups else ''
+        return (f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+                f'<span style="color:#9aa0a6">{escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM</span>'
+                + (f'<br>{relation}' if relation else '') + group
+                + fields_table(fields, self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)))
 
     def select_and_show(self, key):
         """Select a track and scroll the map to it (double-click in the closest matches)."""
@@ -728,7 +863,7 @@ class SimilarityMapWidget(QWidget):
         self.label.setPos(self.dots[self.selected_key].pos())
         self.label.show()
         hover = self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)
-        rows = ''.join(f'<tr><td><i>{name}</i></td><td>{escape(text)}</td></tr>'
+        rows = ''.join(f'<tr><td><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
                        for name, text in shown_fields(fields, hover))
         note = ('<i>Not in the list view (e.g. a playlist track); its matches come from the list.</i><br>'
                 if self.reference is not None and self.reference[0] == self.selected_key else '')
@@ -843,6 +978,7 @@ class SimilarityMapWidget(QWidget):
         self.edge_items = []
         criteria = self.criteria()
         self.status.setText(self._base_status)
+        self._draw_compare_line()
         if not criteria or self.data is None:
             return
         for sources, alpha in self._edge_sources():
@@ -851,6 +987,22 @@ class SimilarityMapWidget(QWidget):
                 self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks. '
                                     + self._base_status)
             self._add_edge_items(edges, alpha)
+
+    def _draw_compare_line(self):
+        """Dashed line from the selected track to the compared one, in the colour of their mix."""
+        ends = [self.dots.get(key) for key in (self.selected_key, self.preview_key)]
+        if None in ends or not all(dot.isVisible() for dot in ends):
+            return
+        mix, _similarity = self.relation(self.preview_key)
+        pen = QPen(QColor(EDGE_COLORS[mix.name] if mix is not None else PREVIEW_RING), 2.5, Qt.DashLine)
+        pen.setCosmetic(True)
+        path = QPainterPath(self._scaled(self.selected_key))
+        path.lineTo(self._scaled(self.preview_key))
+        item = QGraphicsPathItem(path)
+        item.setPen(pen)
+        item.setZValue(0.5)  # above the other edges, below the dots
+        self.scene.addItem(item)
+        self.edge_items.append(item)
 
     def _add_edge_items(self, edges, alpha):
         """One path item per reason, colour and opacity step (thousands of single lines would be

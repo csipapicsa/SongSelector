@@ -202,11 +202,18 @@ class SimilarityMapGuiTests(MapWindowTestBase):
 
     def test_hover_shows_the_configured_details_and_double_click_adds_to_playlist(self):
         dot = self.map.dots[self.key(5)]
-        self.assertIn('Title: breaks 5', dot.toolTip())
-        self.assertIn('Genre: breaks', dot.toolTip())
+        self.map.hover(self.key(5))
+        card = self.map.hover_card
+        self.assertTrue(card.isVisible())
+        self.assertEqual(card.pos(), dot.pos())
+        self.assertIn('Title\nbreaks 5', card.text.toPlainText())
+        self.assertIn('Genre\nbreaks', card.text.toPlainText())
         self.window.settings['Map hover fields'] = ['Original Key']
-        self.window._refresh_map()
-        self.assertEqual(dot.toolTip(), 'Original Key: B minor')  # track 5: keys cycle A, E, B
+        self.window._refresh_map()  # the card is rebuilt while the mouse stays on the dot
+        self.assertIn('Original Key\nB minor', card.text.toPlainText())  # track 5: keys cycle A, E, B
+        self.assertNotIn('Genre', card.text.toPlainText())
+        self.map.hover(None)
+        self.assertFalse(card.isVisible())
         self.map.request_add_to_playlist.emit(self.key(5))
         self.assertEqual(self.window.playlist_tree.topLevelItem(0).text(1), 'breaks 5')
         self.assertTrue(dot.isVisible())  # playlist tracks stay in the library view (dimmed in the list)
@@ -258,7 +265,8 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         for name, action in self.map.edge_actions.items():
             action.setChecked(name == 'perfect_mix')
         self.map.select(self.key(0))
-        alphas = lambda: {item.pen().color().alpha() for item in self.map.edge_items}
+        # solid edges only: the dashed line to a clicked match is opaque
+        alphas = lambda: {item.pen().color().alpha() for item in self.map.edge_items if item.pen().style() == 1}
         self.assertEqual(max(alphas()), 170)  # the selected track's strongest edges
         self.assertNotIn(85, alphas())
         other_key_group = next(item.data(0, 0x0100) for item in self.matches()
@@ -269,6 +277,52 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.map.harmonic_only.setChecked(True)  # the list is rebuilt: highlight and pale edges go
         self.assertIsNone(self.map.preview_key)
         self.assertNotIn(85, alphas())
+
+    def test_ctrl_click_compares_a_dot_with_the_selected_track(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+        self.map.select(self.key(0))
+        other = self.key(3)  # same tempo-adjusted key as track 0, same style
+        view = self.map.view
+        view.centerOn(self.map.dots[other])
+        self.application.processEvents()
+        point = view.mapFromScene(self.map.dots[other].pos())
+        QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
+        self.application.processEvents()
+        self.assertEqual(self.map.selected_key, self.key(0))  # the base track stays selected
+        self.assertEqual(self.map.preview_key, other)
+        self.assertTrue(self.map.preview_glow.isVisible())
+        card = self.map.preview_card.text.toPlainText()
+        self.assertTrue(self.map.preview_card.isVisible())
+        self.assertIn('breaks 3', card)
+        self.assertIn('Perfect mix', card)
+        mix, similarity = self.map.relation(other)
+        self.assertEqual(mix.name, 'perfect_mix')
+        self.assertIn(f'{similarity * 100:.0f} % similar', card)
+        self.assertEqual(self.map.suggestions.currentItem().data(0, 0x0100), other)  # its row is marked
+        dashed = [item for item in self.map.edge_items if item.pen().style() == Qt.DashLine]
+        self.assertEqual(len(dashed), 1)  # the line to the base track, in the perfect-mix colour
+        self.assertEqual(dashed[0].pen().color().name(), '#4cd964')
+        QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)  # again: ends it
+        self.application.processEvents()
+        self.assertIsNone(self.map.preview_key)
+        self.assertFalse(self.map.preview_card.isVisible())
+        self.assertFalse([item for item in self.map.edge_items if item.pen().style() == Qt.DashLine])
+        QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, point)  # a plain click selects
+        self.application.processEvents()
+        self.assertEqual(self.map.selected_key, other)
+
+    def test_clicked_match_gets_a_card_with_mix_and_similarity(self):
+        self.map.select(self.key(0))
+        match = self.matches()[0]
+        self.map.preview(match.data(0, 0x0100))
+        card = self.map.preview_card.text.toPlainText()
+        self.assertIn(match.text(0), card.replace(' % similar', ' %'))  # same score as the list
+        self.map.select(self.key(13))
+        self.assertFalse(self.map.preview_card.isVisible())
 
     def test_matches_on_the_playlist_are_italic(self):
         self.map.request_add_to_playlist.emit(self.key(1))
@@ -344,7 +398,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertNotEqual(groups[0], groups[1])
         colours = {dot.brush().color().name() for key, dot in self.map.dots.items() if dot.isVisible()}
         self.assertEqual(colours, {'#e6194b', '#3cb44b'})
-        self.assertIn('Group ', self.map.dots[self.key(0)].toolTip())
+        self.assertIn('Group ', self.map.card_html(self.key(0)))
         self.assertEqual(self.window.settings['Map grouping'], 'kmeans')
         self.assertEqual(self.window.settings['Map grouping parameters']['kmeans'], 2)
         self.map.grouping.setCurrentIndex(0)
@@ -440,6 +494,15 @@ class ShownFieldsTests(unittest.TestCase):
         names = ['Artist', 'Genre', 'Color', 'Color - Song Selector', 'Rating', 'Rating - Song Selector', 'Comment']
         self.assertEqual(shown_fields(fields, names),
                          [('Artist', 'A'), ('Color - Song Selector', '5'), ('Rating - Song Selector', '★★★★☆')])
+
+
+class FieldHtmlTests(unittest.TestCase):
+    def test_colours_are_shown_as_a_coloured_dot_and_name(self):
+        from traktor_key_calculator.ui.similarity_map import field_html
+        self.assertEqual(field_html('Color', '2'), '<span style="color:#ffa500">&#9679;</span> Orange')
+        self.assertEqual(field_html('Color - Song Selector', '5'), '<span style="color:#0000ff">&#9679;</span> Blue')
+        self.assertEqual(field_html('Color', 'x'), 'x')
+        self.assertEqual(field_html('Title', 'A & B'), 'A &amp; B')
 
 
 class MapDropTests(MapWindowTestBase):
