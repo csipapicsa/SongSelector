@@ -4,6 +4,22 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.17.0] - 2026-10-29
+
+- **Fix: empty, nameless gaps between playlist columns** (since 4.15.0). Every hidden column (e.g.
+  Original BPM, Path) still took about 100 px of blank space. The resize mode was set after the
+  columns were hidden, which Qt answers by keeping their old width; it is now set first.
+- **Track counts:** next to the *List* / *Similarity map* tabs, e.g. *1,234 of 3,651 tracks, 3
+  selected* (after search and filters); under the playlist, e.g. *28 tracks, 2 selected*.
+- **Ratings as stars** (★★★★☆) in both lists, the closest matches and the map details. The cell still
+  holds the number, so sorting, search (`5`) and Advanced Search work as before; 0 (unrated) is blank.
+- **Closest matches on the map:**
+  - *List the 50 closest* (adjustable, 5-2,000; was a fixed 15). The 15 most similar keep their ring
+    on the map, so the map is not covered with rings.
+  - Right-click the header to choose its columns: any library column (BPM, keys, genre, comment,
+    colours as dots, ratings as stars, ...) next to Similarity and Mix. Remembered; numbers sort as
+    numbers.
+
 ## [4.16.1] - 2026-10-28
 
 - **Fix: the closest-matches panel disappeared on narrower windows** (since 4.15.0). The longer

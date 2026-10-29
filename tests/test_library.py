@@ -147,6 +147,37 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         window = self.restart(window)
         self.assertEqual(window.playlist_tree.columnWidth(HEADER_INDEX['Title']), 333)
 
+    def test_hidden_playlist_columns_leave_no_empty_gap(self):
+        from traktor_key_calculator.config import HEADER_INDEX
+        settings = json.loads(self.settings_path.read_text())
+        settings['Visible column left'] = ['Artist', 'Title', 'Camelot Key New']
+        self.settings_path.write_text(json.dumps(settings))
+        tree = self.window().playlist_tree
+        header = tree.header()
+        title, camelot = HEADER_INDEX['Title'], HEADER_INDEX['Camelot Key New']
+        self.assertTrue(tree.isColumnHidden(HEADER_INDEX['Original BPM']))
+        # Before 4.16.2 each hidden column in between kept its old width as an empty gap.
+        self.assertEqual(header.sectionPosition(camelot), header.sectionPosition(title) + header.sectionSize(title))
+
+    def test_track_counts_of_the_list_and_the_playlist(self):
+        window = self.window()
+        tree = window.candidate_tree
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.list_count_label.text().strip(), '4 tracks')
+        self.assertEqual(window.playlist_count_label.text(), '0 tracks')
+        window.search_bar.setText('two')
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.list_count_label.text().strip(), '1 of 4 tracks')
+        window.search_bar.clear()
+        tree.topLevelItem(0).setSelected(True)
+        tree.topLevelItem(1).setSelected(True)
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.list_count_label.text().strip(), '4 tracks, 2 selected')
+        window.add_selected_to_playlist()
+        window.playlist_tree.topLevelItem(0).setSelected(True)
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.playlist_count_label.text(), '2 tracks, 1 selected')
+
     def test_library_and_playlist_are_restored_after_restart(self):
         from traktor_key_calculator.config import HEADER_INDEX
         window = self.window()

@@ -182,9 +182,9 @@ class SimilarityMapGuiTests(MapWindowTestBase):
     def test_selecting_a_track_lists_and_rings_its_closest_matches(self):
         self.map.select(self.key(0))
         matches = [self.map.suggestions.topLevelItem(i).data(0, 0x0100) for i in range(self.map.suggestions.topLevelItemCount())]
-        self.assertEqual(len(matches), 15)
+        self.assertEqual(len(matches), 23)  # all other analysed tracks: fewer than the default 50
         self.assertTrue(all(int(key.split('track')[-1].split('.')[0]) < 12 for key in matches[:11]))  # same style first
-        self.assertEqual(set(self.map.match_keys), set(matches))
+        self.assertEqual(self.map.match_keys, matches[:15])  # only the most similar are ringed
         self.assertEqual(self.map.dots[matches[0]].pen().color().name(), '#40e0ff')
         self.assertEqual(self.window.candidate_tree.currentItem().text(1), 'breaks 0')  # list follows
 
@@ -288,7 +288,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         fields[self.key(0)]['Camelot Key New'] = 'Unknown'  # the selected track itself has no key
         self.map.set_tracks(fields)
         self.map.select(self.key(0))
-        self.assertEqual(len(self.matches()), 15)
+        self.assertEqual(len(self.matches()), 23)  # all others
         self.assertEqual({item.text(1) for item in self.matches()}, {'no key'})
 
     def test_matches_panel_stays_visible_on_a_narrow_window_and_keeps_its_width(self):
@@ -403,12 +403,43 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(titles, sorted(titles, reverse=True))
 
 
+    def test_number_of_matches_can_be_chosen_and_is_remembered(self):
+        self.map.match_count.setValue(5)
+        self.map.select(self.key(0))
+        self.assertEqual(len(self.matches()), 5)
+        self.assertEqual(len(self.map.match_keys), 5)
+        self.assertEqual(self.window.settings['Map match count'], 5)
+
+    def test_match_columns_can_be_chosen_ratings_as_stars_and_numbers_sort(self):
+        from traktor_key_calculator.ui.similarity_map import DEFAULT_MATCH_COLUMNS, MATCH_COLUMNS
+        tree = self.map.suggestions
+        shown = [name for column, name in enumerate(MATCH_COLUMNS) if not tree.isColumnHidden(column)]
+        self.assertEqual(shown, DEFAULT_MATCH_COLUMNS)
+        bpm, color = MATCH_COLUMNS.index('Original BPM'), MATCH_COLUMNS.index('Color')
+        tree.show_column(bpm, True)
+        tree.show_column(color, True)
+        tree.show_column(MATCH_COLUMNS.index('Mix'), False)
+        self.assertEqual(self.window.settings['Map match columns'],
+                         ['Similarity', 'Artist', 'Title', 'Original BPM', 'Color'])
+        self.map.select(self.key(0))
+        self.assertEqual(self.matches()[0].text(bpm), '128')
+        self.assertEqual(self.matches()[0].data(bpm, 0x0102), 128.0)
+        tree.sortByColumn(color, 0)  # Qt.AscendingOrder: by colour number
+        colours = [int(item.text(color)) for item in self.matches()]
+        self.assertEqual(colours, sorted(colours))
+        rating = MATCH_COLUMNS.index('Rating')
+        delegate = tree.itemDelegateForColumn(rating)
+        self.assertEqual(delegate.displayText('3', None), '★★★☆☆')
+
+
 class ShownFieldsTests(unittest.TestCase):
     def test_empty_values_and_colour_zero_are_not_shown(self):
         from traktor_key_calculator.ui.similarity_map import shown_fields
-        fields = {'Artist': 'A', 'Genre': '', 'Color': '0', 'Color - Song Selector': '5', 'Rating': '0'}
-        self.assertEqual(shown_fields(fields, ['Artist', 'Genre', 'Color', 'Color - Song Selector', 'Rating', 'Comment']),
-                         [('Artist', 'A'), ('Color - Song Selector', '5'), ('Rating', '0')])
+        fields = {'Artist': 'A', 'Genre': '', 'Color': '0', 'Color - Song Selector': '5', 'Rating': '0',
+                  'Rating - Song Selector': '4'}
+        names = ['Artist', 'Genre', 'Color', 'Color - Song Selector', 'Rating', 'Rating - Song Selector', 'Comment']
+        self.assertEqual(shown_fields(fields, names),
+                         [('Artist', 'A'), ('Color - Song Selector', '5'), ('Rating - Song Selector', '★★★★☆')])
 
 
 class MapDropTests(MapWindowTestBase):

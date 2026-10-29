@@ -10,7 +10,7 @@ import sqlite3
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QLabel, QPushButton, QFileDialog, QTreeWidgetItem,
                             QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog
 
@@ -235,21 +235,23 @@ class TraktorKeyCalculator(QMainWindow):
         self.playlist_tree.setColumnCount(len(HEADER_LABELS))
         self.playlist_tree.setHeaderLabels(HEADER_LABELS)
 
+        # Columns are resized by hand (Stretch mode made that impossible) and the widths are
+        # saved on close under the same key. The mode is set before columns are hidden: set
+        # after, Qt leaves each hidden column's old width as an empty gap.
+        self.playlist_tree.header().setStretchLastSection(False)
+        self.playlist_tree.header().setSectionResizeMode(QHeaderView.Interactive)
         visible_columns = self.settings.get("Visible column left", HEADER_LABELS)
         for col, name in enumerate(HEADER_LABELS):
             is_visible = name in visible_columns
             self.playlist_tree.setColumnHidden(col, not is_visible)
-
-        # Columns are resized by hand (Stretch mode made that impossible) and the widths are
-        # saved on close under the same key.
-        self.playlist_tree.header().setStretchLastSection(False)
-        self.playlist_tree.header().setSectionResizeMode(QHeaderView.Interactive)
         column_sizes = self.settings.get("Column sizes left", {})
         for col, label in enumerate(HEADER_LABELS):
             width = column_sizes.get(label)
             if width is not None and width > 0:
                 self.playlist_tree.setColumnWidth(col, width)
         left_layout.addWidget(self.playlist_tree)
+        self.playlist_count_label = QLabel('')
+        left_layout.addWidget(self.playlist_count_label)
 
 
         # ------------------------------------------------------- # 
@@ -424,7 +426,20 @@ class TraktorKeyCalculator(QMainWindow):
         # Add tree to right layout
         self.library_tabs = QTabWidget()
         self.library_tabs.addTab(self.candidate_tree, 'List')
+        self.list_count_label = QLabel('')
+        self.list_count_label.setToolTip('Tracks the List view shows (after search and filters) and how many of them are selected')
+        self.library_tabs.setCornerWidget(self.list_count_label, Qt.TopRightCorner)
         right_layout.addWidget(self.library_tabs)
+
+        # Track counts under the playlist and next to the tabs. Many changes arrive at once
+        # (thousands of rows added on load), so they are counted once afterwards.
+        self._count_timer = QTimer(self)
+        self._count_timer.setSingleShot(True)
+        self._count_timer.timeout.connect(self._update_counts)
+        for tree in (self.playlist_tree, self.candidate_tree):
+            tree.itemSelectionChanged.connect(self._count_timer.start)
+            for signal in (tree.model().rowsInserted, tree.model().rowsRemoved, tree.model().modelReset):
+                signal.connect(self._count_timer.start)
         
         # Add panes to splitter
         self.splitter.addWidget(left_pane)
@@ -591,6 +606,7 @@ class TraktorKeyCalculator(QMainWindow):
             message += '; Advanced Search is on'
         self.status_label.setStyleSheet(status_style('ok'))
         self.status_label.setText(message)
+        self._count_timer.start()
         if color_query.error or ss_color_query.error:
             self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(color_query.error or ss_color_query.error)
@@ -1067,6 +1083,21 @@ class TraktorKeyCalculator(QMainWindow):
         menu.addAction('Map hover details...').triggered.connect(self.choose_hover_fields)
 
     # -- similarity map -----------------------------------------------------
+
+    def _update_counts(self):
+        """'1,234 of 3,489 tracks, 3 selected' for the List view; '28 tracks, 2 selected' for
+        the playlist. Selected rows hidden by a search are not counted."""
+        def counts(tree):
+            items = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+            shown = [item for item in items if not item.isHidden()]
+            return len(items), len(shown), sum(item.isSelected() for item in shown)
+
+        total, shown, selected = counts(self.candidate_tree)
+        text = f'{shown:,} of {total:,} tracks' if shown != total else f'{total:,} tracks'
+        self.list_count_label.setText(f'{text}, {selected:,} selected  ' if selected else f'{text}  ')
+        total, _shown, selected = counts(self.playlist_tree)
+        text = f'{total:,} track' + ('' if total == 1 else 's')
+        self.playlist_count_label.setText(f'{text}, {selected:,} selected' if selected else text)
 
     def map_visible(self):
         return hasattr(self, 'similarity_map') and self.library_tabs.currentWidget() is self.similarity_map

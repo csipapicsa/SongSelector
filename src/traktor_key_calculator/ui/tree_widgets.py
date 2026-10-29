@@ -9,9 +9,9 @@ from PyQt5.QtGui import QDrag
 from PyQt5.QtWidgets import (QTreeWidget, QTreeWidgetItem, QAbstractItemView, 
                              QMessageBox, QApplication)
 
-from traktor_key_calculator.ui.delegates import ColorDotDelegate
+from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate
 from traktor_key_calculator.ui.theme import status_style
-from traktor_key_calculator.config import HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN
+from traktor_key_calculator.config import HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN, SS_RATING_COLUMN
 from traktor_key_calculator.core.audio_metadata import get_file_extension, extract_audio_metadata
 
 
@@ -29,6 +29,9 @@ class DraggableTreeWidget(QTreeWidget):
         self.color_delegate = ColorDotDelegate(self)
         self.setItemDelegateForColumn(HEADER_INDEX.get("Color"), self.color_delegate)
         self.setItemDelegateForColumn(HEADER_INDEX.get(SS_COLOR_COLUMN), self.color_delegate)
+        self.star_delegate = StarRatingDelegate(self)
+        for column in ('Rating', SS_RATING_COLUMN):
+            self.setItemDelegateForColumn(HEADER_INDEX[column], self.star_delegate)
         
         # Sort state
         self.sort_column = 0

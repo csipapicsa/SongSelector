@@ -110,7 +110,10 @@ class RatingGuiTests(unittest.TestCase):
         window.populate_tree()
         item=next(window.candidate_tree.topLevelItem(i) for i in range(2)
                   if window.candidate_tree.topLevelItem(i).text(HEADER_INDEX['Title'])=='Rated')
-        self.assertEqual(item.text(HEADER_INDEX['Rating']),'5')
+        self.assertEqual(item.text(HEADER_INDEX['Rating']),'5')  # the number, for sorting and search
+        for tree in (window.candidate_tree, window.playlist_tree):  # shown as stars
+            for column in ('Rating', 'Rating - Song Selector'):
+                self.assertEqual(tree.itemDelegateForColumn(HEADER_INDEX[column]).displayText('5', None), '★★★★★')
         for name,action in window.search_column_actions.items(): action.setChecked(name=='Rating')
         window.search_bar.setText('5')
         window.filter_items()

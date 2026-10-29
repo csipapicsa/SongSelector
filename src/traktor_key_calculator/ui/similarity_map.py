@@ -25,7 +25,10 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboB
                              QMenu, QPushButton, QSizePolicy, QSpinBox, QSplitter, QToolButton, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
+from traktor_key_calculator.config import (COLOR_MAPPING_CATEGORY, HEADER_LABELS, SS_COLOR_COLUMN,
+                                           SS_RATING_COLUMN)
+from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS
+from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
 from traktor_key_calculator.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from traktor_key_calculator.core.traktor_collection import canonical_path
@@ -42,7 +45,11 @@ GLOW_SIZE = 44               # pixels: pulsing halo around the selected track an
 MAX_EDGES = 2500             # "between all visible tracks" is capped to stay readable
 LINES_PER_TRACK = 20         # default: edges from a track go to its N most similar partners
 STRENGTH_LEVELS = 6          # edge opacity steps, weakest to strongest similarity
-SUGGESTIONS = 15
+MATCH_COUNT = 50             # default number of closest matches listed
+RINGED_MATCHES = 15          # of those, the most similar get a ring on the map (more would cover it)
+# Closest-match columns: the two of the map, then the library list's (chosen by right-clicking the header).
+MATCH_COLUMNS = ['Similarity', 'Mix'] + HEADER_LABELS
+DEFAULT_MATCH_COLUMNS = ['Similarity', 'Mix', 'Artist', 'Title']
 SIDE_MIN_WIDTH = 220         # pixels: the details and closest matches never collapse
 NO_COLOR = QColor('#8a8f98')
 UNGROUPED = QColor('#4a4e55')  # "Map density" leaves tracks in thin areas without a group
@@ -102,9 +109,12 @@ def build_map_data(store, rearrange=False, should_stop=lambda: False):
 
 
 def shown_fields(fields, names):
-    """(name, text) pairs worth showing: non-empty, and colour 0 ("no colour") left out."""
-    return [(name, fields[name]) for name in names
-            if fields.get(name) and not (name in ('Color', 'Color - Song Selector') and fields[name] == '0')]
+    """(name, text) pairs worth showing: non-empty, colour 0 ("no colour") and rating 0
+    ("unrated") left out; ratings as stars."""
+    zero_means_none = ('Color', SS_COLOR_COLUMN, 'Rating', SS_RATING_COLUMN)
+    shown = [(name, fields[name]) for name in names
+             if fields.get(name) and not (name in zero_means_none and fields[name] == '0')]
+    return [(name, stars(text, text) if name in ('Rating', SS_RATING_COLUMN) else text) for name, text in shown]
 
 
 class _Loader(QObject):
@@ -171,6 +181,16 @@ class Halo(QGraphicsEllipseItem):
             self.hide()
 
 
+def _sort_value(name, text):
+    """What a closest-match column sorts by: numbers as numbers (blank first), else the text."""
+    if name in NUMERIC_COLUMNS:
+        try:
+            return float(text)
+        except ValueError:
+            return -1.0
+    return text.casefold()
+
+
 class MatchItem(QTreeWidgetItem):
     """Sorts by SORT_ROLE: similarity as a number, mix by strength, names case-insensitively."""
 
@@ -183,10 +203,23 @@ class MatchItem(QTreeWidgetItem):
 
 
 class MatchList(QTreeWidget):
-    """Closest matches; rows can be dragged out as files (e.g. into Traktor)."""
+    """Closest matches; rows can be dragged out as files (e.g. into Traktor). Right-click the
+    header to choose the columns."""
 
-    def __init__(self, parent=None):
+    def __init__(self, settings, parent=None):
         super().__init__(parent)
+        self.settings = settings
+        self.setHeaderLabels(MATCH_COLUMNS)
+        self.color_delegate, self.star_delegate = ColorDotDelegate(self), StarRatingDelegate(self)
+        for name in ('Color', SS_COLOR_COLUMN):
+            self.setItemDelegateForColumn(MATCH_COLUMNS.index(name), self.color_delegate)
+        for name in ('Rating', SS_RATING_COLUMN):
+            self.setItemDelegateForColumn(MATCH_COLUMNS.index(name), self.star_delegate)
+        shown = settings.get('Map match columns', DEFAULT_MATCH_COLUMNS)
+        for column, name in enumerate(MATCH_COLUMNS):
+            self.setColumnHidden(column, name not in shown)
+        self.header().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.header().customContextMenuRequested.connect(self._column_menu)
         self.setDragEnabled(True)
         self.setDragDropMode(QAbstractItemView.DragOnly)
         self.setDefaultDropAction(Qt.CopyAction)
@@ -194,6 +227,22 @@ class MatchList(QTreeWidget):
         # Click a column header to sort; click again to reverse. Default: most similar first.
         self.setSortingEnabled(True)
         self.sortByColumn(0, Qt.DescendingOrder)
+
+    def _column_menu(self, pos):
+        menu = QMenu(self)
+        for column, name in enumerate(MATCH_COLUMNS):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(not self.isColumnHidden(column))
+            action.toggled.connect(lambda checked, column=column: self.show_column(column, checked))
+        menu.exec_(self.header().mapToGlobal(pos))
+
+    def show_column(self, column, shown):
+        self.setColumnHidden(column, not shown)
+        if shown:
+            self.resizeColumnToContents(column)
+        self.settings['Map match columns'] = [name for index, name in enumerate(MATCH_COLUMNS)
+                                              if not self.isColumnHidden(index)]
 
     def mimeTypes(self):
         return ['text/uri-list']
@@ -337,8 +386,7 @@ class SimilarityMapWidget(QWidget):
         self.details = QLabel('Click a track on the map.')
         self.details.setWordWrap(True)
         self.details.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.suggestions = MatchList()
-        self.suggestions.setHeaderLabels(['Similarity', 'Mix', 'Artist', 'Title'])
+        self.suggestions = MatchList(settings)
         self.suggestions.setRootIsDecorated(False)
         # A click highlights the match on the map (the selected track stays); a double-click makes
         # it the selected track. Dragging a match adds it to the playlist or Traktor.
@@ -382,6 +430,20 @@ class SimilarityMapWidget(QWidget):
                          'playlist, Traktor or Explorer; italic: on the playlist)')
         caption.setWordWrap(True)
         side_layout.addWidget(caption)
+        self.match_count = QSpinBox()
+        self.match_count.setRange(5, 2000)
+        self.match_count.setSingleStep(10)
+        self.match_count.setPrefix('List the ')
+        self.match_count.setSuffix(' closest')
+        self.match_count.setToolTip(f'How many closest matches to list; the {RINGED_MATCHES} most similar are '
+                                    'ringed on the map.\nRight-click the list header to choose its columns.')
+        self.match_count.setValue(settings.get('Map match count', MATCH_COUNT))
+        self.match_count.setKeyboardTracking(False)
+        self.match_count.valueChanged.connect(self._update_suggestions)
+        count_row = QHBoxLayout()
+        count_row.addWidget(self.match_count)
+        count_row.addStretch()
+        side_layout.addLayout(count_row)
         side_layout.addWidget(self.suggestions)
         # Long one-line texts must not set the widget's minimum width: on a narrow window that
         # pushed the map wider than the window, and the splitter collapsed the matches to nothing.
@@ -820,6 +882,7 @@ class SimilarityMapWidget(QWidget):
 
     def _update_suggestions(self, _checked=False):
         self.settings['Map harmonic only'] = self.harmonic_only.isChecked()
+        self.settings['Map match count'] = self.match_count.value()
         self.suggestions.clear()
         previous, self.match_keys = self.match_keys, []
         for key in previous:
@@ -843,12 +906,12 @@ class SimilarityMapWidget(QWidget):
             keys_known = all(parse_camelot(fields.get('Camelot Key New')) is not None for fields in (source, target))
             if self.harmonic_only.isChecked() and mix is None and keys_known:
                 continue
-            item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else ('' if keys_known else NO_KEY_TEXT),
-                              target.get('Artist', ''), target.get('Title', '')])
+            item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else ('' if keys_known else NO_KEY_TEXT)]
+                             + [target.get(name, '') for name in HEADER_LABELS])
             item.setData(0, SORT_ROLE, score)
             item.setData(1, SORT_ROLE, mix.weight if mix else 0)
-            item.setData(2, SORT_ROLE, target.get('Artist', '').casefold())
-            item.setData(3, SORT_ROLE, target.get('Title', '').casefold())
+            for column, name in enumerate(HEADER_LABELS, start=2):
+                item.setData(column, SORT_ROLE, _sort_value(name, target.get(name, '')))
             item.setData(0, Qt.UserRole, key)
             item.setData(0, PATH_ROLE, target.get('Path', ''))
             if mix is not None:
@@ -858,14 +921,16 @@ class SimilarityMapWidget(QWidget):
             if key in on_playlist:
                 font = item.font(0)
                 font.setItalic(True)
-                for column in range(4):
+                for column in range(len(MATCH_COLUMNS)):
                     item.setFont(column, font)
                     item.setToolTip(column, 'Already on the playlist')
             self.suggestions.addTopLevelItem(item)
-            self.match_keys.append(key)
-            self._outline(key)
+            if added < RINGED_MATCHES:  # the most similar come first
+                self.match_keys.append(key)
+                self._outline(key)
             added += 1
-            if added >= SUGGESTIONS:
+            if added >= self.match_count.value():
                 break
-        for column in range(4):
-            self.suggestions.resizeColumnToContents(column)
+        for column in range(len(MATCH_COLUMNS)):
+            if not self.suggestions.isColumnHidden(column):
+                self.suggestions.resizeColumnToContents(column)
