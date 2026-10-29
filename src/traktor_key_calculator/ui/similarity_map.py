@@ -68,6 +68,7 @@ CURVE_BEND = 0.18
 # 3D view: Shift+drag rotates (radians per pixel); far dots fade to this opacity; nearer dots
 # lie above farther ones within their ring tier (selected, clicked, matches, others).
 ROTATE_SPEED, FAR_OPACITY, DEPTH_Z = 0.008, 0.35, 0.3
+FAR_SIZE, NEAR_SIZE = 0.5, 1.6   # 3D view: dot size (times DOT_SIZE) at the back and the front
 PERSPECTIVE = 3.0            # eye distance in radii of the cloud: lower is a stronger 3D effect
 DEFAULT_ANGLES = (0.6, -0.35)  # yaw, pitch of the first 3D view
 # Info cards on the map (hover, and a compared track): dark and rounded, like the selected label.
@@ -802,8 +803,7 @@ class SimilarityMapWidget(QWidget):
         self._project()
         for key, dot in self.dots.items():
             dot.setPos(self._projected[key])
-            depth = self._depth.get(key)
-            dot.setOpacity(1.0 if depth is None else FAR_OPACITY + (1 - FAR_OPACITY) * depth)
+            self._apply_depth(key, dot)
             self._outline(key)
         margin = SCENE_SIZE * 0.05
         rect = QRectF(-SCENE_SIZE / 2, -SCENE_SIZE / 2, SCENE_SIZE, SCENE_SIZE) if self.showing_3d() else \
@@ -811,6 +811,16 @@ class SimilarityMapWidget(QWidget):
         self.scene.setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
         self._paint_edges()
         self._follow_dots()
+
+    def _apply_depth(self, key, dot):
+        """3D view: near dots bigger and opaque, far dots smaller and faded; 2D: plain."""
+        depth = self._depth.get(key)
+        if depth is None:
+            dot.setOpacity(1.0)
+            dot.setScale(1.0)
+        else:
+            dot.setOpacity(FAR_OPACITY + (1 - FAR_OPACITY) * depth)
+            dot.setScale(FAR_SIZE + (NEAR_SIZE - FAR_SIZE) * depth)
 
     def _dots_rect(self):
         xs = [point.x() for point in self._projected.values()] or [0]
@@ -858,9 +868,7 @@ class SimilarityMapWidget(QWidget):
         for key in self.data.positions:
             dot = DotItem(key, self)
             dot.setPos(self._projected[key])
-            depth = self._depth.get(key)
-            if depth is not None:
-                dot.setOpacity(FAR_OPACITY + (1 - FAR_OPACITY) * depth)
+            self._apply_depth(key, dot)
             self.scene.addItem(dot)
             self.dots[key] = dot
         margin = SCENE_SIZE * 0.05

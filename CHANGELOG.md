@@ -4,6 +4,11 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.19.1] - 2026-10-29
+
+- **3D view: dots get smaller with distance** (half size at the back, 1.6 times at the front), as
+  well as fading, so the depth reads at a glance. The 2D map keeps one size.
+
 ## [4.19.0] - 2026-10-29
 
 - **Changes made in Traktor come in by themselves.** The app watches Traktor's `collection.nml`;

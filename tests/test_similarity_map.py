@@ -530,6 +530,11 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertTrue(self.window.settings['Map 3D'])
         opacities = {round(dot.opacity(), 2) for dot in self.map.dots.values()}
         self.assertGreater(len(opacities), 5)  # far dots fade
+        depth = self.map._depth
+        near, far = max(depth, key=depth.get), min(depth, key=depth.get)
+        near_size, far_size = self.map.dots[near].scale(), self.map.dots[far].scale()
+        self.assertGreater(near_size, 1.5 * far_size)  # and are drawn smaller than near ones
+        self.assertTrue(0.5 <= far_size < 1 < near_size <= 1.6)
         before = {key: dot.pos() for key, dot in self.map.dots.items()}
         self.window.resize(1400, 900)
         self.window.show()
@@ -552,6 +557,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.map.view_3d_button.setChecked(False)
         self.assertEqual({key: dot.pos() for key, dot in self.map.dots.items()}, flat)
         self.assertEqual({dot.opacity() for dot in self.map.dots.values()}, {1.0})
+        self.assertEqual({dot.scale() for dot in self.map.dots.values()}, {1.0})
 
 
 class ShownFieldsTests(unittest.TestCase):
