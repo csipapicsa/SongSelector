@@ -4,6 +4,30 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.19.0] - 2026-10-29
+
+- **Changes made in Traktor come in by themselves.** The app watches Traktor's `collection.nml`;
+  after Traktor saves it (mostly when Traktor closes), it is read again in a low-priority
+  background thread and all changes are applied at once: list, playlist and `library.sqlite`,
+  with a status message such as *Updated from Traktor: 12 tracks (BPM 3, colour 8, rating 2)*.
+  Changes made while the app was closed come in a few seconds after it starts.
+  - Only what changed **in Traktor** since the last sync is taken (key, BPM, colour, rating, also
+    a cleared colour or rating), so a rating or key read from a file's tags is not overwritten by
+    an old Traktor value. The first sync takes Traktor's colours and fills empty keys, BPMs and
+    ratings.
+  - *Refresh* and *Load CSV* rebuild the list from the CSV as before; imported tracks keep the
+    synced values, CSV rows get them again when Traktor next changes them.
+- **Sorting the list no longer freezes the window.** With a row selected, a click on a column
+  header took about 15 s for 3,600 tracks (the rows were taken out and put back one by one; Qt
+  re-laid out the view each time). Qt now sorts in place: 0.1 s. Numbers still sort as numbers,
+  keys by Camelot number, empty and *Unknown* values last.
+- **Curved edges on the similarity map:** each edge is a gentle arc, so the edges of a track fan
+  out instead of crossing as straight spokes. *Edges → Curved lines* switches back to straight.
+- **3D view** (*3D* button next to *Fit*): the tracks are arranged in three dimensions, Shift+drag
+  rotates, scroll zooms, drag moves. Far dots fade, near ones lie on top; edges, glows, cards and
+  Ctrl+click compare work as in 2D. The first 3D arrangement takes a few minutes in the
+  background (about 3 minutes for 3,500 tracks), then it is cached like the 2D map.
+
 ## [4.18.0] - 2026-10-29
 
 - **Ctrl+click a dot on the similarity map to compare it with the selected track.** The selected

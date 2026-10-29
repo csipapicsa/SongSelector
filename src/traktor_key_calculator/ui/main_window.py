@@ -20,7 +20,7 @@ from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
 from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
-from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget
+from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget, TrackItem
 from traktor_key_calculator.core.data_manager import DataManager
 from traktor_key_calculator.core.key_calculator import KeyCalculator
 
@@ -48,6 +48,8 @@ from traktor_key_calculator.core.search_filters import matches_condition
 from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKEN, parse_color_search,
                                                       replace_color_filter)
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
+from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
+from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 
 
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
@@ -153,6 +155,9 @@ class TraktorKeyCalculator(QMainWindow):
         self.table = pd.DataFrame()
         self._restore_lists()
         self.populate_tree()
+        # Changes made in Traktor (key, BPM, colour, rating) come in after Traktor saves.
+        self.collection_watcher = CollectionWatcher(collection_path, self)
+        self.collection_watcher.loaded.connect(self._collection_changed)
 
         # Embeddings of every library track, analysed in the background
         self.embedding_store = EmbeddingStore(Path(SETTINGS_FILE).with_name('embeddings.sqlite'))
@@ -658,103 +663,20 @@ class TraktorKeyCalculator(QMainWindow):
 
     
     def on_header_clicked(self, column):
-        """Handle header click to sort the tree"""
-        self.sort_by_column(column)
-    
-    def sort_by_column(self, column):
-        """Sort the tree by the given column"""
-        try:
-            # Toggle sort order if same column
-            if self.sort_column == column:
-                self.sort_ascending = not self.sort_ascending
-            else:
-                self.sort_column = column
-                self.sort_ascending = True
-            
-            # Update status
-            column_name = self.candidate_tree.headerItem().text(column)
-            direction = "ascending" if self.sort_ascending else "descending"
-            
-            # self.status_bar.showMessage(f"Sorting by {column_name} ({direction})...")
-            message = f"Sorting by {column_name} ({direction})..."
-            self.status_label.setStyleSheet(status_style('ok'))
-            self.status_label.setText(message)
-            
-            
-            # Get all items
-            items = []
-            for i in range(self.candidate_tree.topLevelItemCount()):
-                items.append(self.candidate_tree.takeTopLevelItem(0))
-            
-            # Define sort key function based on column
-            if column in (HEADER_INDEX.get("Color"), HEADER_INDEX.get(SS_COLOR_COLUMN)):  # color numbers
-                def get_sort_key(item):
-                    try:
-                        # Extract color value
-                        text = item.text(column)
-                        if text == 'nan' or not text:
-                            return (1, 999)  # Sort 'nan' values at the end
-                        return (0, int(float(text.strip())))
-                    except:
-                        return (1, 999)  # Put errors at the end too
-            elif column in (HEADER_INDEX.get("Original BPM"), HEADER_INDEX.get("Rating"),
-                            HEADER_INDEX.get(SS_RATING_COLUMN)):  # Numeric columns
-                def get_sort_key(item):
-                    try:
-                        # Extract numeric value
-                        text = item.text(column)
-                        if text == 'nan' or not text:
-                            return 999  # Sort 'nan' values at the end
-                        return float(text.strip())
-                    except:
-                        return 999
-            elif column == HEADER_INDEX.get("Camelot Key New"):  # Harmonic Key column
-                def get_sort_key(item):
-                    try:
-                        # Extract camelot key format (e.g., "1A", "12B")
-                        key_text = item.text(column)
-                        # Handle "Unknown" or empty values
-                        if key_text == "Unknown" or not key_text or key_text == 'nan':
-                            return (999, "Z")  # Sort at the end
-                        
-                        # Extract the number and letter parts
-                        number_part = ''.join(c for c in key_text if c.isdigit())
-                        letter_part = ''.join(c for c in key_text if c.isalpha())
-                        
-                        # Ensure number part is valid
-                        if number_part:
-                            # Return a tuple for sorting (number, letter)
-                            return (int(number_part), letter_part)
-                        return (999, "Z")
-                    except:
-                        return (999, "Z")
-            else:
-                # Text columns
-                def get_sort_key(item):
-                    text = item.text(column)
-                    return text if text != 'nan' else "zzzzz"  # Sort 'nan' values at the end
-            
-            # Sort the items
-            items.sort(key=get_sort_key, reverse=not self.sort_ascending)
-            
-            # Add them back to the tree
-            for item in items:
-                self.candidate_tree.addTopLevelItem(item)
-            
-            # Update status
-            visible_count = sum(1 for i in range(self.candidate_tree.topLevelItemCount()) if not self.candidate_tree.topLevelItem(i).isHidden())
-            total_count = self.candidate_tree.topLevelItemCount()
-            
-            # self.status_bar.showMessage(f"Sorted by {column_name} ({direction}). Displaying {visible_count} of {total_count} tracks")
-            message = f"Sorted by {column_name} ({direction}). Displaying {visible_count} of {total_count} tracks"
-            self.status_label.setStyleSheet(status_style('info'))
-            self.status_label.setText(message)
-            
-        except Exception as e:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Sort Error", f"Error sorting: {str(e)}")
-            self.status_bar.showMessage(f"Error sorting: {str(e)}")
-    
+        """Qt has sorted the list already (sorting is enabled; TrackItem gives the order)."""
+        self.sort_column = column
+        self.sort_ascending = self.candidate_tree.header().sortIndicatorOrder() == Qt.AscendingOrder
+        direction = 'ascending' if self.sort_ascending else 'descending'
+        self.status_label.setStyleSheet(status_style('info'))
+        self.status_label.setText(f'Sorted by {self.candidate_tree.headerItem().text(column)} ({direction})')
+
+    def sort_by_column(self, column, ascending=None):
+        """Sort the library list; by default the same column again reverses the order."""
+        if ascending is None:
+            ascending = not self.sort_ascending if column == self.sort_column else True
+        self.sort_column, self.sort_ascending = column, ascending
+        self.candidate_tree.sortItems(column, Qt.AscendingOrder if ascending else Qt.DescendingOrder)
+
     def on_item_double_clicked(self, item, column):
         """Handle double-click on tree item"""
         file_path = item.text(HEADER_INDEX.get("Path"))
@@ -773,6 +695,45 @@ class TraktorKeyCalculator(QMainWindow):
     def _load_library(self, table):
         merged = merge_tracks(table, self.saved_imports.values())
         return self._with_user_fields(enrich_ratings(merged, self.importer.collection))
+
+    def _collection_changed(self, collection):
+        """Traktor saved its collection: take the values changed in Traktor into the library,
+        all at once (see core/traktor_sync.py)."""
+        self.importer.collection = collection  # imports use the fresh copy, no second read
+        try:
+            seen = self.library_store.traktor_seen()
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Traktor sync skipped: {error}')
+            return
+        changes = collection_changes(self.table, collection.by_path, seen)
+        now = {key: seen_values(record) for key, record in collection.by_path.items()}
+        try:
+            self.library_store.save_traktor_seen({key: values for key, values in now.items() if seen.get(key) != values})
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Could not save the Traktor sync state: {error}')
+        if not changes:
+            return
+        self.table = apply_changes(self.table, changes)
+        self.data_manager.table = self.table
+        rows = {}
+        for index, changed in changes.items():
+            key = canonical_path(self.table.at[index, 'File_Path'])
+            rows[key] = self.table.loc[index]
+            if key in self.saved_imports:  # Refresh rebuilds the list from these
+                self.saved_imports[key].update(changed)
+        error = self._save_library()
+        for tree in (self.candidate_tree, self.playlist_tree):
+            for item_index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(item_index)
+                row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
+                if row is not None:
+                    self._track_item(row, item)
+        error = self._save_playlist() or error
+        self.filter_items()  # changed values may (no longer) match the search
+        message = f'Updated from Traktor: {summary(changes)}'
+        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
+        self.status_label.setText(error or message)
+        self.status_bar.showMessage(message)
 
     def _restore_lists(self):
         """Load the library and playlist saved at the last change.
@@ -1248,12 +1209,8 @@ class TraktorKeyCalculator(QMainWindow):
         self.table = self._load_library(self.data_manager.load_default_data())
         self._save_library()
         self._queue_embeddings()
-        self.populate_tree()
-        
-        # Re-apply current sort
-        if hasattr(self, 'sort_column'):
-            self.sort_by_column(self.sort_column)
-    
+        self.populate_tree()  # keeps the current sort
+
     def load_csv(self):
         """Load a custom CSV file"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1266,11 +1223,7 @@ class TraktorKeyCalculator(QMainWindow):
                 self.table = self._load_library(result)
                 self._save_library()
                 self._queue_embeddings()
-                self.populate_tree()
-                
-                # Re-apply current sort
-                if hasattr(self, 'sort_column'):
-                    self.sort_by_column(self.sort_column)
+                self.populate_tree()  # keeps the current sort
     
     def get_full_path(self, row):
         """Generate full path to the track file"""
@@ -1380,6 +1333,7 @@ class TraktorKeyCalculator(QMainWindow):
 
     def closeEvent(self, event):
         """Save settings before closing the app"""
+        self.collection_watcher.stop()
         if self.embedding_analyzer is not None:
             self.embedding_analyzer.stop(timeout=2)
         if hasattr(self, 'similarity_map'):
@@ -1471,6 +1425,7 @@ class TraktorKeyCalculator(QMainWindow):
             return
         self.importer = importer
         self.settings['Traktor collection'] = path
+        self.collection_watcher.set_path(path)  # its changed values come in with the next sync
         self.table = enrich_ratings(self.table, importer.collection)
         self._save_library()
         self.populate_tree()
@@ -1588,7 +1543,7 @@ class TraktorKeyCalculator(QMainWindow):
         return rows
 
     def _track_item(self, row, item=None):
-        item = item if item is not None else QTreeWidgetItem()
+        item = item if item is not None else TrackItem()
         base, scale = self._text(row.get('Musical_Key_Base')), self._text(row.get('BaseMinorOrMajor'))
         key = parse_key(f'{base} {scale}') or parse_key(base)
         bpm = parse_bpm(row.get('BPM'))

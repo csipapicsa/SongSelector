@@ -62,6 +62,14 @@ GROUP_COLOURS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4
 # The clicked match is magenta: no Traktor colour is, so it stands out on orange/yellow-heavy maps.
 SELECTED_RING, MATCH_RING, PREVIEW_RING = '#ffffff', '#40e0ff', '#ff2bd6'
 EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clicked match's edges: half
+# Edges bend to one side like an arc: the control point lies this far (share of the edge's
+# length) beside its middle. Edges from one track then fan out in one direction of turn.
+CURVE_BEND = 0.18
+# 3D view: Shift+drag rotates (radians per pixel); far dots fade to this opacity; nearer dots
+# lie above farther ones within their ring tier (selected, clicked, matches, others).
+ROTATE_SPEED, FAR_OPACITY, DEPTH_Z = 0.008, 0.35, 0.3
+PERSPECTIVE = 3.0            # eye distance in radii of the cloud: lower is a stronger 3D effect
+DEFAULT_ANGLES = (0.6, -0.35)  # yaw, pitch of the first 3D view
 # Info cards on the map (hover, and a compared track): dark and rounded, like the selected label.
 CARD_BACKGROUND, CARD_TEXT, CARD_BORDER = QColor(24, 26, 30), '#e8eaed', '#5f6672'   # opaque: cards may overlap
 NO_KEY_TEXT = 'no key'       # Mix column when either track has no key in Traktor
@@ -81,34 +89,52 @@ class MapData:
     keys: list = field(default_factory=list)                         # analysed tracks (path_key)
     vectors: np.ndarray = field(default_factory=lambda: np.zeros((0, 4096), np.float32))
     positions: dict = field(default_factory=dict)                    # path_key -> (x, y)
+    positions3d: dict = field(default_factory=dict)                  # path_key -> (x, y, z), 3D view only
 
     def __post_init__(self):
         self.row = {key: index for index, key in enumerate(self.keys)}
 
 
-def build_map_data(store, rearrange=False, should_stop=lambda: False):
-    """Load embeddings, compute vectors and positions; None if stopped. Slow: run in a thread."""
+def _layout(keys, vectors, stored, dims, should_stop):
+    """{key: position} from the stored layout, with new tracks placed near their most similar
+    tracks; a new t-SNE when there is none yet or most tracks are new. None if stopped."""
+    placed = [key for key in keys if key in stored]
+    if len(keys) >= 3 and len(placed) < len(keys) / 2:
+        points = tsne_layout(vectors, should_stop=should_stop, dims=dims)  # first map, or mostly new tracks
+        if points is None:
+            return None
+        return {key: tuple(point) for key, point in zip(keys, points)}
+    positions = {key: stored[key] for key in placed}
+    new = [key for key in keys if key not in stored]
+    if new and placed:
+        index = {key: i for i, key in enumerate(keys)}
+        points = place_new(np.array([positions[key] for key in placed]),
+                           vectors[[index[key] for key in placed]], vectors[[index[key] for key in new]])
+        positions.update({key: tuple(point) for key, point in zip(new, points)})
+    return positions
+
+
+def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=False):
+    """Load embeddings, compute vectors and positions (and the 3D view's, if asked); None if
+    stopped. Slow: run in a thread."""
     matrices = store.load_many()
     keys = sorted(matrices)
     vectors = track_vectors([matrices[key] for key in keys])
     stored = {} if rearrange else store.load_layout()
-    placed = [key for key in keys if key in stored]
-    if len(keys) >= 3 and len(placed) < len(keys) / 2:
-        points = tsne_layout(vectors, should_stop=should_stop)  # first map, or mostly new tracks
-        if points is None:
-            return None
-        positions = {key: tuple(point) for key, point in zip(keys, points)}
-    else:
-        positions = {key: stored[key] for key in placed}
-        new = [key for key in keys if key not in stored]
-        if new and placed:
-            index = {key: i for i, key in enumerate(keys)}
-            points = place_new(np.array([positions[key] for key in placed]),
-                               vectors[[index[key] for key in placed]], vectors[[index[key] for key in new]])
-            positions.update({key: tuple(point) for key, point in zip(new, points)})
+    positions = _layout(keys, vectors, stored, 2, should_stop)
+    if positions is None:
+        return None
     if positions != stored:
         store.save_layout(positions)
-    return MapData(keys, vectors, positions)
+    positions3d = {}
+    if with_3d:
+        stored = {} if rearrange else store.load_layout_3d()
+        positions3d = _layout(keys, vectors, stored, 3, should_stop)
+        if positions3d is None:
+            return None
+        if positions3d != stored:
+            store.save_layout_3d(positions3d)
+    return MapData(keys, vectors, positions, positions3d)
 
 
 def shown_fields(fields, names):
@@ -327,6 +353,36 @@ class MapView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
 
+    rotator = None    # set by the map widget: rotates the 3D view on Shift+drag
+    _rotate_from = None
+
+    def mousePressEvent(self, event):
+        if (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier
+                and self.rotator is not None and self.rotator.view_3d):
+            self._rotate_from = event.pos()
+            self.viewport().setCursor(Qt.SizeAllCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._rotate_from is not None:
+            delta = event.pos() - self._rotate_from
+            self._rotate_from = event.pos()
+            self.rotator.rotate(delta.x() * ROTATE_SPEED, delta.y() * ROTATE_SPEED)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._rotate_from is not None:
+            self._rotate_from = None
+            self.viewport().unsetCursor()
+            self.rotator.rotation_done()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
     def wheelEvent(self, event):
         factor = 1.2 ** (event.angleDelta().y() / 120)
         self.scale(factor, factor)
@@ -376,6 +432,12 @@ class SimilarityMapWidget(QWidget):
         self.preview_key = None   # a closest match clicked in the list, or a Ctrl+clicked dot: glows,
                                   # gets a card and a line to the selected track; the selection stays
         self.hover_key = None
+        self.view_3d = bool(settings.get('Map 3D', False))
+        self.angles = tuple(settings.get('Map 3D angles', DEFAULT_ANGLES))  # yaw, pitch
+        self._projected = {}      # path_key -> QPointF on the scene (2D map or rotated 3D view)
+        self._depth = {}          # path_key -> 0 (far) .. 1 (near) in the 3D view
+        self._edge_layers = []    # [(edges, alpha)] last computed; redrawn when the 3D view turns
+        self._place_timer = None
         self.groups = {}          # path_key -> group (0 = largest, -1 = none) while grouping is on
         self._group_request = 0   # only the latest grouping result is used
         self._grouper = _Loader()
@@ -389,6 +451,7 @@ class SimilarityMapWidget(QWidget):
 
         self.scene = QGraphicsScene(self)
         self.view = MapView(self.scene)
+        self.view.rotator = self
         self.view.dropped.connect(self.drop_paths)
         self.edge_items = []
         # Label next to the selected dot: artist - title, key and BPM at the current tempo.
@@ -424,6 +487,11 @@ class SimilarityMapWidget(QWidget):
             action.setChecked(name in settings.get('Map edges', DEFAULT_EDGES))
             action.toggled.connect(self._edges_changed)
             self.edge_actions[name] = action
+        edges_menu.addSeparator()
+        self.curved_action = edges_menu.addAction('Curved lines')
+        self.curved_action.setCheckable(True)
+        self.curved_action.setChecked(settings.get('Map curved edges', True))
+        self.curved_action.toggled.connect(self._edges_changed)
         self.edges_button.setMenu(edges_menu)
         self.lines_per_track = QSpinBox()
         self.lines_per_track.setRange(1, 500)
@@ -445,6 +513,12 @@ class SimilarityMapWidget(QWidget):
         self.harmonic_only.toggled.connect(self._update_suggestions)
         fit = QPushButton('Fit')
         fit.clicked.connect(self.fit)
+        self.view_3d_button = QPushButton('3D')
+        self.view_3d_button.setCheckable(True)
+        self.view_3d_button.setChecked(self.view_3d)
+        self.view_3d_button.setToolTip('3D view: Shift+drag rotates, scroll zooms, drag moves.\n'
+                                       'The first 3D arrangement takes about as long as Re-arrange map.')
+        self.view_3d_button.toggled.connect(self.set_3d)
         self.rearrange_button = QPushButton('Re-arrange map')
         self.rearrange_button.setToolTip('Compute the map again from all analysed tracks (takes a few minutes).')
         self.rearrange_button.clicked.connect(lambda: self.load(rearrange=True))
@@ -481,6 +555,7 @@ class SimilarityMapWidget(QWidget):
         for widget in (self.edges_button, self.lines_per_track, self.all_edges, self.harmonic_only):
             bar.addWidget(widget)
         bar.addStretch()
+        bar.addWidget(self.view_3d_button)
         bar.addWidget(fit)
         bar.addWidget(self.rearrange_button)
         group_bar = QHBoxLayout()
@@ -536,13 +611,16 @@ class SimilarityMapWidget(QWidget):
             return
         self._loading = True
         self.rearrange_button.setEnabled(False)
+        first_3d = self.view_3d and (self.data is None or not self.data.positions3d)
         self.status.setText('Arranging the map... (similar tracks are being placed close together)'
-                            if rearrange or self.data is None else 'Updating the map...')
+                            + (' The first 3D view takes a few minutes.' if first_3d else '')
+                            if rearrange or self.data is None or first_3d else 'Updating the map...')
         self._stop.clear()
+        with_3d = self.view_3d
 
         def work():
             try:
-                result = build_map_data(self.store, rearrange, self._stop.is_set)
+                result = build_map_data(self.store, rearrange, self._stop.is_set, with_3d)
             except Exception as error:  # e.g. database busy: report, keep the old map
                 result = error
             self._loader.done.emit(result)
@@ -565,6 +643,8 @@ class SimilarityMapWidget(QWidget):
         if first:
             self.fit()
         self._update_groups()
+        if self.view_3d and not self.data.positions3d:
+            self.load()  # 3D was switched on while this load ran without it
 
     # -- grouping -----------------------------------------------------------
 
@@ -683,23 +763,110 @@ class SimilarityMapWidget(QWidget):
     # -- drawing ------------------------------------------------------------
 
     def _scaled(self, key):
-        x, y = self.data.positions[key]
-        return QPointF(x * self._scale, y * self._scale)
+        return self._projected[key]
+
+    def showing_3d(self):
+        """3D view on and its layout there for every track (else the 2D map is shown)."""
+        return (self.view_3d and self.data is not None and bool(self.data.positions3d)
+                and all(key in self.data.positions3d for key in self.data.positions))
+
+    def _project(self):
+        """Scene positions of all tracks: the 2D map scaled to SCENE_SIZE, or the 3D cloud
+        turned by yaw and pitch, with a little perspective. Fills _projected and _depth."""
+        keys = list(self.data.positions)
+        self._depth = {}
+        if not keys:
+            self._projected = {}
+            return
+        if not self.showing_3d():
+            points = np.array([self.data.positions[key] for key in keys], dtype=np.float64)
+            spread = float(np.ptp(points, axis=0).max()) or 1.0
+            points = points * (SCENE_SIZE / spread)
+            self._projected = {key: QPointF(x, y) for key, (x, y) in zip(keys, points)}
+            return
+        points = np.array([self.data.positions3d[key] for key in keys], dtype=np.float64)
+        points -= points.mean(0)
+        radius = float(np.linalg.norm(points, axis=1).max()) or 1.0
+        yaw, pitch = self.angles
+        turn = np.array([[np.cos(yaw), 0, np.sin(yaw)], [0, 1, 0], [-np.sin(yaw), 0, np.cos(yaw)]])
+        tilt = np.array([[1, 0, 0], [0, np.cos(pitch), -np.sin(pitch)], [0, np.sin(pitch), np.cos(pitch)]])
+        rotated = points @ (tilt @ turn).T / radius            # inside the unit sphere
+        near = rotated[:, 2]                                   # towards the viewer: +z
+        scale = PERSPECTIVE / (PERSPECTIVE - near) * (SCENE_SIZE / 2)
+        self._projected = {key: QPointF(x, y) for key, x, y in
+                           zip(keys, rotated[:, 0] * scale, rotated[:, 1] * scale)}
+        self._depth = dict(zip(keys, (near + 1) / 2))
+
+    def _place_dots(self):
+        """Move the dots to the projected positions (after switching 2D/3D or turning)."""
+        self._project()
+        for key, dot in self.dots.items():
+            dot.setPos(self._projected[key])
+            depth = self._depth.get(key)
+            dot.setOpacity(1.0 if depth is None else FAR_OPACITY + (1 - FAR_OPACITY) * depth)
+            self._outline(key)
+        margin = SCENE_SIZE * 0.05
+        rect = QRectF(-SCENE_SIZE / 2, -SCENE_SIZE / 2, SCENE_SIZE, SCENE_SIZE) if self.showing_3d() else \
+            self._dots_rect()
+        self.scene.setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
+        self._paint_edges()
+        self._follow_dots()
+
+    def _dots_rect(self):
+        xs = [point.x() for point in self._projected.values()] or [0]
+        ys = [point.y() for point in self._projected.values()] or [0]
+        return QRectF(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+
+    def _follow_dots(self):
+        """Label, glows and cards stay on their dots after the dots moved."""
+        if self.label.isVisible() and self.selected_key in self.dots:
+            self.label.setPos(self.dots[self.selected_key].pos())
+        self._show_halos()
+        self.hover_card.hide()
+
+    def set_3d(self, on):
+        """Switch between the 2D map and the 3D view (computed in the background the first time)."""
+        self.view_3d = bool(on)
+        self.settings['Map 3D'] = self.view_3d
+        if self.data is None:
+            return
+        if self.view_3d and not self.showing_3d():
+            self.load()  # keeps the 2D map until the 3D layout is there
+            return
+        self._place_dots()
+        self.fit()
+
+    def rotate(self, yaw, pitch):
+        """Turn the 3D view (Shift+drag). Several mouse moves are drawn as one."""
+        self.angles = (self.angles[0] + yaw, max(-1.5, min(1.5, self.angles[1] + pitch)))
+        if self._place_timer is None:
+            from PyQt5.QtCore import QTimer
+            self._place_timer = QTimer(self)
+            self._place_timer.setSingleShot(True)
+            self._place_timer.timeout.connect(self._place_dots)
+        if not self._place_timer.isActive():
+            self._place_timer.start(0)
+
+    def rotation_done(self):
+        self.settings['Map 3D angles'] = list(self.angles)
 
     def _rebuild_dots(self):
         for dot in self.dots.values():
             self.scene.removeItem(dot)
         self.dots = {}
-        points = np.array(list(self.data.positions.values()) or [(0, 0)])
-        spread = float(np.ptp(points, axis=0).max()) or 1.0
-        self._scale = SCENE_SIZE / spread
+        self._project()
         for key in self.data.positions:
             dot = DotItem(key, self)
-            dot.setPos(self._scaled(key))
+            dot.setPos(self._projected[key])
+            depth = self._depth.get(key)
+            if depth is not None:
+                dot.setOpacity(FAR_OPACITY + (1 - FAR_OPACITY) * depth)
             self.scene.addItem(dot)
             self.dots[key] = dot
         margin = SCENE_SIZE * 0.05
-        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-margin, -margin, margin, margin))
+        rect = QRectF(-SCENE_SIZE / 2, -SCENE_SIZE / 2, SCENE_SIZE, SCENE_SIZE) if self.showing_3d() else \
+            self._dots_rect()
+        self.scene.setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
         self._refresh()
 
     def _refresh(self):
@@ -891,18 +1058,19 @@ class SimilarityMapWidget(QWidget):
         dot = self.dots.get(key)
         if dot is None:
             return
+        depth = DEPTH_Z * self._depth.get(key, 0)  # 3D view: nearer dots on top within a tier
         if key == self.selected_key:
             dot.setPen(QPen(QColor(SELECTED_RING), 3))
-            dot.setZValue(4)
+            dot.setZValue(4 + depth)
         elif key == self.preview_key:
             dot.setPen(QPen(QColor(PREVIEW_RING), 3.5))
-            dot.setZValue(3.5)
+            dot.setZValue(3.5 + depth)
         elif key in self.match_keys:
             dot.setPen(QPen(QColor(MATCH_RING), 2.5))
-            dot.setZValue(3)
+            dot.setZValue(3 + depth)
         else:
             dot.setPen(QPen(QColor(20, 20, 20, 160), 1))
-            dot.setZValue(1)
+            dot.setZValue(1 + depth)
 
     def criteria(self):
         return {name for name, action in self.edge_actions.items() if action.isChecked()}
@@ -911,6 +1079,7 @@ class SimilarityMapWidget(QWidget):
         self.settings['Map edges'] = sorted(self.criteria())
         self.settings['Map edges between all'] = self.all_edges.isChecked()
         self.settings['Map lines per track'] = self.lines_per_track.value()
+        self.settings['Map curved edges'] = self.curved_action.isChecked()
         self._draw_edges()
 
     def _edge_sources(self):
@@ -973,20 +1142,38 @@ class SimilarityMapWidget(QWidget):
         return edges
 
     def _draw_edges(self):
+        """Work out which edges to show, then draw them."""
+        criteria = self.criteria()
+        self.status.setText(self._base_status)
+        self._edge_layers = []
+        if criteria and self.data is not None:
+            for sources, alpha in self._edge_sources():
+                edges = self._edges(criteria, sources)
+                if len(edges) >= MAX_EDGES:
+                    self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks. '
+                                        + self._base_status)
+                self._edge_layers.append((edges, alpha))
+        self._paint_edges()
+
+    def _paint_edges(self):
+        """Draw the last worked-out edges at the dots' current positions (also after a 3D turn)."""
         for item in self.edge_items:
             self.scene.removeItem(item)
         self.edge_items = []
-        criteria = self.criteria()
-        self.status.setText(self._base_status)
         self._draw_compare_line()
-        if not criteria or self.data is None:
-            return
-        for sources, alpha in self._edge_sources():
-            edges = self._edges(criteria, sources)
-            if len(edges) >= MAX_EDGES:
-                self.status.setText(f'Showing the first {MAX_EDGES} edges; filter the list to see fewer tracks. '
-                                    + self._base_status)
+        for edges, alpha in self._edge_layers:
             self._add_edge_items(edges, alpha)
+
+    def _edge_to(self, path, source, target):
+        """Add a line from source to target to the path: an arc, or straight (Edges menu)."""
+        start, end = self._scaled(source), self._scaled(target)
+        path.moveTo(start)
+        if not self.curved_action.isChecked():
+            path.lineTo(end)
+            return
+        dx, dy = end.x() - start.x(), end.y() - start.y()
+        middle = (start + end) / 2
+        path.quadTo(QPointF(middle.x() - dy * CURVE_BEND, middle.y() + dx * CURVE_BEND), end)
 
     def _draw_compare_line(self):
         """Dashed line from the selected track to the compared one, in the colour of their mix."""
@@ -996,8 +1183,8 @@ class SimilarityMapWidget(QWidget):
         mix, _similarity = self.relation(self.preview_key)
         pen = QPen(QColor(EDGE_COLORS[mix.name] if mix is not None else PREVIEW_RING), 2.5, Qt.DashLine)
         pen.setCosmetic(True)
-        path = QPainterPath(self._scaled(self.selected_key))
-        path.lineTo(self._scaled(self.preview_key))
+        path = QPainterPath()
+        self._edge_to(path, self.selected_key, self.preview_key)
         item = QGraphicsPathItem(path)
         item.setPen(pen)
         item.setZValue(0.5)  # above the other edges, below the dots
@@ -1018,8 +1205,7 @@ class SimilarityMapWidget(QWidget):
             level = round((STRENGTH_LEVELS - 1) * (similarity - low) / (high - low)) if high > low \
                 else STRENGTH_LEVELS - 1
             path = paths.setdefault((reason, colour, level), QPainterPath())
-            path.moveTo(self._scaled(source))
-            path.lineTo(self._scaled(target))
+            self._edge_to(path, source, target)
         for (reason, colour, level), path in paths.items():
             weight = MIX_TYPES_BY_NAME[reason].weight if reason in MIX_TYPES_BY_NAME else 4
             colour_alpha = QColor(colour)

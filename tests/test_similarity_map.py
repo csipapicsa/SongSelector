@@ -52,6 +52,17 @@ class SimilarityTests(unittest.TestCase):
         self.assertIsNone(tsne_layout(vectors, should_stop=lambda: True))
         self.assertEqual(tsne_layout(vectors[:2]).shape, (2, 2))
 
+    def test_tsne_and_placing_work_in_3d(self):
+        vectors = track_vectors(two_styles())
+        points = tsne_layout(vectors, iterations=400, dims=3)
+        self.assertEqual(points.shape, (24, 3))
+        first, second = points[:12], points[12:]
+        within = np.mean([np.linalg.norm(first - first.mean(0), axis=1).mean(), np.linalg.norm(second - second.mean(0), axis=1).mean()])
+        self.assertGreater(np.linalg.norm(first.mean(0) - second.mean(0)), 2 * within)
+        known = np.array([[0.0, 0.0, 0.0]] * 12 + [[100.0, 100.0, 100.0]] * 11, dtype=np.float32)
+        np.testing.assert_allclose(place_new(known, vectors[:23], vectors[23:])[0], [100, 100, 100], atol=1e-3)
+        self.assertEqual(place_new(known, vectors[:23], vectors[:0]).shape, (0, 3))
+
     def test_new_tracks_are_placed_near_their_most_similar_tracks(self):
         vectors = track_vectors(two_styles())
         known = np.array([[0.0, 0.0]] * 12 + [[100.0, 100.0]] * 11, dtype=np.float32)
@@ -484,6 +495,63 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         rating = MATCH_COLUMNS.index('Rating')
         delegate = tree.itemDelegateForColumn(rating)
         self.assertEqual(delegate.displayText('3', None), '★★★☆☆')
+
+
+    def wait_for_map(self):
+        deadline = time.monotonic() + 60
+        while self.map._loading and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.02)
+        self.application.processEvents()
+
+    def test_edges_are_curved_unless_switched_to_straight(self):
+        for name, action in self.map.edge_actions.items():
+            action.setChecked(name == 'perfect_mix')
+        self.map.select(self.key(0))
+        paths = lambda: [item.path() for item in self.map.edge_items]
+        self.assertTrue(all(path.elementCount() % 4 == 0 for path in paths()))  # move + curve (3 elements)
+        start, end = paths()[0].elementAt(0), paths()[0].elementAt(3)
+        bend = paths()[0].elementAt(1)
+        self.assertNotAlmostEqual((bend.x - start.x) * (end.y - start.y), (bend.y - start.y) * (end.x - start.x), 1)
+        self.map.curved_action.setChecked(False)
+        self.assertTrue(all(path.elementCount() % 2 == 0 and path.elementAt(1).isLineTo() for path in paths()))
+        self.assertFalse(self.window.settings['Map curved edges'])
+
+    def test_3d_view_turns_with_shift_drag_and_2d_comes_back(self):
+        from PyQt5.QtCore import QPoint, Qt
+        from PyQt5.QtTest import QTest
+        flat = {key: dot.pos() for key, dot in self.map.dots.items()}
+        self.map.select(self.key(0))
+        self.map.view_3d_button.setChecked(True)  # first time: arranged in the background
+        self.wait_for_map()
+        self.assertTrue(self.map.showing_3d())
+        self.assertEqual(len(next(iter(self.map.data.positions3d.values()))), 3)
+        self.assertEqual(len(EmbeddingStore(self.root / 'embeddings.sqlite').load_layout_3d()), 24)  # cached
+        self.assertTrue(self.window.settings['Map 3D'])
+        opacities = {round(dot.opacity(), 2) for dot in self.map.dots.values()}
+        self.assertGreater(len(opacities), 5)  # far dots fade
+        before = {key: dot.pos() for key, dot in self.map.dots.items()}
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+        viewport = self.map.view.viewport()
+        QTest.mousePress(viewport, Qt.LeftButton, Qt.ShiftModifier, QPoint(200, 200))
+        from PyQt5.QtCore import QEvent
+        from PyQt5.QtGui import QMouseEvent
+        from PyQt5.QtWidgets import QApplication
+        QApplication.sendEvent(viewport, QMouseEvent(QEvent.MouseMove, QPoint(260, 230), Qt.NoButton,
+                                                     Qt.LeftButton, Qt.ShiftModifier))  # QTest.mouseMove: no event offscreen
+        QTest.mouseRelease(viewport, Qt.LeftButton, Qt.ShiftModifier, QPoint(260, 230))
+        self.application.processEvents()
+        self.assertNotEqual(self.map.angles, (0.6, -0.35))
+        self.assertEqual(self.window.settings['Map 3D angles'], list(self.map.angles))
+        self.assertEqual(self.map.selected_key, self.key(0))  # rotating selects nothing
+        moved = sum(dot.pos() != before[key] for key, dot in self.map.dots.items())
+        self.assertEqual(moved, 24)
+        self.assertEqual(self.map.selected_glow.pos(), self.map.dots[self.key(0)].pos())  # the glow follows
+        self.map.view_3d_button.setChecked(False)
+        self.assertEqual({key: dot.pos() for key, dot in self.map.dots.items()}, flat)
+        self.assertEqual({dot.opacity() for dot in self.map.dots.values()}, {1.0})
 
 
 class ShownFieldsTests(unittest.TestCase):

@@ -3,6 +3,7 @@ treee_widgets.py
 Custom tree widgets for the Traktor Key Calculator
 """
 import os
+import re
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QMessageBox
 from PyQt5.QtCore import Qt, QMimeData, QUrl
 from PyQt5.QtGui import QDrag
@@ -16,6 +17,36 @@ from traktor_key_calculator.core.audio_metadata import get_file_extension, extra
 
 
 
+_NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN)}
+
+
+def track_sort_key(column, text):
+    """What a library/playlist column sorts by: numbers as numbers, Camelot keys by number
+    then letter, text case-insensitively; empty and unknown values last (ascending)."""
+    text = text.strip()
+    if column in _NUMBER_COLUMNS:
+        try:
+            number = float(text)
+        except ValueError:
+            number = float('nan')
+        return (1, 0.0) if number != number else (0, number)
+    if column == HEADER_INDEX['Camelot Key New']:
+        match = re.fullmatch(r'(\d+)\s*([A-Za-z])', text)
+        return (0, (int(match[1]), match[2].upper())) if match else (1, (0, ''))
+    if not text or text.lower() == 'nan':
+        return (1, '')
+    return (0, text.casefold())
+
+
+class TrackItem(QTreeWidgetItem):
+    """Library and playlist row; Qt's own sorting uses track_sort_key. Sorting inside Qt keeps
+    the rows in place: taking out and re-adding thousands of rows froze the window for seconds."""
+
+    def __lt__(self, other):
+        column = self.treeWidget().sortColumn() if self.treeWidget() else 0
+        return track_sort_key(column, self.text(column)) < track_sort_key(column, other.text(column))
+
+
 class DraggableTreeWidget(QTreeWidget):
     """Custom QTreeWidget that supports dragging files"""
     def __init__(self, parent=None):
@@ -23,6 +54,7 @@ class DraggableTreeWidget(QTreeWidget):
         self.setDragEnabled(True)
         # Click, Shift+click (range) and Ctrl+click (toggle), as in Explorer / Traktor
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.setUniformRowHeights(True)  # every row has the same columns; Qt need not measure each
         self.parent_app = parent
         
         # Set the color delegate for the color column (column 10)

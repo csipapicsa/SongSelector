@@ -88,6 +88,14 @@ CREATE TABLE IF NOT EXISTS lists (
     name     TEXT PRIMARY KEY,
     saved_at TEXT NOT NULL
 );
+-- Values of each track as Traktor's collection had them at the last sync (core/traktor_sync.py).
+CREATE TABLE IF NOT EXISTS traktor_seen (
+    path_key TEXT PRIMARY KEY,
+    key      TEXT,
+    bpm      REAL,
+    color    INTEGER,
+    rating   REAL
+);
 """
 
 
@@ -127,6 +135,21 @@ class LibraryStore:
                 if column not in existing:
                     connection.execute(f'ALTER TABLE tracks ADD COLUMN {column} {kind}')
             connection.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+
+    # -- Traktor sync -----------------------------------------------------------
+
+    def traktor_seen(self):
+        """{path_key: {'key', 'bpm', 'color', 'rating'}} as Traktor had them at the last sync."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute('SELECT path_key, key, bpm, color, rating FROM traktor_seen').fetchall()
+        return {row[0]: dict(zip(('key', 'bpm', 'color', 'rating'), row[1:])) for row in rows}
+
+    def save_traktor_seen(self, values):
+        """Store {path_key: values} (the whole collection, in one transaction)."""
+        with closing(self._connect()) as connection, connection:
+            connection.executemany('INSERT OR REPLACE INTO traktor_seen VALUES (?, ?, ?, ?, ?)',
+                                   [(key, value['key'], value['bpm'], value['color'], value['rating'])
+                                    for key, value in values.items()])
 
     # -- collection -----------------------------------------------------------
 

@@ -171,6 +171,14 @@ class EmbeddingStore:
         y        REAL NOT NULL,
         PRIMARY KEY (path_key, model)
     );
+    CREATE TABLE IF NOT EXISTS map_layout_3d (
+        path_key TEXT NOT NULL,
+        model    TEXT NOT NULL,
+        x        REAL NOT NULL,
+        y        REAL NOT NULL,
+        z        REAL NOT NULL,
+        PRIMARY KEY (path_key, model)
+    );
     """
 
     def __init__(self, path, keep_open=False):
@@ -261,6 +269,18 @@ class EmbeddingStore:
         with self._open() as connection:
             rows = connection.execute('SELECT path_key, x, y FROM map_layout WHERE model = ?', (model,)).fetchall()
         return {key: (x, y) for key, x, y in rows}
+
+    def save_layout_3d(self, positions, model=MODEL_ID):
+        """Replace the stored 3D view with {path_key: (x, y, z)}."""
+        with self._open() as connection, connection:
+            connection.execute('DELETE FROM map_layout_3d WHERE model = ?', (model,))
+            connection.executemany('INSERT INTO map_layout_3d VALUES (?, ?, ?, ?, ?)',
+                                   [(key, model, float(x), float(y), float(z)) for key, (x, y, z) in positions.items()])
+
+    def load_layout_3d(self, model=MODEL_ID):
+        with self._open() as connection:
+            rows = connection.execute('SELECT path_key, x, y, z FROM map_layout_3d WHERE model = ?', (model,)).fetchall()
+        return {key: (x, y, z) for key, x, y, z in rows}
 
     def counts(self, model=MODEL_ID):
         """(analysed, failed) number of tracks."""

@@ -18,8 +18,12 @@ CHANGELOG when they ship.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
 - [x] Map: "edges only to the N closest matches" (harmonic *and* similar): 4.16.0, with opacity by similarity.
-- [ ] Map: 3D view (pyqtgraph.opengl or vispy). Rotate with the usual mouse + Shift / Ctrl
-      combinations, zoom with the wheel. 3D t-SNE may also split the "one big blob" better.
+- [x] Map: 3D view, 4.19.0: 3D t-SNE projected onto the same scene (no OpenGL dependency),
+      Shift+drag rotates, depth fades far dots. Follow-up: a 3D-aware "Map density" grouping
+      (it still uses the 2D positions); compare whether 3D splits the "one big blob" better.
+- [x] Background sync from Traktor's collection.nml (key, BPM, colour, rating), 4.19.0.
+      Follow-up: write the Song Selector rating/colour back to Traktor (needs care: Traktor
+      overwrites the NML when it closes).
 - [x] Map: **unsupervised clustering**, shipped in 4.16.0 (k-means, neighbour communities, map
       density). Follow-ups: name groups by their most common genre; filter the list by group.
       Original plan, method chosen in the map settings, to try several
