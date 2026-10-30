@@ -271,7 +271,7 @@ class GuiTests(unittest.TestCase):
         self.assertLess(row['BPM'], 136)
         self.assertTrue(row['Artist'])
         self.assertTrue(row['Title'])
-        self.assertEqual(len(importer.collection.by_path), 13353)
+        self.assertGreater(len(importer.collection.by_path), 13000)  # the live collection grows
 
 
 

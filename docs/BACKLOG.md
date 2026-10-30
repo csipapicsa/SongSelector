@@ -15,9 +15,11 @@ CHANGELOG when they ship.
 - [ ] Replace the bundled `music_test.csv` with a library built from the user's own collection.
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
 - [x] More than one playlist: Browser tab with saved playlists and smartlists (4.21.0).
-- [ ] Playlists from other apps in the Browser, each in its own folder under Playlists: Traktor
-      (playlists and smartlists in `collection.nml`), Rekordbox, ... Read-only to start with
-      (user request 2026-10-30).
+- [x] Traktor's playlists in the Browser (*Traktor Playlists*, read-only, 4.23.0).
+- [ ] Traktor's smartlists: evaluate their queries (`$BPM > 126 & $GENRE % "break" | ...`; operators
+      `== <> < <= > >= % !% ~`, `&` and `|`). Fields the app lacks: `$PLAYCOUNT`, `$TIME`
+      (track length); they would have to be read from the NML. 43 in the user's collection.
+- [ ] Rekordbox (and other apps') playlists in the Browser, each in its own folder.
 - [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
 - [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
       models and ideas in the DJ mix segmentation project). Plan only.

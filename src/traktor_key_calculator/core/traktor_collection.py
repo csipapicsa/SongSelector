@@ -15,6 +15,11 @@ def canonical_path(path):
     return ntpath.normcase(ntpath.normpath(text))
 
 
+def nml_track_path(key):
+    r"""Path of a playlist entry's PRIMARYKEY, e.g. 'E:/:DJ/:Break/:a.mp3' -> 'E:\DJ\Break\a.mp3'."""
+    return ntpath.normpath(key.replace('/:', '\\')) if key else ''
+
+
 def discover_collection():
     candidates = [Path(r'E:\DJ\TRAKTOR\collection.nml')]
     home = Path.home()
@@ -32,6 +37,9 @@ class TraktorCollection:
         self.error = ''
         self.by_path = {}
         self.by_filename = {}
+        # Traktor's playlist tree, in Traktor's order: [{'type': 'FOLDER', 'name', 'children'},
+        # {'type': 'PLAYLIST', 'name', 'tracks': [path, ...]}, {'type': 'SMARTLIST', 'name', 'query'}]
+        self.playlists = []
         self._signature = None
 
     def _load(self):
@@ -43,11 +51,32 @@ class TraktorCollection:
             if signature == self._signature:
                 return
             paths, names = {}, {}
-            for event, entry in ET.iterparse(self.path, events=('end',)):
+            root = {'type': 'FOLDER', 'name': '', 'children': []}
+            nodes = [root]  # PLAYLISTS NODE elements open at this point of the file
+            for event, entry in ET.iterparse(self.path, events=('start', 'end')):
+                if entry.tag == 'NODE':
+                    if event == 'start':
+                        kind = entry.get('TYPE', '')
+                        node = {'type': kind, 'name': entry.get('NAME', '')}
+                        node.update({'FOLDER': {'children': []}, 'PLAYLIST': {'tracks': []},
+                                     'SMARTLIST': {'query': ''}}.get(kind, {}))
+                        nodes[-1].setdefault('children', []).append(node)
+                        nodes.append(node)
+                    else:
+                        nodes.pop()
+                    continue
+                if event != 'end':
+                    continue
+                if entry.tag == 'SEARCH_EXPRESSION':
+                    nodes[-1]['query'] = entry.get('QUERY', '')
+                    continue
                 if entry.tag != 'ENTRY':
                     continue
                 location = entry.find('LOCATION')
                 if location is None:
+                    key = entry.find('PRIMARYKEY')
+                    if key is not None and 'tracks' in nodes[-1]:  # a playlist entry
+                        nodes[-1]['tracks'].append(nml_track_path(key.get('KEY')))
                     entry.clear()
                     continue
                 filename = location.get('FILE', '')
@@ -74,6 +103,9 @@ class TraktorCollection:
                 names.setdefault(filename.casefold(), []).append(record)
                 entry.clear()
             self.by_path, self.by_filename = paths, names
+            # Traktor's tree has one '$ROOT' folder; its contents are the playlists
+            top = root['children']
+            self.playlists = top[0].get('children', []) if len(top) == 1 and top[0]['type'] == 'FOLDER' else top
             self._signature = signature
             self.error = ''
         except (OSError, ET.ParseError) as error:

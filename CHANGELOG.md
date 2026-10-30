@@ -4,6 +4,21 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.23.0] - 2026-10-30
+
+- **Fixed: tracks dropped while the List shows a playlist were not added to it.** Dropping files
+  (e.g. 136 tracks of a Traktor playlist) onto the List while it showed one of your playlists only
+  imported them into the library, and the List jumped to all tracks. They are now added to that
+  playlist, in the dropped order, and the List keeps showing it. Dropping onto a playlist in the
+  Browser added them but also jumped to all tracks; it no longer does. The status bar says how
+  many files could not be read or no longer exist.
+- **Traktor's playlists in the Browser**, under *Traktor Playlists*, with Traktor's folders and
+  order, read from `collection.nml` (read-only; updated when Traktor saves). Click one, or drag it
+  onto the List, to show its tracks in Traktor's order (#); double-click or drag it onto the
+  Playlist tab to load it. Right-click: *Import its missing tracks into the library*, *Copy to my
+  playlists...* (an editable copy). Traktor's smartlists are listed with their query in the
+  tooltip, but not evaluated yet.
+
 ## [4.22.0] - 2026-10-30
 
 - **Map groups in the List.** A new **Group** column holds each track's group on the similarity

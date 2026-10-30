@@ -226,7 +226,8 @@ class AudioDropMixin:
 
 class PoolTreeWidget(AudioDropMixin, DraggableTreeWidget):
     """The List view. Files dropped from outside are imported; a Browser entry dropped here
-    is shown (its tracks only)."""
+    is shown (its tracks only). While it shows one of the app's playlists, dropped tracks are
+    added to that playlist."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
@@ -243,10 +244,15 @@ class PoolTreeWidget(AudioDropMixin, DraggableTreeWidget):
 
     def dropEvent(self, event):
         node = dragged_node(event.mimeData())
-        if node is None:
+        source = self.parent_app.list_source
+        if node is not None:
+            self.parent_app.show_list_source(node)
+        elif source and source['kind'] == 'playlist':
+            # Showing one of the app's playlists: dropped tracks go onto it (imported first if new)
+            self.parent_app.add_tracks_to_saved_playlist(source, event.mimeData())
+        else:
             super().dropEvent(event)
             return
-        self.parent_app.show_list_source(node)
         event.setDropAction(Qt.CopyAction)
         event.accept()
 

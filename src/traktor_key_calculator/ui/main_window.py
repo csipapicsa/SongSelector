@@ -50,7 +50,7 @@ from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKE
                                                       replace_color_filter)
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
 from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
-from traktor_key_calculator.ui.list_browser import ListBrowser, node_label
+from traktor_key_calculator.ui.list_browser import ListBrowser, ORDERED_KINDS, node_label
 from traktor_key_calculator.ui.saved_lists import SavedListsMixin
 from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 
@@ -676,7 +676,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         playlist_paths = {canonical_path(path) for path in self.playlist_paths}
         # A saved playlist shown in the List shows all its tracks (those on the Playlist tab dimmed)
         hide_playlist_tracks = (self.settings.get('Hide playlist tracks', False)
-                                and not (self.list_source and self.list_source['kind'] == 'playlist'))
+                                and not (self.list_source and self.list_source['kind'] in ORDERED_KINDS))
         advanced =bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
         in_playlist_matches = 0
         for index in range(self.candidate_tree.topLevelItemCount()):
@@ -797,6 +797,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         """Traktor saved its collection: take the values changed in Traktor into the library,
         all at once (see core/traktor_sync.py)."""
         self.importer.collection = collection  # imports use the fresh copy, no second read
+        self.refresh_traktor_playlists()
         try:
             seen = self.library_store.traktor_seen()
         except sqlite3.Error as error:
@@ -1598,7 +1599,10 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         else:
             event.ignore()
 
-    def import_audio_files(self, paths, to_playlist=False):
+    def import_audio_files(self, paths, to_playlist=False, keep_view=False):
+        """Read and add audio files to the library (and the Playlist tab if `to_playlist`).
+        Unless `keep_view`, the search is cleared and the List shows all tracks, so the new
+        tracks are visible."""
         records, failures = {}, []
         previous_rows = self._rows_by_path()
         # Reading tags takes a few ms per file: show progress (with Cancel) for big imports,
@@ -1635,12 +1639,13 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         persistence_error = self._save_library()
         self._queue_embeddings()
         # A dropped file should be immediately visible even if a previous filter excluded it.
-        self.search_bar.clear()
-        self.current_advanced_search['enabled'] = False
-        self.advanced_filters = []
-        if not to_playlist:
-            self.list_source = None
-            self._resolve_source()
+        if not keep_view:
+            self.search_bar.clear()
+            self.current_advanced_search['enabled'] = False
+            self.advanced_filters = []
+            if not to_playlist:
+                self.list_source = None
+                self._resolve_source()
         self.populate_tree()
         if to_playlist:
             for record in records.values():

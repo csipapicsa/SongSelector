@@ -7,6 +7,7 @@ delete them. Mixed into the main window (TraktorKeyCalculator), whose state it u
 Playlists keep their tracks in order (the "#" column). Smartlists keep Complex Search
 rows and always list the tracks that match them now.
 """
+import os
 import sqlite3
 
 from PyQt5.QtWidgets import QDialog, QInputDialog, QLineEdit, QMenu, QMessageBox
@@ -16,7 +17,8 @@ from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST
 from traktor_key_calculator.core.search_filters import active_filters
 from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
-from traktor_key_calculator.ui.list_browser import COLLECTION_GROUPS, SAVED_KINDS, TRACK_SOURCES, node_label
+from traktor_key_calculator.ui.list_browser import (COLLECTION_GROUPS, ORDERED_KINDS, SAVED_KINDS, TRACK_SOURCES,
+                                                     TRAKTOR, node_label)
 from traktor_key_calculator.ui.theme import status_style
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dragged_tracks
 
@@ -34,7 +36,7 @@ class SavedListsMixin:
     def _init_browser(self):
         self.list_browser.node_selected.connect(self.show_list_source)
         self.list_browser.node_activated.connect(self.load_into_playlist)
-        self.list_browser.tracks_dropped.connect(self._tracks_dropped_on_playlist)
+        self.list_browser.tracks_dropped.connect(self.add_tracks_to_saved_playlist)
         self.list_browser.menu_requested.connect(self._browser_menu)
         self.source_clear_button.clicked.connect(lambda: self.show_list_source(None))
         self.refresh_saved_lists()
@@ -55,10 +57,10 @@ class SavedListsMixin:
         """Show only the tracks of a Browser entry in the List view; None or All Tracks: all."""
         if node is not None and node.get('kind') not in TRACK_SOURCES - {'all'}:
             node = None
-        was_playlist = bool(self.list_source and self.list_source['kind'] == PLAYLIST)
+        was_playlist = bool(self.list_source and self.list_source['kind'] in ORDERED_KINDS)
         self.list_source = node
         self._resolve_source()
-        is_playlist = bool(self.list_source and self.list_source['kind'] == PLAYLIST)
+        is_playlist = bool(self.list_source and self.list_source['kind'] in ORDERED_KINDS)
         self._apply_source_positions()
         if is_playlist and not was_playlist:
             self._sort_before_source = (self.candidate_tree.sort_column, self.candidate_tree.sort_order)
@@ -75,6 +77,13 @@ class SavedListsMixin:
             return
         if node['kind'] in COLLECTION_GROUPS:
             self._source_column = HEADER_INDEX[COLLECTION_GROUPS[node['kind']][1]]
+            return
+        if node['kind'] == TRAKTOR:
+            keys = self._traktor_keys(node)
+            if keys is None:
+                self.list_source = None
+            else:
+                self._source_positions = {key: position for position, key in enumerate(keys, start=1)}
             return
         try:
             saved = self.library_store.saved_list(node['name'])
@@ -93,7 +102,7 @@ class SavedListsMixin:
         node = self.list_source
         if node is None:
             return True
-        if node['kind'] == PLAYLIST:
+        if node['kind'] in ORDERED_KINDS:
             return key in self._source_positions
         if node['kind'] == SMARTLIST:
             return self._matches_rules(item, self._source_rules)
@@ -153,6 +162,10 @@ class SavedListsMixin:
     def _node_records(self, node):
         """Tracks of a Browser entry, in order: a playlist's set order, else as the List sorts them."""
         rows = self._rows_by_path()
+        if node['kind'] == TRAKTOR:
+            keys = self._traktor_keys(node) or []
+            stored = self.library_store.tracks([key for key in keys if key not in rows])
+            return [rows.get(key, stored.get(key)) for key in keys if key in rows or key in stored]
         if node['kind'] == PLAYLIST:
             stored = {canonical_path(record['File_Path']): record
                       for record in self.library_store.load_playlist(node['name'])}
@@ -198,6 +211,64 @@ class SavedListsMixin:
         self.filter_items()
         self._report(error or f'Loaded {node_label(node)} into the Playlist tab', 'error' if error else 'ok')
         return True
+
+    # -- Traktor's playlists --------------------------------------------------
+
+    def refresh_traktor_playlists(self):
+        self.list_browser.set_traktor_playlists(self.importer.collection.playlists)
+        source = self.list_source
+        if source and source['kind'] == TRAKTOR:
+            self.show_list_source(source)  # Traktor saved: its playlist may have changed
+
+    def _traktor_entry(self, node):
+        entries, found = self.importer.collection.playlists, None
+        for name in node.get('path', []):
+            found = next((entry for entry in entries if entry['name'] == name), None)
+            if found is None:
+                return None
+            entries = found.get('children', [])
+        return found if found is not None and found['type'] == 'PLAYLIST' else None
+
+    def _traktor_keys(self, node):
+        """Canonical paths of a Traktor playlist's tracks in order (each once), or None if it is gone."""
+        entry = self._traktor_entry(node)
+        if entry is None:
+            return None
+        return list(dict.fromkeys(key for key in map(canonical_path, entry['tracks']) if key))
+
+    def _traktor_missing(self, node):
+        """Files of a Traktor playlist that are not in the library list but exist on disk."""
+        entry = self._traktor_entry(node) or {'tracks': []}
+        rows = self._rows_by_path()
+        return [path for path in dict.fromkeys(entry['tracks'])
+                if canonical_path(path) not in rows and os.path.isfile(path)]
+
+    def import_traktor_missing(self, node):
+        missing = self._traktor_missing(node)
+        if missing:
+            self.import_audio_files(missing, keep_view=True)
+            self.show_list_source(self.list_source)
+        else:
+            self._report(f'All files of {node_label(node)} that exist are in the library')
+
+    def copy_traktor_playlist(self, node):
+        """Save a Traktor playlist as one of the app's playlists (editable); its files that are
+        not in the library yet are imported first."""
+        name = self._ask_name('Copy to my playlists', node['name'])
+        if not name or not self._free_name(name, replace_kind=PLAYLIST):
+            return None
+        missing = self._traktor_missing(node)
+        if missing:
+            self.import_audio_files(missing, keep_view=True)
+        records = self._node_records(node)
+        if self._saved(self.library_store.save_playlist, name, records):
+            return None
+        copy = {'kind': PLAYLIST, 'name': name}
+        self._after_change(copy)
+        skipped = len(self._traktor_keys(node) or []) - len(records)
+        self._report(f'Copied {len(records)} tracks to playlist "{name}"' +
+                     (f'; {skipped} files not found' if skipped else ''))
+        return copy
 
     def _ask_replace_or_add(self, node, count):
         """'replace', 'add' or None (cancelled) for loading into a non-empty Playlist tab."""
@@ -346,11 +417,18 @@ class SavedListsMixin:
             self.show_list_source(None)
         self._report(f'Deleted {node["kind"]} "{node["name"]}"')
 
-    def _tracks_dropped_on_playlist(self, node, mime):
-        """Tracks dragged onto a playlist in the Browser are added at its end."""
+    def add_tracks_to_saved_playlist(self, node, mime):
+        """Tracks dropped onto a playlist in the Browser, or onto the List while it shows that
+        playlist, are added at its end, in the dropped order."""
         paths = dragged_tracks(mime)
-        if not paths:  # files from Explorer: into the library first
-            paths = [record['File_Path'] for record in self.import_audio_files(audio_paths(mime))]
+        unreadable = 0
+        if not paths:  # files from Explorer or Traktor: into the library first, keeping the List as it is
+            files = list(dict.fromkeys(audio_paths(mime)))
+            paths = [record['File_Path'] for record in self.import_audio_files(files, keep_view=True)]
+            # Missing files never reach the import: count what was dropped (files, and files in folders)
+            dropped = {canonical_path(os.path.normpath(url.toLocalFile())) for url in mime.urls()
+                       if url.isLocalFile() and not os.path.isdir(url.toLocalFile())}
+            unreadable = len(dropped | set(map(canonical_path, files))) - len(paths)
         rows = self._rows_by_path()
         records = [rows[key] for key in map(canonical_path, paths) if key in rows]
         try:
@@ -361,7 +439,9 @@ class SavedListsMixin:
         self._after_change(node)
         skipped = len(records) - added
         self._report(f'Added {added} track(s) to "{node["name"]}"' +
-                     (f'; {skipped} already on it' if skipped else ''))
+                     (f'; {skipped} already on it' if skipped else '') +
+                     (f'; {unreadable} file(s) could not be read or are missing' if unreadable else ''),
+                     'warning' if unreadable else 'ok')
 
     def _browser_menu(self, node, position):
         menu = QMenu(self)
@@ -369,6 +449,12 @@ class SavedListsMixin:
         if kind in TRACK_SOURCES:
             menu.addAction('Show in List').triggered.connect(lambda: self.show_list_source(node))
             menu.addAction('Load into the Playlist tab').triggered.connect(lambda: self.load_into_playlist(node))
+        if kind == TRAKTOR:
+            missing = len(self._traktor_missing(node))
+            action = menu.addAction(f'Import its {missing} missing track(s) into the library')
+            action.setEnabled(bool(missing))
+            action.triggered.connect(lambda: self.import_traktor_missing(node))
+            menu.addAction('Copy to my playlists...').triggered.connect(lambda: self.copy_traktor_playlist(node))
         if kind == PLAYLIST:
             menu.addAction('Replace with the Playlist tab...').triggered.connect(lambda: self.replace_playlist(node))
         if kind == SMARTLIST:

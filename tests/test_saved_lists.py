@@ -11,7 +11,9 @@ import pandas as pd
 
 from traktor_key_calculator.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
 from traktor_key_calculator.core.library_store import LibraryStore, PLAYLIST, SMARTLIST
-from traktor_key_calculator.core.traktor_collection import canonical_path
+from PyQt5.QtCore import QUrl
+
+from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
 
 POSITION = HEADER_INDEX[POSITION_COLUMN]
 
@@ -54,6 +56,36 @@ class SavedListStoreTests(unittest.TestCase):
         self.store.upsert_tracks([track(r'E:\a.mp3', 'a'), track(r'E:\b.mp3', 'b')])
         found = self.store.tracks([canonical_path(r'E:\b.mp3'), 'e:\\missing.mp3'])
         self.assertEqual([record['Title'] for record in found.values()], ['b'])
+
+
+class TraktorPlaylistParsingTests(unittest.TestCase):
+    def test_playlists_folders_and_smartlists_are_read_in_traktor_order(self):
+        nml = """<?xml version="1.0" encoding="UTF-8"?>
+<NML VERSION="19"><COLLECTION ENTRIES="1">
+<ENTRY TITLE="A" ARTIST="X"><LOCATION DIR="/:DJ/:Break/:" FILE="a.mp3" VOLUME="E:"></LOCATION><INFO GENRE="break"></INFO></ENTRY>
+</COLLECTION>
+<PLAYLISTS><NODE TYPE="FOLDER" NAME="$ROOT"><SUBNODES COUNT="3">
+<NODE TYPE="FOLDER" NAME="BPM120"><SUBNODES COUNT="1">
+<NODE TYPE="PLAYLIST" NAME="Inner"><PLAYLIST ENTRIES="1" TYPE="LIST" UUID="1">
+<ENTRY><PRIMARYKEY TYPE="TRACK" KEY="E:/:DJ/:Break/:a.mp3"></PRIMARYKEY></ENTRY></PLAYLIST></NODE>
+</SUBNODES></NODE>
+<NODE TYPE="SMARTLIST" NAME="&lt;165"><SMARTLIST UUID="2"><SEARCH_EXPRESSION VERSION="1" QUERY="$BPM &gt; 165.000000"></SEARCH_EXPRESSION></SMARTLIST></NODE>
+<NODE TYPE="PLAYLIST" NAME="Set"><PLAYLIST ENTRIES="2" TYPE="LIST" UUID="3">
+<ENTRY><PRIMARYKEY TYPE="TRACK" KEY="E:/:DJ/:Other/:b.mp3"></PRIMARYKEY></ENTRY>
+<ENTRY><PRIMARYKEY TYPE="TRACK" KEY="E:/:DJ/:Break/:a.mp3"></PRIMARYKEY></ENTRY></PLAYLIST></NODE>
+</SUBNODES></NODE></PLAYLISTS></NML>"""
+        with tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR']) as folder:
+            path = Path(folder) / 'collection.nml'
+            path.write_text(nml, encoding='utf-8')
+            collection = TraktorCollection(path)
+            collection._load()
+        self.assertEqual(collection.error, '')
+        self.assertEqual(list(collection.by_path), [canonical_path(r'E:\DJ\Break\a.mp3')])  # tracks still read
+        self.assertEqual([(entry['type'], entry['name']) for entry in collection.playlists],
+                         [('FOLDER', 'BPM120'), ('SMARTLIST', '<165'), ('PLAYLIST', 'Set')])
+        self.assertEqual(collection.playlists[0]['children'][0]['tracks'], [r'E:\DJ\Break\a.mp3'])
+        self.assertEqual(collection.playlists[1]['query'], '$BPM > 165.000000')
+        self.assertEqual(collection.playlists[2]['tracks'], [r'E:\DJ\Other\b.mp3', r'E:\DJ\Break\a.mp3'])
 
 
 class BrowserGuiTests(unittest.TestCase):
@@ -318,6 +350,92 @@ class BrowserGuiTests(unittest.TestCase):
                          [{'column': 'Artist', 'condition': 'contains', 'value': 'cat'}])
         window.show_list_source({'kind': SMARTLIST, 'name': 'Cats'})
         self.assertEqual(sorted(self.shown(window)), ['one', 'three'])
+
+    # -- drops keep the view; Traktor's playlists ------------------------------------------
+
+    def external_files(self, *names):
+        from PyQt5.QtCore import QMimeData
+        paths = []
+        for name in names:
+            path = self.root / f'{name}.wav'
+            path.write_bytes(b'')
+            paths.append(path)
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+        return mime
+
+    def test_files_dropped_on_the_list_showing_a_playlist_are_added_to_it(self):
+        # Bug in 4.22.0: 136 tracks dropped from Traktor onto the List while it showed a playlist
+        # were only imported into the library, and the List jumped to all tracks.
+        window = self.window()
+        window.library_store.save_playlist('Set', [track(self.paths['four'], 'four')])
+        window.refresh_saved_lists()
+        window.show_list_source({'kind': PLAYLIST, 'name': 'Set'})
+        mime = self.external_files('new b', 'new a')
+        mime.setUrls(mime.urls() + [QUrl.fromLocalFile(str(self.paths['two']))])
+        self.assertTrue(self.drop(window.candidate_tree, mime))
+        self.assertEqual(window.list_source, {'kind': PLAYLIST, 'name': 'Set'})  # still shown
+        self.assertEqual(self.shown(window), ['four', 'new b', 'new a', 'two'])  # dropped order, by #
+        self.assertEqual(len(window.library_store.playlist_keys('Set')), 4)
+        self.assertIn(canonical_path(self.root / 'new a.wav'), window._rows_by_path())  # in the library too
+
+    def test_files_dropped_on_a_browser_playlist_keep_the_list_as_it_is(self):
+        window = self.window()
+        window.library_store.save_playlist('Set', [])
+        window.refresh_saved_lists()
+        browser = window.list_browser
+        browser.setCurrentItem(browser.playlists_root.child(0))
+        target = browser.visualItemRect(browser.playlists_root.child(0)).center()
+        self.assertTrue(self.drop(browser, self.external_files('x', 'y'), target))
+        self.assertEqual(window.list_source, {'kind': PLAYLIST, 'name': 'Set'})
+        self.assertEqual(self.shown(window), ['x', 'y'])
+
+    def traktor_playlists(self, window):
+        """Traktor's tree as TraktorCollection.playlists has it: a folder with a playlist, a smartlist."""
+        (self.root / 'not imported.mp3').write_bytes(b'')
+        window.importer.collection.playlists = [
+            {'type': 'FOLDER', 'name': 'Sets', 'children': [
+                {'type': 'PLAYLIST', 'name': 'Breakbeat', 'tracks': [
+                    str(self.paths['three']), str(self.root / 'gone.mp3'), str(self.paths['one']),
+                    str(self.root / 'not imported.mp3')]}]},
+            {'type': 'SMARTLIST', 'name': 'Fast', 'query': '$BPM > 165.000000'}]
+        window.refresh_traktor_playlists()
+        return {'kind': 'traktor', 'name': 'Breakbeat', 'path': ['Sets', 'Breakbeat']}
+
+    def test_traktor_playlists_are_listed_shown_loaded_and_copied(self):
+        window = self.window()
+        node = self.traktor_playlists(window)
+        browser = window.list_browser
+        self.assertEqual(browser.traktor_root.text(0), 'Traktor Playlists (1)')
+        folder = browser.traktor_root.child(0)
+        self.assertEqual((folder.text(0), folder.child(0).text(0)), ('Sets', 'Breakbeat'))
+        self.assertIn('not supported yet', browser.traktor_root.child(1).toolTip(0))
+        browser.setCurrentItem(folder.child(0))
+        self.assertEqual(window.list_source, node)
+        self.assertEqual(self.shown(window), ['three', 'one'])  # Traktor's order, by #
+        self.assertIn('2 of its tracks are not in the library list', window.source_label.text())
+        browser.setCurrentItem(browser.traktor_root.child(1))  # a Traktor smartlist: nothing happens
+        self.assertEqual(window.list_source, node)
+
+        browser.node_activated.emit(node)  # double-click: into the Playlist tab
+        self.assertEqual(self.playlist(window), ['three', 'one'])
+
+        window.import_traktor_missing(node)  # the file that exists comes in; the view stays
+        self.assertEqual(window.list_source, node)
+        self.assertEqual(self.shown(window), ['three', 'one', 'not imported'])
+        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('My breaks', True)):
+            copy = window.copy_traktor_playlist(node)
+        self.assertEqual([r['Title'] for r in window.library_store.load_playlist('My breaks')],
+                         ['three', 'one', 'not imported'])
+        window.show_list_source(copy)
+        self.assertEqual(self.shown(window), ['three', 'one', 'not imported'])
+
+        # Traktor saved again without that playlist: showing it falls back to all tracks
+        window.importer.collection.playlists = []
+        window.refresh_traktor_playlists()
+        self.assertEqual(window.list_source, copy)
+        window.show_list_source(node)
+        self.assertIsNone(window.list_source)
 
 
 if __name__ == '__main__':

@@ -144,7 +144,13 @@ The left pane has two tabs:
   them now. Create one with *Save as Smartlist...* in the Complex Search dialog or *New
   smartlist...* in the Browser; *Edit rules...* changes it.
 
-Saved playlists and smartlists live in `library.sqlite`.
+Saved playlists and smartlists live in `library.sqlite`. While the List shows one of your
+playlists, tracks dropped onto it (from Traktor, Explorer or the Playlist tab) are added to it.
+
+**Traktor Playlists** in the Browser lists Traktor's playlists and folders from `collection.nml`
+(read-only, updated when Traktor saves). They show and load like your own playlists;
+right-click to import their missing tracks or copy one to your playlists. Traktor's smartlists
+are listed but not evaluated yet.
 
 ## Groups in the List
 
