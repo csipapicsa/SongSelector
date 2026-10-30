@@ -150,6 +150,13 @@ class BrowserGuiTests(unittest.TestCase):
             self.assertFalse(tree.isColumnHidden(POSITION))
         self.add(window, 'three', 'one')
         self.assertEqual(self.playlist(window, POSITION_COLUMN), ['1', '2'])
+        window.resize(1200, 700)
+        window.show()
+        self.application.processEvents()
+        for tree in (window.playlist_tree, window.candidate_tree):
+            # Artist's cell starts where its column starts: no unshaded branch indent before it
+            artist = tree.indexFromItem(tree.topLevelItem(0), HEADER_INDEX['Artist'])
+            self.assertEqual(tree.visualRect(artist).left(), tree.header().sectionViewportPosition(HEADER_INDEX['Artist']))
         # Not a track field: not searchable, not in Complex Search
         self.assertNotIn(POSITION_COLUMN, window.search_column_actions)
         self.assertNotIn(POSITION_COLUMN, FIELD_LABELS)

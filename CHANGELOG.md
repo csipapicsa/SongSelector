@@ -4,6 +4,12 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.21.1] - 2026-10-30
+
+- **No unshaded gap between # and Artist.** Qt kept a tree-branch indent in front of the Artist
+  column (the first one internally); with # shown first, it sat between the two without the row
+  colour. The List and Playlist are flat lists, so the indent is gone.
+
 ## [4.21.0] - 2026-10-30
 
 - **Browser tab with saved playlists and smartlists.** The left pane now has two tabs:

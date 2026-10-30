@@ -77,6 +77,9 @@ class DraggableTreeWidget(QTreeWidget):
         # Click, Shift+click (range) and Ctrl+click (toggle), as in Explorer / Traktor
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setUniformRowHeights(True)  # every row has the same columns; Qt need not measure each
+        # Flat lists: no branch indent. It sits in front of the first logical column (Artist), so
+        # with # shown first it was an unshaded gap between # and Artist.
+        self.setRootIsDecorated(False)
         self.parent_app = parent
         
         # Set the color delegate for the color column (column 10)
