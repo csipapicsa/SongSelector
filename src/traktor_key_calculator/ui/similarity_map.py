@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboB
                              QMenu, QPushButton, QSizePolicy, QSpinBox, QSplitter, QToolButton, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from traktor_key_calculator.config import (COLOR_MAPPING_CATEGORY, HEADER_LABELS, SS_COLOR_COLUMN,
+from traktor_key_calculator.config import (COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN,
                                            SS_RATING_COLUMN)
 from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS
 from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
@@ -49,7 +49,7 @@ STRENGTH_LEVELS = 6          # edge opacity steps, weakest to strongest similari
 MATCH_COUNT = 50             # default number of closest matches listed
 RINGED_MATCHES = 15          # of those, the most similar get a ring on the map (more would cover it)
 # Closest-match columns: the two of the map, then the library list's (chosen by right-clicking the header).
-MATCH_COLUMNS = ['Similarity', 'Mix'] + HEADER_LABELS
+MATCH_COLUMNS = ['Similarity', 'Mix'] + FIELD_LABELS
 DEFAULT_MATCH_COLUMNS = ['Similarity', 'Mix', 'Artist', 'Title']
 SIDE_MIN_WIDTH = 220         # pixels: the details and closest matches never collapse
 NO_COLOR = QColor('#8a8f98')
@@ -1253,10 +1253,10 @@ class SimilarityMapWidget(QWidget):
             if self.harmonic_only.isChecked() and mix is None and keys_known:
                 continue
             item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else ('' if keys_known else NO_KEY_TEXT)]
-                             + [target.get(name, '') for name in HEADER_LABELS])
+                             + [target.get(name, '') for name in FIELD_LABELS])
             item.setData(0, SORT_ROLE, score)
             item.setData(1, SORT_ROLE, mix.weight if mix else 0)
-            for column, name in enumerate(HEADER_LABELS, start=2):
+            for column, name in enumerate(FIELD_LABELS, start=2):
                 item.setData(column, SORT_ROLE, _sort_value(name, target.get(name, '')))
             item.setData(0, Qt.UserRole, key)
             item.setData(0, PATH_ROLE, target.get('Path', ''))

@@ -58,10 +58,12 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | Module | Responsibility |
 |---|---|
 | `main_window.py` | The main window: layout, BPM slider, search, sorting, import, settings persistence |
-| `tree_widgets.py` | `PoolTreeWidget` (library, right) and `PlaylistTreeWidget` (left); drag and drop between them and from Explorer |
+| `tree_widgets.py` | `PoolTreeWidget` (List view, right) and `PlaylistTreeWidget` (Playlist tab, left: reordering by drag); drag and drop between them and from Explorer |
+| `list_browser.py` | `ListBrowser`, the Browser tab: Track Collection (all, artists, albums, genres) and saved playlists / smartlists; emits what was clicked, double-clicked or dropped |
+| `saved_lists.py` | `SavedListsMixin` of the main window: shows a Browser entry in the List view (# column for playlists), loads it into the Playlist tab, saves / renames / deletes playlists and smartlists |
 | `delegates.py` | Paints the Traktor category color dot |
 | `menu_bar.py` | Menu definitions, emitted as signals |
-| `advanced_search_dialog.py` | Complex Search dialog (`AdvancedSearchDialog`, `AdvancedSearchRow`) |
+| `advanced_search_dialog.py` | Complex Search dialog (`AdvancedSearchDialog`, `AdvancedSearchRow`); also edits a smartlist's rules |
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |

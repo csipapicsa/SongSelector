@@ -2,22 +2,44 @@
 treee_widgets.py
 Custom tree widgets for the Traktor Key Calculator
 """
+import json
 import os
 import re
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QMessageBox
 from PyQt5.QtCore import Qt, QMimeData, QUrl
-from PyQt5.QtGui import QDrag
+from PyQt5.QtGui import QDrag, QPainter, QPen
 from PyQt5.QtWidgets import (QTreeWidget, QTreeWidgetItem, QAbstractItemView, 
                              QMessageBox, QApplication)
 
 from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate
 from traktor_key_calculator.ui.theme import status_style
-from traktor_key_calculator.config import HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN, SS_RATING_COLUMN
+from traktor_key_calculator.config import (HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN, SS_RATING_COLUMN,
+                                           POSITION_COLUMN)
 from traktor_key_calculator.core.audio_metadata import get_file_extension, extract_audio_metadata
 
 
 
-_NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN)}
+_NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN,
+                                                   POSITION_COLUMN)}
+# Paths of tracks dragged inside the app (one per line), next to the file URLs other apps use.
+# Also carries tracks whose file is missing.
+TRACKS_MIME = 'application/x-songselector-tracks'
+# A Browser entry (playlist, smartlist, artist, ...) being dragged; JSON, see list_browser.py
+NODE_MIME = 'application/x-songselector-node'
+
+
+def dragged_tracks(mime):
+    """Paths of tracks dragged from the List or the Playlist, else []."""
+    if not mime.hasFormat(TRACKS_MIME):
+        return []
+    return [path for path in bytes(mime.data(TRACKS_MIME)).decode('utf-8').split('\n') if path]
+
+
+def dragged_node(mime):
+    """The Browser entry being dragged ({'kind', 'name'}), else None."""
+    if not mime.hasFormat(NODE_MIME):
+        return None
+    return json.loads(bytes(mime.data(NODE_MIME)).decode('utf-8'))
 
 
 def track_sort_key(column, text):
@@ -92,6 +114,10 @@ class DraggableTreeWidget(QTreeWidget):
     def selected_paths(self):
         return [item.text(HEADER_INDEX['Path']) for item in self.selectedItems() if item.text(HEADER_INDEX['Path'])]
 
+    def selected_items_in_order(self):
+        """Selected rows top to bottom, as shown (selectedItems() is in click order)."""
+        return sorted(self.selectedItems(), key=lambda item: self.indexFromItem(item).row())
+
     def mousePressEvent(self, event):
         """Handle mouse press event to prepare for dragging"""
         super().mousePressEvent(event)
@@ -106,22 +132,26 @@ class DraggableTreeWidget(QTreeWidget):
         if (event.pos() - self.drag_start_position).manhattanLength() < QApplication.startDragDistance():
             return
             
-        selected = self.selected_paths()
+        selected = [item.text(HEADER_INDEX['Path']) for item in self.selected_items_in_order()
+                    if item.text(HEADER_INDEX['Path'])]
         if not selected:
             return
         # Drag every selected file that exists (e.g. into Traktor, Explorer or the other panel)
         files = [path for path in selected if os.path.exists(path)]
         if not files:
             self.parent_app.status_bar.showMessage(f"File not found: {selected[0]}")
-            return
 
         drag = QDrag(self)
         mime_data = QMimeData()
-        # File URLs are what make the drag work with external apps
+        # File URLs are what make the drag work with external apps; the app itself reads
+        # TRACKS_MIME, so rows of missing files can still be moved within the app.
         mime_data.setUrls([QUrl.fromLocalFile(path) for path in files])
+        mime_data.setData(TRACKS_MIME, '\n'.join(selected).encode('utf-8'))
         drag.setMimeData(mime_data)
         result = drag.exec_(Qt.CopyAction)
 
+        if not files:
+            return
         if result == Qt.CopyAction:
             name = os.path.basename(files[0]) if len(files) == 1 else f'{len(files)} files'
             self.parent_app.status_bar.showMessage(f"Dragged {name}")
@@ -192,10 +222,30 @@ class AudioDropMixin:
 
 
 class PoolTreeWidget(AudioDropMixin, DraggableTreeWidget):
+    """The List view. Files dropped from outside are imported; a Browser entry dropped here
+    is shown (its tracks only)."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.selectionModel().selectionChanged.connect(self.handle_selection_feedback)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat(NODE_MIME):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+        elif event.source() is self:
+            event.ignore()  # rows dragged onto their own list: nothing to do
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        node = dragged_node(event.mimeData())
+        if node is None:
+            super().dropEvent(event)
+            return
+        self.parent_app.show_list_source(node)
+        event.setDropAction(Qt.CopyAction)
+        event.accept()
 
     def handle_selection_feedback(self, selected, deselected):
         items = self.selectedItems()
@@ -208,8 +258,86 @@ class PoolTreeWidget(AudioDropMixin, DraggableTreeWidget):
 
 
 class PlaylistTreeWidget(AudioDropMixin, DraggableTreeWidget):
+    """The Playlist tab, in play order. Rows dragged within it move; rows from the List are
+    inserted where they are dropped; a playlist or smartlist from the Browser is loaded."""
     playlist_drop = True
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self._drop_row = None  # where the insertion line is drawn during a drag
+
+    def _internal(self, event):
+        return event.source() in (self, self.parent_app.candidate_tree) and bool(dragged_tracks(event.mimeData()))
+
+    def row_at(self, pos):
+        """Insertion row for a drop at this viewport position: before or after the row under it."""
+        item = self.itemAt(pos)
+        if item is None:
+            return self.topLevelItemCount()
+        row = self.indexOfTopLevelItem(item)
+        return row + 1 if pos.y() > self.visualItemRect(item).center().y() else row
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat(NODE_MIME) or self._internal(event):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        self.dragEnterEvent(event)
+        row = self.row_at(event.pos()) if event.isAccepted() and self._internal(event) else None
+        if row != self._drop_row:
+            self._drop_row = row
+            self.viewport().update()
+
+    def dragLeaveEvent(self, event):
+        self._drop_row = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self._drop_row = None
+        self.viewport().update()
+        node = dragged_node(event.mimeData())
+        if node is not None:
+            self.parent_app.load_into_playlist(node)
+        elif event.source() is self and self._internal(event):
+            self.move_selected(self.row_at(event.pos()))
+        elif self._internal(event):
+            self.parent_app.add_paths_to_playlist(dragged_tracks(event.mimeData()), self.row_at(event.pos()))
+        else:
+            super().dropEvent(event)
+            return
+        event.setDropAction(Qt.CopyAction)
+        event.accept()
+
+    def move_selected(self, row):
+        """Move the selected rows, keeping their order, to insertion row `row`."""
+        items = self.selected_items_in_order()
+        if not items:
+            return
+        row -= sum(self.indexOfTopLevelItem(item) < row for item in items)
+        for item in items:
+            self.takeTopLevelItem(self.indexOfTopLevelItem(item))
+        for offset, item in enumerate(items):
+            self.insertTopLevelItem(row + offset, item)
+            item.setSelected(True)
+        self.parent_app.playlist_changed()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._drop_row is None:
+            return
+        count = self.topLevelItemCount()
+        if count == 0:
+            y = 0
+        elif self._drop_row < count:
+            y = self.visualItemRect(self.topLevelItem(self._drop_row)).top()
+        else:
+            y = self.visualItemRect(self.topLevelItem(count - 1)).bottom()
+        painter = QPainter(self.viewport())
+        painter.setPen(QPen(self.palette().highlight().color(), 2))
+        painter.drawLine(0, y, self.viewport().width(), y)
+        painter.end()

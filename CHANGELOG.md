@@ -4,6 +4,25 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.21.0] - 2026-10-30
+
+- **Browser tab with saved playlists and smartlists.** The left pane now has two tabs:
+  - **Playlist**: the set in order, with a new **#** column. Rows can be dragged to a new
+    position; rows dragged in from the List are inserted where they are dropped (they used to be
+    re-read from the file and appended). *Save as Playlist...* stores it under *Playlists*.
+  - **Browser**, as in Traktor: *Track Collection* (All Tracks, Artists, Albums, Genres) and
+    *Playlists*. Clicking an entry, or dragging it onto the List, shows only its tracks there; a
+    playlist is sorted by its **#**. A bar above the List says what it shows, with *Show all
+    tracks*. Search, colours and Advanced Search still filter on top.
+  - **Playlists** keep tracks in order; **smartlists** keep Complex Search rows and always list
+    the tracks that match them (also *None* rows, kept but ignored). Double-click or drag one onto
+    the Playlist tab to load it (replace, or add after). Drag tracks onto a playlist to add them.
+    Right-click: new playlist / smartlist, edit rules, rename, duplicate, delete.
+  - The Complex Search dialog has *Save as Smartlist...*.
+- With *Hide playlist tracks in the library* on, a saved playlist shown in the List still shows
+  all its tracks (those on the Playlist tab dimmed).
+- `library.sqlite` schema 3: tables `saved_lists` and `saved_list_tracks` are added on start.
+
 ## [4.20.0] - 2026-10-30
 
 - **Complex Search: column *None* switches a row off.** The column list of each row now starts

@@ -164,12 +164,20 @@ SS_COLOR_COLUMN = 'Color - Song Selector'
 HEADER_LABELS += [SS_RATING_COLUMN, SS_COLOR_COLUMN]
 HEADER_INDEX.update({SS_RATING_COLUMN: len(HEADER_LABELS) - 2, SS_COLOR_COLUMN: len(HEADER_LABELS) - 1})
 
+# Track fields: searchable, usable in Complex Search and on the map.
+FIELD_LABELS = list(HEADER_LABELS)
+# Position in the playlist ("1", "2", ...): the Playlist tab, and the List view while it
+# shows a saved playlist. Not a track field. Shown as the first column.
+POSITION_COLUMN = '#'
+HEADER_LABELS += [POSITION_COLUMN]
+HEADER_INDEX[POSITION_COLUMN] = len(HEADER_LABELS) - 1
+
 test = 100
 
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,
     "Visible column right": HEADER_LABELS,
-    "Search columns": HEADER_LABELS,
+    "Search columns": FIELD_LABELS,
     "Master Tempo": 120
 }
 

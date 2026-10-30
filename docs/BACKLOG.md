@@ -14,7 +14,13 @@ CHANGELOG when they ship.
       directly (the desktop browser is a native control). See `docs/history/`.
 - [ ] Replace the bundled `music_test.csv` with a library built from the user's own collection.
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
-- [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
+- [x] More than one playlist: Browser tab with saved playlists and smartlists (4.21.0).
+- [ ] Playlists from other apps in the Browser, each in its own folder under Playlists: Traktor
+      (playlists and smartlists in `collection.nml`), Rekordbox, ... Read-only to start with
+      (user request 2026-10-30).
+- [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
+- [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
+      models and ideas in the DJ mix segmentation project). Plan only.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
 - [x] Map: "edges only to the N closest matches" (harmonic *and* similar): 4.16.0, with opacity by similarity.

@@ -19,6 +19,7 @@ from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
 from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
+from traktor_key_calculator.config import FIELD_LABELS, POSITION_COLUMN
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
 from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget, TrackItem
 from traktor_key_calculator.core.data_manager import DataManager
@@ -49,6 +50,8 @@ from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKE
                                                       replace_color_filter)
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
 from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
+from traktor_key_calculator.ui.list_browser import ListBrowser, node_label
+from traktor_key_calculator.ui.saved_lists import SavedListsMixin
 from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 
 
@@ -56,7 +59,7 @@ PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress di
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
 
 
-class TraktorKeyCalculator(QMainWindow):
+class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
     """Main application window"""
     def __init__(self):
         super().__init__()
@@ -135,6 +138,16 @@ class TraktorKeyCalculator(QMainWindow):
                     searchable.append(column)
             self.settings['Song Selector columns version'] = 1
 
+        # 4.21: the playlist position column (#), shown once in both panels.
+        if not self.settings.get('Position column version'):
+            for side in ('left', 'right'):
+                visible = self.settings.setdefault('Visible column ' + side, list(HEADER_LABELS))
+                if POSITION_COLUMN not in visible:
+                    visible.append(POSITION_COLUMN)
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                if sizes.get(POSITION_COLUMN, 0) <= 0:
+                    sizes[POSITION_COLUMN] = 36
+            self.settings['Position column version'] = 1
 
         
         self.playlist_paths = set()
@@ -155,6 +168,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.table = pd.DataFrame()
         self._restore_lists()
         self.populate_tree()
+        self._init_browser()
         # Changes made in Traktor (key, BPM, colour, rating) come in after Traktor saves.
         self.collection_watcher = CollectionWatcher(collection_path, self)
         self.collection_watcher.loaded.connect(self._collection_changed)
@@ -190,7 +204,7 @@ class TraktorKeyCalculator(QMainWindow):
             shaded = QColor(color)
             shaded.setAlpha(row_tint_alpha())
             brush = QBrush(shaded)
-        for column in range(item.columnCount()):
+        for column in range(len(HEADER_LABELS)):
             item.setBackground(column, brush)
 
 
@@ -221,19 +235,31 @@ class TraktorKeyCalculator(QMainWindow):
         # Create a splitter for the two panes
         self.splitter = QSplitter(Qt.Horizontal)
         
-        # Left pane for playlist (initially empty)
+        # Left pane: the Playlist (the set, in order) and the Browser (collection, saved
+        # playlists and smartlists), as two tabs
         left_pane = QWidget()
-        left_layout = QVBoxLayout(left_pane)
-        
+        pane_layout = QVBoxLayout(left_pane)
+        pane_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_tabs = QTabWidget()
+        pane_layout.addWidget(self.left_tabs)
+        self.playlist_page = QWidget()
+        left_layout = QVBoxLayout(self.playlist_page)
+
         # Playlist label
         playlist_label = QLabel("Playlist (Drag Tracks Here)")
         playlist_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(playlist_label)
-        
-        # Clear playlist button
+
+        # Clear and save buttons
+        playlist_buttons = QHBoxLayout()
         clear_playlist_btn = QPushButton("Clear Playlist")
         clear_playlist_btn.clicked.connect(self.clear_playlist)
-        left_layout.addWidget(clear_playlist_btn)
+        playlist_buttons.addWidget(clear_playlist_btn)
+        save_playlist_btn = QPushButton("Save as Playlist...")
+        save_playlist_btn.setToolTip('Save these tracks, in this order, under Playlists in the Browser tab')
+        save_playlist_btn.clicked.connect(lambda: self.save_playlist_as())
+        playlist_buttons.addWidget(save_playlist_btn)
+        left_layout.addLayout(playlist_buttons)
         
         # Playlist tree
         self.playlist_tree = PlaylistTreeWidget(self)
@@ -257,6 +283,12 @@ class TraktorKeyCalculator(QMainWindow):
         left_layout.addWidget(self.playlist_tree)
         self.playlist_count_label = QLabel('')
         left_layout.addWidget(self.playlist_count_label)
+        self.left_tabs.addTab(self.playlist_page, 'Playlist')
+        self.list_browser = ListBrowser(self)
+        self.list_browser.setToolTip('Click an entry to show its tracks in the List, or drag it there.\n'
+                                     'Double-click a playlist or smartlist to load it into the Playlist tab.\n'
+                                     'Drag tracks onto a playlist to add them. Right-click for more.')
+        self.left_tabs.addTab(self.list_browser, 'Browser')
 
 
         # ------------------------------------------------------- # 
@@ -294,7 +326,7 @@ class TraktorKeyCalculator(QMainWindow):
         # Store checkbox actions
         self.search_column_actions = {}
 
-        for column in HEADER_LABELS:
+        for column in FIELD_LABELS:
             action = QAction(column, self)
             action.setCheckable(True)
             action.setChecked(column in self.search_columns)
@@ -428,6 +460,18 @@ class TraktorKeyCalculator(QMainWindow):
         self.candidate_tree.customContextMenuRequested.connect(
             lambda pos: self.show_track_context_menu(self.candidate_tree, pos))
         
+        # Bar above the List while it shows one Browser entry
+        self.source_bar = QWidget()
+        source_layout = QHBoxLayout(self.source_bar)
+        source_layout.setContentsMargins(0, 0, 0, 0)
+        self.source_label = QLabel('')
+        self.source_label.setStyleSheet(status_style('warning', bold=True))
+        source_layout.addWidget(self.source_label, 1)
+        self.source_clear_button = QPushButton('Show all tracks')
+        source_layout.addWidget(self.source_clear_button)
+        self.source_bar.hide()
+        right_layout.addWidget(self.source_bar)
+
         # Add tree to right layout
         self.library_tabs = QTabWidget()
         self.library_tabs.addTab(self.candidate_tree, 'List')
@@ -435,6 +479,13 @@ class TraktorKeyCalculator(QMainWindow):
         self.list_count_label.setToolTip('Tracks the List view shows (after search and filters) and how many of them are selected')
         self.library_tabs.setCornerWidget(self.list_count_label, Qt.TopRightCorner)
         right_layout.addWidget(self.library_tabs)
+        # Hovering a drag over a tab opens it (e.g. a playlist from the Browser to the Playlist tab)
+        for tabs in (self.left_tabs, self.library_tabs):
+            tabs.tabBar().setChangeCurrentOnDrag(True)
+            tabs.tabBar().setAcceptDrops(True)
+        # The # column comes first
+        for tree in (self.playlist_tree, self.candidate_tree):
+            tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[POSITION_COLUMN]), 0)
 
         # Track counts under the playlist and next to the tabs. Many changes arrive at once
         # (thousands of rows added on load), so they are counted once afterwards.
@@ -558,9 +609,13 @@ class TraktorKeyCalculator(QMainWindow):
 
     def apply_advanced_filters_tree(self, item):
         """Every active text or numeric condition must match."""
+        return self._matches_rules(item, self.advanced_filters)
+
+    def _matches_rules(self, item, rules):
+        """Every rule ({'column', 'condition', 'value'}) matches this row."""
         columns = {self.candidate_tree.headerItem().text(index): index
                    for index in range(self.candidate_tree.columnCount())}
-        for condition in self.advanced_filters:
+        for condition in rules:
             column = condition['column']
             index = columns.get(column)
             if index is None:
@@ -581,18 +636,22 @@ class TraktorKeyCalculator(QMainWindow):
                 action.blockSignals(False)
             count = len(color_query.included)
             self.color_search_button.setText(f'Colors ({count})' if count else 'Colors')
-        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in HEADER_INDEX]
+        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in FIELD_LABELS]
         playlist_paths = {canonical_path(path) for path in self.playlist_paths}
-        hide_playlist_tracks = self.settings.get('Hide playlist tracks', False)
-        advanced = bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
+        # A saved playlist shown in the List shows all its tracks (those on the Playlist tab dimmed)
+        hide_playlist_tracks = (self.settings.get('Hide playlist tracks', False)
+                                and not (self.list_source and self.list_source['kind'] == 'playlist'))
+        advanced =bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
         in_playlist_matches = 0
         for index in range(self.candidate_tree.topLevelItemCount()):
             item = self.candidate_tree.topLevelItem(index)
-            in_playlist = canonical_path(item.text(HEADER_INDEX['Path'])) in playlist_paths
+            key = canonical_path(item.text(HEADER_INDEX['Path']))
+            in_playlist = key in playlist_paths
             if bool(item.data(0, IN_PLAYLIST_ROLE)) != in_playlist:
                 item.setData(0, IN_PLAYLIST_ROLE, in_playlist)
                 self._apply_text_colours(item)
-            matches = (color_query.matches(item.text(COLOR_COLUMN_INDEX))
+            matches = (self._in_source(item, key)
+                       and color_query.matches(item.text(COLOR_COLUMN_INDEX))
                        and ss_color_query.matches(item.text(HEADER_INDEX[SS_COLOR_COLUMN])))
             if matches and search_text:
                 matches = any(search_text in item.text(column).casefold() for column in search_indices)
@@ -609,6 +668,8 @@ class TraktorKeyCalculator(QMainWindow):
                         else f'; {in_playlist_matches} in the playlist (dimmed)')
         if advanced:
             message += '; Advanced Search is on'
+        if self.list_source is not None:
+            message += f'; {node_label(self.list_source)}'
         self.status_label.setStyleSheet(status_style('ok'))
         self.status_label.setText(message)
         self._count_timer.start()
@@ -762,6 +823,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.data_manager.table = self.table
         for record in saved_playlist:
             self._add_to_playlist(record)
+        self._renumber_playlist()
 
     def _save_list(self, name, records):
         """Persist one list; returns an error message, or '' on success."""
@@ -776,7 +838,12 @@ class TraktorKeyCalculator(QMainWindow):
     def _save_library(self):
         return self._save_list(LIBRARY_LIST, self.table.to_dict('records') if self.table is not None else [])
 
-    def _save_playlist(self):
+    def _renumber_playlist(self):
+        for index in range(self.playlist_tree.topLevelItemCount()):
+            self.playlist_tree.topLevelItem(index).setText(HEADER_INDEX[POSITION_COLUMN], str(index + 1))
+
+    def _playlist_records(self):
+        """Records of the Playlist tab's tracks, in order: library rows, else the collection's."""
         keys = [canonical_path(self.playlist_tree.topLevelItem(i).text(HEADER_INDEX['Path']))
                 for i in range(self.playlist_tree.topLevelItemCount())]
         records = {}
@@ -784,7 +851,17 @@ class TraktorKeyCalculator(QMainWindow):
             subset = self.table[self.table['File_Path'].map(canonical_path).isin(keys)]
             for row in subset.to_dict('records'):
                 records.setdefault(canonical_path(row['File_Path']), row)
-        return self._save_list(PLAYLIST_LIST, [records[key] for key in keys if key in records])
+        missing = [key for key in keys if key not in records]
+        if missing:
+            try:
+                records.update(self.library_store.tracks(missing))
+            except sqlite3.Error:
+                pass
+        return [records[key] for key in keys if key in records]
+
+    def _save_playlist(self):
+        self._renumber_playlist()
+        return self._save_list(PLAYLIST_LIST, self._playlist_records())
 
     def delete_duplicate_tracks(self):
         """Remove library rows whose path repeats an earlier row. Files on disk are untouched."""
@@ -939,6 +1016,7 @@ class TraktorKeyCalculator(QMainWindow):
                 row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
                 if row is not None:
                     self._track_item(row, item)
+        self.list_browser.set_collection(self.table)  # e.g. an edited artist
         self.filter_items()
 
     def set_song_selector_fields(self, paths, **fields):
@@ -1113,7 +1191,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.track_context_menu(self.candidate_tree).exec_(position)
 
     def choose_hover_fields(self):
-        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), HEADER_LABELS, self)
+        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), FIELD_LABELS, self)
         if dialog.exec_() == QDialog.Accepted:
             self.settings['Map hover fields'] = dialog.selected()
             self._refresh_map()
@@ -1236,22 +1314,14 @@ class TraktorKeyCalculator(QMainWindow):
 
     def open_advanced_search(self):
         """Open advanced search dialog"""
-        column_names = [self.candidate_tree.headerItem().text(i) 
-                        for i in range(self.candidate_tree.columnCount())]
-        
-        self.advanced_search_dialog = AdvancedSearchDialog(column_names, self)
-        
+        self.advanced_search_dialog = AdvancedSearchDialog(FIELD_LABELS, self,
+                                                           save_smartlist=self.save_smartlist_from_search)
+
         # Restore previous settings
         self.advanced_search_dialog.checkbox_enable.setChecked(
             self.current_advanced_search['enabled']
         )
-        
-        for i, filter_data in enumerate(self.current_advanced_search['filters']):
-            if i < len(self.advanced_search_dialog.filter_rows):
-                row = self.advanced_search_dialog.filter_rows[i]
-                row.column_combo.setCurrentText(filter_data['column'])
-                row.condition_combo.setCurrentText(filter_data['condition'])
-                row.value_edit.setText(filter_data['value'])
+        self.advanced_search_dialog.set_filters(self.current_advanced_search['filters'])
         
         if self.advanced_search_dialog.exec_() == QDialog.Accepted:
             # Save current state
@@ -1268,12 +1338,7 @@ class TraktorKeyCalculator(QMainWindow):
 
     def get_filters_from_dialog(self):
         """Extract filters from dialog; rows set to None are kept so they come back next time"""
-        filters = []
-        for row in self.advanced_search_dialog.filter_rows:
-            filter_data = row.get_filter()
-            if filter_data['value']:  # Only add if value is not empty
-                filters.append(filter_data)
-        return filters
+        return self.advanced_search_dialog.saved_filters()
     
     def populate_tree(self):
         sort_column = self.candidate_tree.sort_column
@@ -1290,6 +1355,8 @@ class TraktorKeyCalculator(QMainWindow):
         self.candidate_tree.sortItems(sort_column, sort_order)
         self.advanced_filters = active_filters(self.current_advanced_search.get('filters', []))
         self._refresh_playlist()
+        self.list_browser.set_collection(self.table)
+        self._apply_source_positions()
         self.filter_items()
         self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
 
@@ -1491,6 +1558,9 @@ class TraktorKeyCalculator(QMainWindow):
         self.search_bar.clear()
         self.current_advanced_search['enabled'] = False
         self.advanced_filters = []
+        if not to_playlist:
+            self.list_source = None
+            self._resolve_source()
         self.populate_tree()
         if to_playlist:
             for record in records.values():
@@ -1587,7 +1657,7 @@ class TraktorKeyCalculator(QMainWindow):
         dimmed = bool(item.data(0, IN_PLAYLIST_ROLE))
         font = item.font(0)
         font.setItalic(dimmed)
-        for column in range(item.columnCount()):
+        for column in range(len(HEADER_LABELS)):
             item.setForeground(column, QBrush(dim_text_colour()) if dimmed else QBrush())
             item.setFont(column, font)
         if dimmed:
@@ -1597,14 +1667,19 @@ class TraktorKeyCalculator(QMainWindow):
             item.setForeground(HEADER_INDEX['Original Key'] if missing_key else HEADER_INDEX['Original BPM'],
                                QBrush(QColor('darkorange')))
 
-    def _add_to_playlist(self, row):
+    def _add_to_playlist(self, row, index=None):
+        """Append (or insert at row `index`) a track; one already on the playlist is updated in place."""
         path = canonical_path(row.get('File_Path'))
-        for index in range(self.playlist_tree.topLevelItemCount()):
-            item = self.playlist_tree.topLevelItem(index)
+        for row_index in range(self.playlist_tree.topLevelItemCount()):
+            item = self.playlist_tree.topLevelItem(row_index)
             if canonical_path(item.text(HEADER_INDEX['Path'])) == path:
                 self._track_item(row, item)
                 return
-        self.playlist_tree.addTopLevelItem(self._track_item(row))
+        item = self._track_item(row)
+        if index is None:
+            self.playlist_tree.addTopLevelItem(item)
+        else:
+            self.playlist_tree.insertTopLevelItem(index, item)
         self.playlist_paths.add(self._text(row.get('File_Path')))
 
     def _refresh_playlist(self):

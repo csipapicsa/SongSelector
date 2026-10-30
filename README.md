@@ -128,6 +128,24 @@ Distances on any 2D map are approximate; the closest-matches list uses the full 
 is exact. On the developer's library the map separated breakbeat and DnB with about 93 % purity,
 from audio alone.
 
+## Playlists and smartlists
+
+The left pane has two tabs:
+
+- **Playlist**: the set being built, in order (**#** column). Drag rows to reorder them; rows
+  dragged in from the List are inserted where they are dropped. *Save as Playlist...* keeps a
+  copy under *Playlists* in the Browser.
+- **Browser**, as in Traktor: *Track Collection* (All Tracks, Artists, Albums, Genres) and
+  *Playlists*. Click an entry, or drag it onto the List, to show only its tracks there (a
+  playlist in its order, by **#**); *Show all tracks* above the List goes back. Double-click a
+  playlist or smartlist, or drag it onto the Playlist tab, to load it there (replace or add).
+  Drag tracks onto a playlist to add them. Right-click for new, rename, duplicate, delete.
+- A **smartlist** stores Complex Search rows, not tracks: it always lists the tracks that match
+  them now. Create one with *Save as Smartlist...* in the Complex Search dialog or *New
+  smartlist...* in the Browser; *Edit rules...* changes it.
+
+Saved playlists and smartlists live in `library.sqlite`.
+
 ## Search syntax
 
 | Search bar | Matches |

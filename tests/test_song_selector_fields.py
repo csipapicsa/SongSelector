@@ -117,7 +117,9 @@ class UserFieldStoreTests(TempDirTest):
         store.set_user_fields([track(r'E:\old.mp3')], SS_Rating=3)
         self.assertEqual(store.user_fields()[r'e:\old.mp3']['SS_Rating'], 3)
         with closing(sqlite3.connect(path)) as check:  # sqlite3's own context manager does not close
-            self.assertEqual(check.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0], '2')
+            self.assertEqual(check.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0], '3')
+        store.save_playlist('Set', [track(r'E:\old.mp3')])  # schema 3 tables exist
+        self.assertEqual(store.playlist_keys('Set'), [r'e:\old.mp3'])
 
 
 class FilterTests(unittest.TestCase):
