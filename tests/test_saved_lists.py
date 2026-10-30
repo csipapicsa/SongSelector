@@ -159,6 +159,7 @@ class BrowserGuiTests(unittest.TestCase):
             self.assertEqual(tree.visualRect(artist).left(), tree.header().sectionViewportPosition(HEADER_INDEX['Artist']))
         # Not a track field: not searchable, not in Complex Search
         self.assertNotIn(POSITION_COLUMN, window.search_column_actions)
+        self.assertNotIn('Group', window.search_column_actions)
         self.assertNotIn(POSITION_COLUMN, FIELD_LABELS)
         window.search_columns = [POSITION_COLUMN]  # even if chosen, # is not searched
         window.search_bar.setText('1')

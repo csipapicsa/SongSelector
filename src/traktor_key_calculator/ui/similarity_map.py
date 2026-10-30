@@ -194,6 +194,13 @@ class Card(QGraphicsPathItem):
         self.show()
 
 
+def group_colour(group):
+    """Colour of a group as on the map (0 = largest; -1 = in no group)."""
+    if group < 0:
+        return UNGROUPED
+    return QColor(GROUP_COLOURS[group]) if group < len(GROUP_COLOURS) else NO_COLOR
+
+
 class _Loader(QObject):
     done = pyqtSignal(object)
 
@@ -414,6 +421,7 @@ class SimilarityMapWidget(QWidget):
     request_context_menu = pyqtSignal(str, object)    # path_key, global position
     request_add_to_playlist = pyqtSignal(str)          # path_key
     selected = pyqtSignal(str)                         # path_key
+    groups_changed = pyqtSignal()                      # self.groups was recomputed or cleared
 
     def __init__(self, store, settings, parent=None):
         super().__init__(parent)
@@ -677,6 +685,7 @@ class SimilarityMapWidget(QWidget):
             if self.groups:
                 self.groups = {}
                 self._refresh()
+                self.groups_changed.emit()
             return
         parameter = self.grouping_parameter.value()
         self.settings.setdefault('Map grouping parameters', {})[method] = parameter
@@ -712,14 +721,22 @@ class SimilarityMapWidget(QWidget):
             summary += f'; groups after {len(GROUP_COLOURS)} are light grey'
         self.grouping_summary.setText(summary)
         self._refresh()
+        self.groups_changed.emit()
+
+    def ensure_grouping(self, default='communities'):
+        """Make sure groups get computed: choose `default` if grouping is off, and load the map
+        data (in the background) if the map was not opened yet. True if data is being loaded."""
+        if self.grouping.currentData() is None:
+            self.grouping.setCurrentIndex(self.grouping.findData(default))  # regroups if data is there
+        if self.data is None:
+            self.load()
+            return True
+        return False
 
     def _dot_colour(self, key, fields):
         if not self.groups:
             return COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR
-        group = self.groups.get(key, -1)
-        if group < 0:
-            return UNGROUPED
-        return QColor(GROUP_COLOURS[group]) if group < len(GROUP_COLOURS) else NO_COLOR
+        return group_colour(self.groups.get(key, -1))
 
     def _group_text(self, key):
         """'Group 3' while grouping is on (1 = largest), else ''."""

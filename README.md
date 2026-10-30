@@ -146,6 +146,14 @@ The left pane has two tabs:
 
 Saved playlists and smartlists live in `library.sqlite`.
 
+## Groups in the List
+
+The **Group** column shows each track's group on the similarity map (the map's *Groups*
+setting; 1 = largest group). Sort by it to keep similar-sounding tracks together. **Group
+colours** above the List colours the rows like the map's dots instead of by Traktor colour; if
+the map's grouping is off, it turns on *Neighbour communities*. Group numbers change when the
+tracks are grouped again (another method or setting, newly analysed tracks).
+
 ## Search syntax
 
 | Search bar | Matches |

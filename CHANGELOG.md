@@ -4,6 +4,19 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.22.0] - 2026-10-30
+
+- **Map groups in the List.** A new **Group** column holds each track's group on the similarity
+  map (1 = largest; the map's *Groups* method). Sort by it to keep similar-sounding tracks
+  together; tracks not analysed or in no group sort last. A **Group colours** switch above the
+  List colours its rows like the map's dots instead of by Traktor colour (the Playlist keeps its
+  colours). With the map's grouping off, the switch turns on *Neighbour communities*.
+  - The groups are computed in the background at start (about 9 s for 3,534 analysed tracks,
+    including loading the map data) when the switch is on, or the Group column is shown and a
+    grouping method is chosen; the map need not be opened.
+  - Group numbers follow group size and change when the method, its setting or the analysed
+    tracks change, so they are not stored and are not offered in search or Complex Search.
+
 ## [4.21.1] - 2026-10-30
 
 - **No unshaded gap between # and Artist.** Qt kept a tree-branch indent in front of the Artist

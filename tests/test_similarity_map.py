@@ -619,3 +619,69 @@ class MapDropTests(MapWindowTestBase):
         self.drop_on_map(self.root / 'track24.mp3')  # in the library, but not analysed
         self.assertEqual(self.map.selected_key, self.key(7))
         self.assertIn('track24.mp3 is not on the map yet', self.map.status.text())
+
+
+class ListGroupTests(MapWindowTestBase):
+    """The map's groups in the List: the Group column and the Group colours switch."""
+
+    def wait_for(self, condition, window=None):
+        deadline = time.monotonic() + 60
+        while not condition() and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.02)
+        self.application.processEvents()
+
+    def list_items(self, window=None):
+        tree = (window or self.window).candidate_tree
+        return {canonical_path(tree.topLevelItem(i).text(self.header['Path'])): tree.topLevelItem(i)
+                for i in range(tree.topLevelItemCount())}
+
+    @property
+    def header(self):
+        from traktor_key_calculator.config import HEADER_INDEX
+        return HEADER_INDEX
+
+    def test_switch_colours_rows_by_map_group_and_group_column_sorts_them(self):
+        from traktor_key_calculator.config import GROUP_COLUMN, COLOR_MAPPING_CATEGORY
+        from traktor_key_calculator.ui.similarity_map import group_colour
+        self.assertIsNone(self.map.grouping.currentData())  # grouping off
+        column = self.header[GROUP_COLUMN]
+        self.assertFalse(self.window.candidate_tree.isColumnHidden(column))
+        self.assertEqual({item.text(column) for item in self.list_items().values()}, {''})
+        self.window.group_colours_switch.setChecked(True)
+        self.assertEqual(self.map.grouping.currentData(), 'communities')  # chosen for the switch
+        self.wait_for(lambda: bool(self.map.groups))
+        items = self.list_items()
+        for index in range(24):
+            group = self.map.groups[self.key(index)]
+            item = items[self.key(index)]
+            self.assertEqual(item.text(column), str(group + 1))
+            self.assertEqual(item.background(self.header['Artist']).color().rgb(), group_colour(group).rgb())
+        self.assertEqual(items[self.key(24)].text(column), '')  # not analysed: no group, no tint
+        self.assertEqual(items[self.key(24)].background(0).style(), 0)
+        # Sorting by Group keeps each group together; tracks without one come last
+        self.window.sort_by_column(column, True)
+        tree = self.window.candidate_tree
+        texts = [tree.topLevelItem(i).text(column) for i in range(tree.topLevelItemCount())]
+        self.assertEqual(texts, sorted(texts[:-1], key=int) + [''])
+        # Off: Traktor colours again, the Group column stays
+        self.window.group_colours_switch.setChecked(False)
+        traktor = self.list_items()[self.key(1)]  # Color 1
+        self.assertEqual(traktor.background(0).color().rgb(), COLOR_MAPPING_CATEGORY[1].rgb())
+        self.assertNotEqual(traktor.text(column), '')
+
+    def test_switch_on_at_start_groups_without_opening_the_map(self):
+        from traktor_key_calculator.config import GROUP_COLUMN
+        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
+        self.window.library_tabs.setCurrentIndex(0)
+        self.window.group_colours_switch.setChecked(True)
+        self.window.close()  # saves the settings
+        self.application.processEvents()
+        self.window = TraktorKeyCalculator()
+        self.map = self.window.similarity_map
+        self.assertIsNot(self.window.library_tabs.currentWidget(), self.map)
+        self.assertTrue(self.window.group_colours_switch.isChecked())
+        self.wait_for(lambda: bool(self.map.groups))
+        column = self.header[GROUP_COLUMN]
+        self.assertTrue(all(self.list_items()[self.key(i)].text(column) for i in range(24)))
+        self.assertTrue(self.window.status_label.text().startswith('Grouped: '))

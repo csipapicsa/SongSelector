@@ -12,14 +12,14 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog
+from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog, QCheckBox
 
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
 from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
 from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
-from traktor_key_calculator.config import FIELD_LABELS, POSITION_COLUMN
+from traktor_key_calculator.config import FIELD_LABELS, POSITION_COLUMN, GROUP_COLUMN
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
 from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget, TrackItem
 from traktor_key_calculator.core.data_manager import DataManager
@@ -38,7 +38,7 @@ from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
 from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
 from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
-from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget
+from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
 from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
 from traktor_key_calculator.ui.theme import (DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha,
                                              status_style)
@@ -57,6 +57,7 @@ from traktor_key_calculator.core.traktor_sync import apply_changes, collection_c
 
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
+GROUPING_MESSAGE = 'Grouping tracks for the List...'
 
 
 class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
@@ -149,6 +150,20 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
                     sizes[POSITION_COLUMN] = 36
             self.settings['Position column version'] = 1
 
+        # 4.22: the map group column, shown once in the List (the Playlist can show it too).
+        if not self.settings.get('Group column version'):
+            visible = self.settings.setdefault('Visible column right', list(HEADER_LABELS))
+            if GROUP_COLUMN not in visible:
+                visible.append(GROUP_COLUMN)
+            left = self.settings.setdefault('Visible column left', list(HEADER_LABELS))
+            if GROUP_COLUMN in left:
+                left.remove(GROUP_COLUMN)
+            for side in ('left', 'right'):
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                if sizes.get(GROUP_COLUMN, 0) <= 0:
+                    sizes[GROUP_COLUMN] = 50
+            self.settings['Group column version'] = 1
+
         
         self.playlist_paths = set()
         collection_path = self.settings.get('Traktor collection') or discover_collection()
@@ -189,10 +204,18 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
         self._map_stale = True
+        self.similarity_map.groups_changed.connect(self._apply_groups)
+        # Groups for the List (colours or the Group column) without opening the map first
+        if self.group_colours_switch.isChecked() or (
+                not self.candidate_tree.isColumnHidden(HEADER_INDEX[GROUP_COLUMN]) and self.settings.get('Map grouping')):
+            self._ensure_groups()
 
     def apply_row_shading_from_color(self, item):
         color = None
-        if self.coloring_mode == 'key':
+        if self._group_colours_on() and item.treeWidget() is self.candidate_tree:
+            group = self._group(item.text(HEADER_INDEX['Path']))
+            color = group_colour(group) if group is not None else None
+        elif self.coloring_mode == 'key':
             color = OPEN_KEY_COLOR_MAPPING.get(item.text(HEADER_INDEX['Open Key New']).lower())
         else:
             try:
@@ -477,7 +500,20 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         self.library_tabs.addTab(self.candidate_tree, 'List')
         self.list_count_label = QLabel('')
         self.list_count_label.setToolTip('Tracks the List view shows (after search and filters) and how many of them are selected')
-        self.library_tabs.setCornerWidget(self.list_count_label, Qt.TopRightCorner)
+        self.group_colours_switch = QCheckBox('Group colours')
+        self.group_colours_switch.setToolTip(
+            "Colour the List's rows by their group on the similarity map, as the map colours its dots,\n"
+            "instead of the Traktor colour. Uses the map's Groups setting (Neighbour communities if it\n"
+            "is off). Sort by the Group column to keep each group together.")
+        self.group_colours_switch.setChecked(bool(self.settings.get('List group colours', False)))
+        self.group_colours_switch.toggled.connect(self.set_group_colours)
+        corner = QWidget()
+        corner_layout = QHBoxLayout(corner)
+        corner_layout.setContentsMargins(0, 0, 0, 0)
+        corner_layout.addWidget(self.group_colours_switch)
+        corner_layout.addSpacing(12)
+        corner_layout.addWidget(self.list_count_label)
+        self.library_tabs.setCornerWidget(corner, Qt.TopRightCorner)
         right_layout.addWidget(self.library_tabs)
         # Hovering a drag over a tab opens it (e.g. a playlist from the Browser to the Playlist tab)
         for tabs in (self.left_tabs, self.library_tabs):
@@ -1217,6 +1253,48 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
             self.btn_advanced_search.setStyleSheet('')
             self.btn_advanced_search.setToolTip('Filter by column conditions, e.g. BPM between 120 and 130.')
 
+    # -- map groups in the List ----------------------------------------------
+
+    def _group(self, path):
+        """Map group of a track (0 = largest, -1 = in no group); None while not grouped or not analysed."""
+        groups = self.similarity_map.groups if hasattr(self, 'similarity_map') else {}
+        return groups.get(canonical_path(path)) if groups else None
+
+    def _group_text(self, path):
+        group = self._group(path)
+        return str(group + 1) if group is not None and group >= 0 else ''
+
+    def _group_colours_on(self):
+        return hasattr(self, 'group_colours_switch') and self.group_colours_switch.isChecked()
+
+    def _ensure_groups(self):
+        if self.similarity_map.ensure_grouping():
+            self._map_stale = False  # loading now; opening the map need not load again
+            self.status_label.setStyleSheet(status_style('info'))
+            self.status_label.setText(GROUPING_MESSAGE)
+
+    def set_group_colours(self, on):
+        self.settings['List group colours'] = on
+        if on:
+            self._ensure_groups()
+        self._apply_groups()
+
+    def _apply_groups(self):
+        """Fill the Group column of both panels and recolour the List's rows (groups changed)."""
+        if self.status_label.text() == GROUPING_MESSAGE and self.similarity_map.groups:
+            self.status_label.setStyleSheet(status_style('ok'))
+            self.status_label.setText(f'Grouped: {self.similarity_map.grouping_summary.text()}')
+        column = HEADER_INDEX[GROUP_COLUMN]
+        for tree in (self.candidate_tree, self.playlist_tree):
+            sorting = tree.isSortingEnabled()
+            tree.setSortingEnabled(False)  # Qt would re-sort after every change while sorted by Group
+            for index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(index)
+                item.setText(column, self._group_text(item.text(HEADER_INDEX['Path'])))
+                if tree is self.candidate_tree:
+                    self.apply_row_shading_from_color(item)
+            tree.setSortingEnabled(sorting)
+
     def _init_analysis_menu(self):
         menu = self.menuBar().addMenu('Analysis')
         self.embedding_toggle = menu.addAction('Analyse embeddings in background')
@@ -1357,6 +1435,8 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         self._refresh_playlist()
         self.list_browser.set_collection(self.table)
         self._apply_source_positions()
+        if self._group_colours_on():
+            self._apply_groups()
         self.filter_items()
         self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
 
@@ -1635,7 +1715,8 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
                   'Genre': self._text(row.get('Genre')), 'Color': self._rating_text(row.get('Color')) or '0',
                   'Album': self._text(row.get('Album')), 'Rating': self._rating_text(row.get('Rating')),
                   SS_RATING_COLUMN: self._rating_text(row.get('SS_Rating')),
-                  SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color'))}
+                  SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color')),
+                  GROUP_COLUMN: self._group_text(self._text(row.get('File_Path')))}
         key_source = self._text(row.get('Key_Source')) or ('Loaded CSV' if key else 'Not available')
         bpm_source = self._text(row.get('BPM_Source')) or ('Loaded CSV' if bpm else 'Not available')
         color_source = self._text(row.get('Color_Source')) or ('Saved import' if self._text(row.get('Imported')) else 'Loaded CSV')

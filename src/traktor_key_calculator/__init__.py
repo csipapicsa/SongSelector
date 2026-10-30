@@ -1,3 +1,3 @@
 ﻿"""Traktor Key Calculator: shows how a track's key shifts when its tempo changes."""
 
-__version__ = '4.21.1'
+__version__ = '4.22.0'

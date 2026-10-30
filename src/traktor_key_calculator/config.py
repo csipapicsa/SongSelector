@@ -171,6 +171,12 @@ FIELD_LABELS = list(HEADER_LABELS)
 POSITION_COLUMN = '#'
 HEADER_LABELS += [POSITION_COLUMN]
 HEADER_INDEX[POSITION_COLUMN] = len(HEADER_LABELS) - 1
+# The track's group on the similarity map (1 = largest), with the map's grouping method; empty
+# when grouping is off or the track is not analysed / in no group. Numbers change when the
+# tracks are grouped again, so this is not a track field either.
+GROUP_COLUMN = 'Group'
+HEADER_LABELS += [GROUP_COLUMN]
+HEADER_INDEX[GROUP_COLUMN] = len(HEADER_LABELS) - 1
 
 test = 100
 

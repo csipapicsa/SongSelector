@@ -14,13 +14,13 @@ from PyQt5.QtWidgets import (QTreeWidget, QTreeWidgetItem, QAbstractItemView,
 from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate
 from traktor_key_calculator.ui.theme import status_style
 from traktor_key_calculator.config import (HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN, SS_RATING_COLUMN,
-                                           POSITION_COLUMN)
+                                           POSITION_COLUMN, GROUP_COLUMN)
 from traktor_key_calculator.core.audio_metadata import get_file_extension, extract_audio_metadata
 
 
 
 _NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN,
-                                                   POSITION_COLUMN)}
+                                                   POSITION_COLUMN, GROUP_COLUMN)}
 # Paths of tracks dragged inside the app (one per line), next to the file URLs other apps use.
 # Also carries tracks whose file is missing.
 TRACKS_MIME = 'application/x-songselector-tracks'
