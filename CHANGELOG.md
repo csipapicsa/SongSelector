@@ -4,6 +4,14 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.20.0] - 2026-10-30
+
+- **Complex Search: column *None* switches a row off.** The column list of each row now starts
+  with *None*. A row set to *None* keeps its condition and value (also after restarting) but is
+  left out of the search, the *Advanced Search (n active)* count and the input checks, so a rule
+  can be paused and brought back by picking its column again. New rows still start on the first
+  real column.
+
 ## [4.19.1] - 2026-10-29
 
 - **3D view: dots get smaller with distance** (half size at the back, 1.6 times at the front), as

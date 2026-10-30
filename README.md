@@ -137,7 +137,8 @@ from audio alone.
 | `sscolor:blue`, `-sscolor:none`, ... | *Color - Song Selector* (same names) |
 
 *Advanced Search* can also compare *Rating - Song Selector* numerically (e.g. at least 4)
-and *Color - Song Selector* by color name.
+and *Color - Song Selector* by color name. Setting a row's column to *None* switches that row off:
+its condition and value stay (and are saved) but do not filter.
 
 ## Configuration
 

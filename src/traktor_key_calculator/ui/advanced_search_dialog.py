@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from traktor_key_calculator.core.color_search import COLOR_NAMES, COLOR_HELP, parse_color_values
 from traktor_key_calculator.core.search_filters import (NUMERIC_COLUMNS, COLOR_COLUMNS, TEXT_CONDITIONS,
-                                                       NUMERIC_COMPARISONS, parse_number)
+                                                       NUMERIC_COMPARISONS, NO_COLUMN, parse_number,
+                                                       active_filters)
 
 
 class AdvancedSearchRow(QWidget):
@@ -18,7 +19,9 @@ class AdvancedSearchRow(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout()
         self.column_combo = QComboBox()
-        self.column_combo.addItems(column_names)
+        self.column_combo.addItems([NO_COLUMN] + list(column_names))
+        self.column_combo.setCurrentIndex(1 if column_names else 0)
+        self.column_combo.setToolTip(f'{NO_COLUMN}: keep this row but leave it out of the search.')
 
         self.condition_combo = QComboBox()
         self.condition_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
@@ -39,7 +42,8 @@ class AdvancedSearchRow(QWidget):
     def update_conditions(self, _column=None):
         selected = self.condition_combo.currentText()
         conditions = list(TEXT_CONDITIONS)
-        if self.column_combo.currentText() in NUMERIC_COLUMNS:
+        # None offers every condition, so a numeric one is kept while the row is switched off.
+        if self.column_combo.currentText() in NUMERIC_COLUMNS | {NO_COLUMN}:
             conditions += list(NUMERIC_COMPARISONS)
         self.condition_combo.blockSignals(True)
         self.condition_combo.clear()
@@ -98,17 +102,12 @@ class AdvancedSearchDialog(QDialog):
         self.button_cancel.clicked.connect(self.reject)
 
     def get_active_filters(self):
-        filters = []
-        for row in self.filter_rows:  # Changed from self.rows to self.filter_rows
-            filter_data = row.get_filter()
-            if filter_data['value']:
-                filters.append(filter_data)
-        return filters
+        return active_filters(row.get_filter() for row in self.filter_rows)
 
     def accept_filters(self):
         if self.checkbox_enable.isChecked():
             for row in self.filter_rows:
-                value = row.value_edit.text().strip()
+                value = row.value_edit.text().strip() if row.column_combo.currentText() != NO_COLUMN else ''
                 if value and row.column_combo.currentText() in COLOR_COLUMNS and row.condition_combo.currentText() not in NUMERIC_COMPARISONS:
                     _, error = parse_color_values(value)
                     if error:

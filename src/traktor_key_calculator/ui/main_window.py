@@ -44,7 +44,7 @@ from traktor_key_calculator.ui.theme import (DEFAULT_THEME, apply_theme, dim_tex
 from mutagen import MutagenError
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
-from traktor_key_calculator.core.search_filters import matches_condition
+from traktor_key_calculator.core.search_filters import matches_condition, active_filters
 from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKEN, parse_color_search,
                                                       replace_color_filter)
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
@@ -1260,14 +1260,14 @@ class TraktorKeyCalculator(QMainWindow):
             
             # Apply filters
             if self.current_advanced_search['enabled']:
-                self.advanced_filters = self.current_advanced_search['filters']
+                self.advanced_filters = active_filters(self.current_advanced_search['filters'])
             else:
                 self.advanced_filters = []
             self.filter_items()
 
 
     def get_filters_from_dialog(self):
-        """Extract filters from dialog"""
+        """Extract filters from dialog; rows set to None are kept so they come back next time"""
         filters = []
         for row in self.advanced_search_dialog.filter_rows:
             filter_data = row.get_filter()
@@ -1288,7 +1288,7 @@ class TraktorKeyCalculator(QMainWindow):
                 self.all_items.append(item)
         self.candidate_tree.setSortingEnabled(True)
         self.candidate_tree.sortItems(sort_column, sort_order)
-        self.advanced_filters = [f for f in self.current_advanced_search.get('filters', []) if f.get('value')]
+        self.advanced_filters = active_filters(self.current_advanced_search.get('filters', []))
         self._refresh_playlist()
         self.filter_items()
         self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')

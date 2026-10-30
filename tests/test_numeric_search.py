@@ -124,6 +124,42 @@ class NumericSearchGuiTests(unittest.TestCase):
         self.assertEqual(seen,['greater than'])
         restored.close()
 
+    def test_none_column_keeps_the_row_but_leaves_it_out_of_the_search(self):
+        from PyQt5.QtCore import QTimer
+        from traktor_key_calculator.core.search_filters import NO_COLUMN
+        window=self.make_window()
+        rules=[('Genre','contains','tribal'),('Original BPM','greater than','abc'),
+               (NO_COLUMN,'is','house')]
+        def configure():
+            dialog=window.advanced_search_dialog
+            self.assertEqual(dialog.filter_rows[0].column_combo.itemText(0),NO_COLUMN)
+            self.assertNotEqual(dialog.filter_rows[0].column_combo.currentText(),NO_COLUMN)
+            dialog.checkbox_enable.setChecked(True)
+            for row,(column,condition,value) in zip(dialog.filter_rows,rules):
+                row.column_combo.setCurrentText(column)
+                row.condition_combo.setCurrentText(condition)
+                row.value_edit.setText(value)
+            # switched off: the numeric condition and the invalid number stay, OK still works
+            dialog.filter_rows[1].column_combo.setCurrentText(NO_COLUMN)
+            self.assertEqual(dialog.filter_rows[1].condition_combo.currentText(),'greater than')
+            dialog.button_ok.click()
+        QTimer.singleShot(0,configure)
+        window.open_advanced_search()
+        self.assertEqual(self.visible_titles(window),{'middle','lower','upper','unknown'})
+        self.assertEqual(window.btn_advanced_search.text(),'Advanced Search (1 active)')
+        self.assertEqual(len(window.current_advanced_search['filters']),3)
+        seen=[]
+        def inspect_restored():
+            row=window.advanced_search_dialog.filter_rows[1]
+            seen.append((row.column_combo.currentText(),row.condition_combo.currentText(),row.value_edit.text()))
+            window.advanced_search_dialog.button_cancel.click()
+        QTimer.singleShot(0,inspect_restored)
+        window.open_advanced_search()
+        self.assertEqual(seen,[(NO_COLUMN,'greater than','abc')])
+        window.populate_tree()
+        self.assertEqual(len(window.advanced_filters),1)
+        window.close()
+
     def test_integer_rating_and_color_filters(self):
         window=self.make_window()
         rules=[{'column':'Rating','condition':'at least (>=)','value':'4'},

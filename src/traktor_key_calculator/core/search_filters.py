@@ -14,6 +14,13 @@ NUMERIC_COMPARISONS = {
     'at least (>=)': operator.ge,
     'at most (<=)': operator.le,
 }
+# A row set to this column keeps its condition and value but does not filter.
+NO_COLUMN = 'None'
+
+
+def active_filters(filters):
+    """The rules that filter: a value is given and a column is chosen."""
+    return [f for f in filters if f.get('value') and f.get('column') != NO_COLUMN]
 
 
 def parse_number(value):
