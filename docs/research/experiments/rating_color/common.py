@@ -54,8 +54,23 @@ def load_vectors(model, snapshot):
     """'cnn14' from the app's store; any other model from .research_cache/vectors/<model>.npz."""
     if model == 'cnn14':
         return cnn14_vectors(snapshot)
-    data = np.load(CACHE / 'vectors' / f'{model}.npz', allow_pickle=False)
-    return Vectors(data['keys'].tolist(), data['matrix'].astype(np.float32))
+    final = CACHE / 'vectors' / f'{model}.npz'
+    if final.exists():
+        data = np.load(final, allow_pickle=False)
+        return Vectors(data['keys'].tolist(), data['matrix'].astype(np.float32))
+    # extraction still running: use the tracks done so far, centred and unit length like the final file
+    data = np.load(CACHE / 'vectors' / f'{model}_raw.npz', allow_pickle=False)
+    matrix = data['matrix'].astype(np.float32)
+    matrix = matrix - matrix.mean(0)
+    matrix /= np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-9)
+    return Vectors(data['keys'].tolist(), matrix)
+
+
+def restrict(vectors, keys):
+    """The rows of `vectors` whose key is in `keys` (to compare models on exactly the same tracks)."""
+    wanted = set(keys)
+    rows = [i for i, key in enumerate(vectors.keys) if key in wanted]
+    return Vectors([vectors.keys[i] for i in rows], vectors.matrix[rows])
 
 
 def save_vectors(model, vectors):

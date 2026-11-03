@@ -85,6 +85,7 @@ def _session(file, optimise=True):
     providers = [p for p in ('CUDAExecutionProvider', 'DmlExecutionProvider') if p in names] + ['CPUExecutionProvider']
     options = onnxruntime.SessionOptions()
     options.enable_mem_pattern = False  # DirectML requirement
+    options.intra_op_num_threads = options.inter_op_num_threads = 1  # the GPU does the work; more threads only compete
     if not optimise:
         options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
     return onnxruntime.InferenceSession(str(MODELS / file), options, providers=providers)

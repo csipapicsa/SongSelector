@@ -17,12 +17,13 @@ from sklearn.metrics import balanced_accuracy_score, f1_score, roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (CACHE, REPO, bootstrap, cross_validated, fmt, load_labels, load_vectors, locked_test,
-                    precision_at_coverage, probe_scores, snapshot_data)
+                    precision_at_coverage, probe_scores, restrict, snapshot_data)
 
 warnings.filterwarnings('ignore')
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', default='cnn14', help='cnn14, or a model with .research_cache/vectors/<model>.npz')
 parser.add_argument('--app-data', default=str(REPO / 'dist'), help="folder of the app's library.sqlite / embeddings.sqlite")
+parser.add_argument('--keys-of', default='', help='only the tracks another model has vectors for (same tracks for a fair comparison)')
 parser.add_argument('--refresh', action='store_true', help='copy the app data again')
 parser.add_argument('--probes', default='majority,knn,logistic')
 parser.add_argument('--final', action='store_true',
@@ -35,6 +36,8 @@ args = parser.parse_args() if sys.argv[0].endswith('evaluate.py') else parser.pa
 # %%
 snapshot = snapshot_data(args.app_data, args.refresh)
 vectors = load_vectors(args.model, snapshot)
+if args.keys_of:
+    vectors = restrict(vectors, load_vectors(args.keys_of, snapshot).keys)
 rating, colour, groups = load_labels(snapshot, vectors.keys)
 locked = locked_test(groups)
 print(f'{args.model}: {len(vectors.keys)} tracks, {vectors.matrix.shape[1]} values each; '
@@ -111,6 +114,6 @@ run('rating high (4-5 vs 1-3)', rating > 0, high, probes, one_vs_rest=[('4-5 sta
 
 # %%
 if not args.final:
-    target = REPO / 'docs' / 'research' / 'experiments' / 'results' / f"{results['date']}_{args.model}.json"
+    target = REPO / 'docs' / 'research' / 'experiments' / 'results' / f"{results['date']}_{args.model}{'_on-' + args.keys_of if args.keys_of else ''}.json"
     target.write_text(json.dumps(results, indent=1, default=float), encoding='utf-8')
     print('\nsaved', target.relative_to(REPO))

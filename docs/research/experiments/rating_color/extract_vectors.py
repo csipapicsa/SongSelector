@@ -53,7 +53,7 @@ def _work(job):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--models', default='musicnn,discogs_effnet,openl3')
-    parser.add_argument('--workers', type=int, default=3)
+    parser.add_argument('--workers', type=int, default=1, help='1: two processes on one GPU were 3x slower each')
     parser.add_argument('--limit', type=int, default=0, help='only the first N tracks (a test run)')
     args = parser.parse_args()
     names = args.models.split(',')
