@@ -34,6 +34,32 @@ def _check_embedding_process():
     return f'ok, {matrix.shape[0]}x{matrix.shape[1]} on {analyzer.device}'
 
 
+def _check_rekordbox_reader():
+    """Writes a small encrypted library like Rekordbox's master.db and reads its playlists with
+    the app's own reader: proves the SQLCipher module and the key work inside the frozen exe."""
+    from sqlcipher3 import dbapi2 as sqlcipher
+    from traktor_key_calculator.config import APP_DATA_DIR
+    from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, database_key
+    path=APP_DATA_DIR/'rekordbox_check.db'
+    path.unlink(missing_ok=True)
+    connection=sqlcipher.connect(str(path))
+    connection.execute(f"PRAGMA key='{database_key()}'")
+    connection.execute('CREATE TABLE djmdPlaylist (ID, Seq, Name, Attribute, ParentID, SmartList, rb_local_deleted)')
+    connection.execute('CREATE TABLE djmdSongPlaylist (PlaylistID, ContentID, TrackNo, rb_local_deleted)')
+    connection.execute('CREATE TABLE djmdContent (ID, FolderPath, rb_local_deleted)')
+    connection.execute("INSERT INTO djmdPlaylist VALUES ('1', 1, 'Set', 0, 'root', NULL, 0)")
+    connection.executemany('INSERT INTO djmdContent VALUES (?, ?, 0)', [('10', 'E:/DJ/a.mp3'), ('11', 'E:/DJ/b.mp3')])
+    connection.executemany("INSERT INTO djmdSongPlaylist VALUES ('1', ?, ?, 0)", [('11', 1), ('10', 2)])
+    connection.commit()
+    connection.close()
+    library=RekordboxLibrary(str(path))
+    library._load()
+    assert not library.error,library.error
+    assert library.playlists==[{'type':'PLAYLIST','name':'Set','tracks':[r'E:\DJ\b.mp3',r'E:\DJ\a.mp3']}],library.playlists
+    path.unlink()
+    return 'ok'
+
+
 def run():
     result_path=Path(os.environ['TRAKTOR_VERIFY_RESULT']).resolve()
     result={}
@@ -214,6 +240,7 @@ def run():
         assert any(action.text()=='Delete duplicates from the list' for action in restored.library_context_menu().actions())
         assert restored.delete_duplicate_tracks()==0
         restored.close()
+        rekordbox=_check_rekordbox_reader()
         embedding=_check_embedding_process()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
                 'drop_events':True,'duplicates':True,'playlist_key_at_150_bpm':'G major',
@@ -222,7 +249,7 @@ def run():
                 'ratings_visible_and_searchable':True,'existing_library_ratings':library_ratings,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True,'embedding_process':embedding}
+                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'embedding_process':embedding}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}

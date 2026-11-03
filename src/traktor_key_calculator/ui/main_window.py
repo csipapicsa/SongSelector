@@ -44,6 +44,7 @@ from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
 from traktor_key_calculator.ui.theme import (DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha,
                                              status_style)
 from mutagen import MutagenError
+from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, discover_library, signature as rekordbox_signature
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
 from traktor_key_calculator.core.search_filters import matches_condition, active_filters
@@ -170,6 +171,9 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         collection_path = self.settings.get('Traktor collection') or discover_collection()
         self.settings['Traktor collection'] = collection_path
         self.importer = TrackImporter(collection_path)
+        rekordbox_path = self.settings.get('Rekordbox library') or discover_library()
+        self.settings['Rekordbox library'] = rekordbox_path
+        self.rekordbox_library = RekordboxLibrary(rekordbox_path)  # filled by the watcher below
         self.setAcceptDrops(True)
 
         # Initialize UI
@@ -188,6 +192,11 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         # Changes made in Traktor (key, BPM, colour, rating) come in after Traktor saves.
         self.collection_watcher = CollectionWatcher(collection_path, self)
         self.collection_watcher.loaded.connect(self._collection_changed)
+        # Rekordbox's playlists, read straight from its library; Rekordbox is never touched
+        self.rekordbox_watcher = CollectionWatcher(rekordbox_path, self, reader=RekordboxLibrary,
+                                                   signature=rekordbox_signature)
+        self.rekordbox_watcher.loaded.connect(self._rekordbox_changed)
+        self.rekordbox_watcher.failed.connect(lambda message: self.status_bar.showMessage(message))
 
         # Embeddings of every library track, analysed in the background
         self.embedding_store = EmbeddingStore(Path(SETTINGS_FILE).with_name('embeddings.sqlite'))
@@ -793,6 +802,11 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
     def _load_library(self, table):
         merged = merge_tracks(table, self.saved_imports.values())
         return self._with_user_fields(enrich_ratings(merged, self.importer.collection))
+
+    def _rekordbox_changed(self, library):
+        """Rekordbox saved its library (or the app just started): refresh its playlists in the Browser."""
+        self.rekordbox_library = library
+        self.refresh_rekordbox_playlists()
 
     def _collection_changed(self, collection):
         """Traktor saved its collection: take the values changed in Traktor into the library,
@@ -1483,6 +1497,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
     def closeEvent(self, event):
         """Save settings before closing the app"""
         self.collection_watcher.stop()
+        self.rekordbox_watcher.stop()
         if self.embedding_analyzer is not None:
             self.embedding_analyzer.stop(timeout=2)
         if hasattr(self, 'similarity_map'):
@@ -1544,6 +1559,8 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         add_folder.triggered.connect(self.choose_audio_folder)
         collection = menu.addAction('Link Traktor collection...')
         collection.triggered.connect(self.choose_traktor_collection)
+        rekordbox = menu.addAction('Link Rekordbox library...')
+        rekordbox.triggered.connect(self.choose_rekordbox_library)
 
     def choose_audio_files(self):
         paths, _ = QFileDialog.getOpenFileNames(self, 'Add audio files', '',
@@ -1579,6 +1596,24 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         self._save_library()
         self.populate_tree()
         self.status_label.setText(f'Linked {len(importer.collection.by_path)} Traktor tracks')
+        self.status_bar.showMessage(path)
+
+    def choose_rekordbox_library(self):
+        """Only needed when the Rekordbox library is not found by itself (master.db)."""
+        path, _ = QFileDialog.getOpenFileName(self, 'Link Rekordbox library',
+                                              self.settings.get('Rekordbox library', ''),
+                                              'Rekordbox library (master.db);;All files (*)')
+        if not path:
+            return
+        library = RekordboxLibrary(path)
+        library._load()
+        if library.error:
+            QMessageBox.warning(self, 'Cannot read the Rekordbox library', library.error)
+            return
+        self.settings['Rekordbox library'] = path
+        self.rekordbox_watcher.set_path(path)  # reads it again in a moment
+        self._rekordbox_changed(library)
+        self.status_label.setText(f'Linked the Rekordbox library: {library.track_count} tracks')
         self.status_bar.showMessage(path)
 
     def dragEnterEvent(self, event):

@@ -19,7 +19,8 @@ CHANGELOG when they ship.
 - [ ] Traktor's smartlists: evaluate their queries (`$BPM > 126 & $GENRE % "break" | ...`; operators
       `== <> < <= > >= % !% ~`, `&` and `|`). Fields the app lacks: `$PLAYCOUNT`, `$TIME`
       (track length); they would have to be read from the NML. 43 in the user's collection.
-- [ ] Rekordbox (and other apps') playlists in the Browser, each in its own folder.
+- [x] Rekordbox's playlists in the Browser (*Rekordbox Playlists*, read directly from `master.db`, read-only, 4.25.0).
+- [ ] Other apps' playlists (Serato, VirtualDJ, Engine DJ); Rekordbox's own ratings / colours / BPM / key as import sources.
 - [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
 - [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
       models and ideas in the DJ mix segmentation project). Plan only.

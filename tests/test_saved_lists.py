@@ -420,11 +420,11 @@ class BrowserGuiTests(unittest.TestCase):
         browser.node_activated.emit(node)  # double-click: into the Playlist tab
         self.assertEqual(self.playlist(window), ['three', 'one'])
 
-        window.import_traktor_missing(node)  # the file that exists comes in; the view stays
+        window.import_foreign_missing(node)  # the file that exists comes in; the view stays
         self.assertEqual(window.list_source, node)
         self.assertEqual(self.shown(window), ['three', 'one', 'not imported'])
         with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('My breaks', True)):
-            copy = window.copy_traktor_playlist(node)
+            copy = window.copy_foreign_playlist(node)
         self.assertEqual([r['Title'] for r in window.library_store.load_playlist('My breaks')],
                          ['three', 'one', 'not imported'])
         window.show_list_source(copy)
@@ -433,6 +433,48 @@ class BrowserGuiTests(unittest.TestCase):
         # Traktor saved again without that playlist: showing it falls back to all tracks
         window.importer.collection.playlists = []
         window.refresh_traktor_playlists()
+        self.assertEqual(window.list_source, copy)
+        window.show_list_source(node)
+        self.assertIsNone(window.list_source)
+
+    def test_rekordbox_playlists_are_listed_shown_loaded_and_copied_like_traktors(self):
+        from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary
+        window = self.window()
+        browser = window.list_browser
+        self.assertTrue(browser.rekordbox_root.isHidden())  # no Rekordbox library: no entry
+        (self.root / 'not imported.mp3').write_bytes(b'')
+        library = RekordboxLibrary(str(self.root / 'master.db'))
+        library.playlists = [
+            {'type': 'FOLDER', 'name': 'Sets', 'children': [
+                {'type': 'PLAYLIST', 'name': 'Peak', 'tracks': [
+                    str(self.paths['four']), str(self.root / 'gone.mp3'), str(self.paths['two']),
+                    str(self.root / 'not imported.mp3')]}]},
+            {'type': 'SMARTLIST', 'name': 'Fast', 'query': '<NODE/>'}]
+        window._rekordbox_changed(library)  # what the watcher does after reading master.db
+        node = {'kind': 'rekordbox', 'name': 'Peak', 'path': ['Sets', 'Peak']}
+        self.assertFalse(browser.rekordbox_root.isHidden())
+        self.assertEqual(browser.rekordbox_root.text(0), 'Rekordbox Playlists (1)')
+        self.assertEqual(browser.traktor_root.childCount(), 0)
+        self.assertIn('Rekordbox smartlist (not supported yet)', browser.rekordbox_root.child(1).toolTip(0))
+        browser.setCurrentItem(browser.rekordbox_root.child(0).child(0))
+        self.assertEqual(window.list_source, node)
+        self.assertEqual(self.shown(window), ['four', 'two'])  # Rekordbox's order, by #
+        self.assertIn('Showing Rekordbox playlist: Peak', window.source_label.text())
+        self.assertIn('2 of its tracks are not in the library list', window.source_label.text())
+
+        browser.node_activated.emit(node)
+        self.assertEqual(self.playlist(window), ['four', 'two'])
+        window.import_foreign_missing(node)
+        self.assertEqual(self.shown(window), ['four', 'two', 'not imported'])
+        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('From Rekordbox', True)):
+            copy = window.copy_foreign_playlist(node)
+        self.assertEqual([r['Title'] for r in window.library_store.load_playlist('From Rekordbox')],
+                         ['four', 'two', 'not imported'])
+        window.show_list_source(copy)
+        self.assertEqual(self.shown(window), ['four', 'two', 'not imported'])
+
+        library = RekordboxLibrary(str(self.root / 'master.db'))  # Rekordbox saved again, without that playlist
+        window._rekordbox_changed(library)
         self.assertEqual(window.list_source, copy)
         window.show_list_source(node)
         self.assertIsNone(window.list_source)

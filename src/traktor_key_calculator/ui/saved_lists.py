@@ -17,8 +17,8 @@ from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST
 from traktor_key_calculator.core.search_filters import active_filters
 from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
-from traktor_key_calculator.ui.list_browser import (COLLECTION_GROUPS, ORDERED_KINDS, SAVED_KINDS, TRACK_SOURCES,
-                                                     TRAKTOR, node_label)
+from traktor_key_calculator.ui.list_browser import (COLLECTION_GROUPS, FOREIGN_KINDS, ORDERED_KINDS, REKORDBOX,
+                                                     SAVED_KINDS, TRACK_SOURCES, TRAKTOR, node_label)
 from traktor_key_calculator.ui.theme import status_style
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dragged_tracks
 
@@ -78,8 +78,8 @@ class SavedListsMixin:
         if node['kind'] in COLLECTION_GROUPS:
             self._source_column = HEADER_INDEX[COLLECTION_GROUPS[node['kind']][1]]
             return
-        if node['kind'] == TRAKTOR:
-            keys = self._traktor_keys(node)
+        if node['kind'] in FOREIGN_KINDS:
+            keys = self._foreign_keys(node)
             if keys is None:
                 self.list_source = None
             else:
@@ -162,8 +162,8 @@ class SavedListsMixin:
     def _node_records(self, node):
         """Tracks of a Browser entry, in order: a playlist's set order, else as the List sorts them."""
         rows = self._rows_by_path()
-        if node['kind'] == TRAKTOR:
-            keys = self._traktor_keys(node) or []
+        if node['kind'] in FOREIGN_KINDS:
+            keys = self._foreign_keys(node) or []
             stored = self.library_store.tracks([key for key in keys if key not in rows])
             return [rows.get(key, stored.get(key)) for key in keys if key in rows or key in stored]
         if node['kind'] == PLAYLIST:
@@ -212,16 +212,33 @@ class SavedListsMixin:
         self._report(error or f'Loaded {node_label(node)} into the Playlist tab', 'error' if error else 'ok')
         return True
 
-    # -- Traktor's playlists --------------------------------------------------
+    # -- Traktor's and Rekordbox's playlists ------------------------------------
+
+    def _foreign_playlists(self, kind):
+        """The playlist tree of another program, in its order; None: that program's library is not known."""
+        if kind == TRAKTOR:
+            return self.importer.collection.playlists
+        library = getattr(self, 'rekordbox_library', None)
+        return library.playlists if library is not None and library.path else None
+
+    def _refresh_foreign(self, kind):
+        playlists = self._foreign_playlists(kind)
+        if kind == TRAKTOR:
+            self.list_browser.set_traktor_playlists(playlists)
+        else:
+            self.list_browser.set_rekordbox_playlists(playlists)
+        source = self.list_source
+        if source and source['kind'] == kind:
+            self.show_list_source(source)  # the program saved: its playlist may have changed
 
     def refresh_traktor_playlists(self):
-        self.list_browser.set_traktor_playlists(self.importer.collection.playlists)
-        source = self.list_source
-        if source and source['kind'] == TRAKTOR:
-            self.show_list_source(source)  # Traktor saved: its playlist may have changed
+        self._refresh_foreign(TRAKTOR)
 
-    def _traktor_entry(self, node):
-        entries, found = self.importer.collection.playlists, None
+    def refresh_rekordbox_playlists(self):
+        self._refresh_foreign(REKORDBOX)
+
+    def _foreign_entry(self, node):
+        entries, found = self._foreign_playlists(node['kind']) or [], None
         for name in node.get('path', []):
             found = next((entry for entry in entries if entry['name'] == name), None)
             if found is None:
@@ -229,35 +246,35 @@ class SavedListsMixin:
             entries = found.get('children', [])
         return found if found is not None and found['type'] == 'PLAYLIST' else None
 
-    def _traktor_keys(self, node):
-        """Canonical paths of a Traktor playlist's tracks in order (each once), or None if it is gone."""
-        entry = self._traktor_entry(node)
+    def _foreign_keys(self, node):
+        """Canonical paths of a Traktor or Rekordbox playlist's tracks in order (each once), or None if it is gone."""
+        entry = self._foreign_entry(node)
         if entry is None:
             return None
         return list(dict.fromkeys(key for key in map(canonical_path, entry['tracks']) if key))
 
-    def _traktor_missing(self, node):
-        """Files of a Traktor playlist that are not in the library list but exist on disk."""
-        entry = self._traktor_entry(node) or {'tracks': []}
+    def _foreign_missing(self, node):
+        """Files of a Traktor or Rekordbox playlist that are not in the library list but exist on disk."""
+        entry = self._foreign_entry(node) or {'tracks': []}
         rows = self._rows_by_path()
         return [path for path in dict.fromkeys(entry['tracks'])
                 if canonical_path(path) not in rows and os.path.isfile(path)]
 
-    def import_traktor_missing(self, node):
-        missing = self._traktor_missing(node)
+    def import_foreign_missing(self, node):
+        missing = self._foreign_missing(node)
         if missing:
             self.import_audio_files(missing, keep_view=True)
             self.show_list_source(self.list_source)
         else:
             self._report(f'All files of {node_label(node)} that exist are in the library')
 
-    def copy_traktor_playlist(self, node):
-        """Save a Traktor playlist as one of the app's playlists (editable); its files that are
-        not in the library yet are imported first."""
+    def copy_foreign_playlist(self, node):
+        """Save a Traktor or Rekordbox playlist as one of the app's playlists (editable); its
+        files that are not in the library yet are imported first."""
         name = self._ask_name('Copy to my playlists', node['name'])
         if not name or not self._free_name(name, replace_kind=PLAYLIST):
             return None
-        missing = self._traktor_missing(node)
+        missing = self._foreign_missing(node)
         if missing:
             self.import_audio_files(missing, keep_view=True)
         records = self._node_records(node)
@@ -265,7 +282,7 @@ class SavedListsMixin:
             return None
         copy = {'kind': PLAYLIST, 'name': name}
         self._after_change(copy)
-        skipped = len(self._traktor_keys(node) or []) - len(records)
+        skipped = len(self._foreign_keys(node) or []) - len(records)
         self._report(f'Copied {len(records)} tracks to playlist "{name}"' +
                      (f'; {skipped} files not found' if skipped else ''))
         return copy
@@ -449,12 +466,12 @@ class SavedListsMixin:
         if kind in TRACK_SOURCES:
             menu.addAction('Show in List').triggered.connect(lambda: self.show_list_source(node))
             menu.addAction('Load into the Playlist tab').triggered.connect(lambda: self.load_into_playlist(node))
-        if kind == TRAKTOR:
-            missing = len(self._traktor_missing(node))
+        if kind in FOREIGN_KINDS:
+            missing = len(self._foreign_missing(node))
             action = menu.addAction(f'Import its {missing} missing track(s) into the library')
             action.setEnabled(bool(missing))
-            action.triggered.connect(lambda: self.import_traktor_missing(node))
-            menu.addAction('Copy to my playlists...').triggered.connect(lambda: self.copy_traktor_playlist(node))
+            action.triggered.connect(lambda: self.import_foreign_missing(node))
+            menu.addAction('Copy to my playlists...').triggered.connect(lambda: self.copy_foreign_playlist(node))
         if kind == PLAYLIST:
             menu.addAction('Replace with the Playlist tab...').triggered.connect(lambda: self.replace_playlist(node))
         if kind == SMARTLIST:

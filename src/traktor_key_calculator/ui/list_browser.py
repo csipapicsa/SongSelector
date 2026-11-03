@@ -4,9 +4,10 @@ Browser tab, as in Traktor: the track collection (all tracks, by artist, album, 
 the user's playlists and smartlists, and Traktor's own playlists (read-only).
 
 Every entry is a node {'kind', 'name'}: kind 'all', 'artist', 'album', 'genre',
-'playlist', 'smartlist' or 'traktor' (track sources; a Traktor playlist also has 'path',
-its folders and name), or 'group' / 'collection' / 'playlists' / 'traktor_root' /
-'traktor_folder' (folders) or 'traktor_smartlist' (listed, not evaluated yet).
+'playlist', 'smartlist', 'traktor' or 'rekordbox' (track sources; a Traktor or Rekordbox
+playlist also has 'path', its folders and name), or 'group' / 'collection' / 'playlists' /
+'traktor_root' / 'traktor_folder' / 'rekordbox_root' / 'rekordbox_folder' (folders) or
+'traktor_smartlist' / 'rekordbox_smartlist' (listed, not evaluated yet).
 The window decides what a node shows; this widget only lists them.
 """
 import json
@@ -21,19 +22,21 @@ from traktor_key_calculator.ui.tree_widgets import NODE_MIME, dragged_tracks, dr
 NODE_ROLE = Qt.UserRole + 1
 # Collection folders: node kind -> (folder label, track column)
 COLLECTION_GROUPS = {'artist': ('Artists', 'Artist'), 'album': ('Albums', 'Album'), 'genre': ('Genres', 'Genre')}
-TRAKTOR = 'traktor'  # a playlist in Traktor's collection.nml
-TRACK_SOURCES = {'all', 'artist', 'album', 'genre', PLAYLIST, SMARTLIST, TRAKTOR}
+TRAKTOR = 'traktor'      # a playlist in Traktor's collection.nml
+REKORDBOX = 'rekordbox'  # a playlist in Rekordbox's master.db
+FOREIGN_KINDS = {TRAKTOR: 'Traktor', REKORDBOX: 'Rekordbox'}  # playlists of other programs, read-only
+TRACK_SOURCES = {'all', 'artist', 'album', 'genre', PLAYLIST, SMARTLIST, *FOREIGN_KINDS}
 SAVED_KINDS = {PLAYLIST, SMARTLIST}
-ORDERED_KINDS = {PLAYLIST, TRAKTOR}  # shown in the List in their order (# column)
-LOADABLE_KINDS = {PLAYLIST, SMARTLIST, TRAKTOR}  # double-click loads into the Playlist tab
+ORDERED_KINDS = {PLAYLIST, *FOREIGN_KINDS}  # shown in the List in their order (# column)
+LOADABLE_KINDS = {PLAYLIST, SMARTLIST, *FOREIGN_KINDS}  # double-click loads into the Playlist tab
 
 
 def node_label(node):
     """'Playlist: Warm-up', 'Artist: Cat Power', ..."""
     if node['kind'] == 'all':
         return 'All Tracks'
-    if node['kind'] == TRAKTOR:
-        return f"Traktor playlist: {node['name']}"
+    if node['kind'] in FOREIGN_KINDS:
+        return f"{FOREIGN_KINDS[node['kind']]} playlist: {node['name']}"
     return f"{node['kind'].title()}: {node['name']}"
 
 
@@ -81,6 +84,12 @@ class ListBrowser(QTreeWidget):
                                        self.style().standardIcon(QStyle.SP_DirIcon))
         self.traktor_root.setToolTip(0, "Traktor's playlists, read from its collection.nml (read-only). "
                                         'Updated when Traktor saves.')
+        self.rekordbox_root = self._item(self, 'Rekordbox Playlists', {'kind': 'rekordbox_root'},
+                                         self.style().standardIcon(QStyle.SP_DirIcon))
+        self.rekordbox_root.setToolTip(0, "Rekordbox's playlists, read from its library (read-only; Rekordbox is not "
+                                          'touched and does not have to be closed). Updated when Rekordbox saves.')
+        self.rekordbox_root.setHidden(True)  # shown once a Rekordbox library has been read
+        self.roots = {TRAKTOR: self.traktor_root, REKORDBOX: self.rekordbox_root}
         self.collection_root.setExpanded(True)
         self.playlists_root.setExpanded(True)
 
@@ -152,38 +161,48 @@ class ListBrowser(QTreeWidget):
 
     def set_traktor_playlists(self, playlists):
         """Traktor's playlist tree (TraktorCollection.playlists), in Traktor's order."""
+        self.set_foreign_playlists(TRAKTOR, playlists)
+
+    def set_rekordbox_playlists(self, playlists):
+        """Rekordbox's playlist tree (RekordboxLibrary.playlists), in Rekordbox's order;
+        None: no Rekordbox library, the entry is hidden."""
+        self.rekordbox_root.setHidden(playlists is None)
+        self.set_foreign_playlists(REKORDBOX, playlists or [])
+
+    def set_foreign_playlists(self, kind, playlists):
         selected = self.current_node()
+        root, program = self.roots[kind], FOREIGN_KINDS[kind]
         folder = self.style().standardIcon(QStyle.SP_DirIcon)
         self._quiet = True
-        self.traktor_root.takeChildren()
+        root.takeChildren()
 
         def add(parent, nodes, path):
             count = 0
             for entry in nodes:
                 here = path + [entry['name']]
                 if entry['type'] == 'FOLDER':
-                    item = self._item(parent, entry['name'], {'kind': 'traktor_folder', 'path': here}, folder)
+                    item = self._item(parent, entry['name'], {'kind': f'{kind}_folder', 'path': here}, folder)
                     count += add(item, entry.get('children', []), here)
                 elif entry['type'] == 'PLAYLIST':
-                    item = self._item(parent, entry['name'], {'kind': TRAKTOR, 'name': entry['name'], 'path': here},
+                    item = self._item(parent, entry['name'], {'kind': kind, 'name': entry['name'], 'path': here},
                                       self.list_icon)
                     item.setToolTip(0, f"{len(entry['tracks'])} tracks")
                     count += 1
                 elif entry['type'] == 'SMARTLIST':
-                    item = self._item(parent, entry['name'], {'kind': 'traktor_smartlist', 'path': here},
+                    item = self._item(parent, entry['name'], {'kind': f'{kind}_smartlist', 'path': here},
                                       self.smart_icon)
                     item.setForeground(0, QColor('#8a8f98'))
-                    item.setToolTip(0, f"Traktor smartlist (not supported yet): {entry.get('query', '')}")
+                    item.setToolTip(0, f"{program} smartlist (not supported yet): {entry.get('query', '')}")
             return count
 
-        count = add(self.traktor_root, playlists, [])
-        self.traktor_root.setText(0, f'Traktor Playlists ({count})')
+        count = add(root, playlists, [])
+        root.setText(0, f'{program} Playlists ({count})')
         self._quiet = False
-        if selected and selected['kind'] == TRAKTOR:
+        if selected and selected['kind'] == kind:
             self.select_node(selected)
 
-    def _find_traktor(self, path):
-        item = self.traktor_root
+    def _find_foreign(self, kind, path):
+        item = self.roots[kind]
         for name in path:
             item = next((item.child(i) for i in range(item.childCount())
                          if (self.node(item.child(i)) or {}).get('path', [])[-1:] == [name]), None)
@@ -194,8 +213,8 @@ class ListBrowser(QTreeWidget):
     def find(self, node):
         if node is None or node['kind'] == 'all':
             return self.all_item
-        if node['kind'] == TRAKTOR:
-            return self._find_traktor(node.get('path', []))
+        if node['kind'] in FOREIGN_KINDS:
+            return self._find_foreign(node['kind'], node.get('path', []))
         if node['kind'] in SAVED_KINDS:
             parent = self.playlists_root
         elif node['kind'] in self.groups:

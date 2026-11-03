@@ -152,6 +152,10 @@ playlists, tracks dropped onto it (from Traktor, Explorer or the Playlist tab) a
 right-click to import their missing tracks or copy one to your playlists. Traktor's smartlists
 are listed but not evaluated yet.
 
+**Rekordbox Playlists** works the same way, read directly from Rekordbox's own library
+(`master.db`); nothing has to be exported and Rekordbox does not have to be closed or opened.
+The entry appears once a Rekordbox library is found.
+
 ## Groups in the List
 
 The **Group** column shows each track's group on the similarity map (the map's *Groups*
@@ -177,6 +181,7 @@ its condition and value stay (and are saved) but do not filter.
 | Setting | How |
 |---|---|
 | Traktor collection | Auto-detected (`E:\DJ\TRAKTOR\collection.nml`, then `Documents\Native Instruments\Traktor*\`). Change via *Import → Link Traktor collection…* |
+| Rekordbox library | Auto-detected (Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`). Change via *Import → Link Rekordbox library…* |
 | Data directory | Set the `TRAKTOR_APP_DATA_DIR` environment variable to override |
 
 ## Tests

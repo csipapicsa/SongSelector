@@ -4,6 +4,23 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.25.0] - 2026-11-03
+
+- **Rekordbox's playlists in the Browser**, under *Rekordbox Playlists*, read straight from Rekordbox's
+  own library (`master.db`), so nothing has to be exported and Rekordbox is not touched (it may be
+  running or closed). They behave like Traktor's: click or drag one to show its tracks in Rekordbox's
+  order (#), double-click to load it into the Playlist tab, right-click for *Import its missing tracks*
+  and *Copy to my playlists...*. Folders and order are kept; Rekordbox's smartlists are listed but not
+  evaluated; streaming tracks (Beatport, Apple Music) are skipped, they are not files.
+  - The library is found by itself (Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`);
+    *Import > Link Rekordbox library...* picks another one. It is read from a temporary copy, in the
+    background, and again whenever Rekordbox saves. If it cannot be read (e.g. a future Rekordbox
+    changes its format), the Browser keeps the last playlists and the status bar says why.
+  - Needs the new package `sqlcipher3-wheels` (in `requirements.txt`; the exe carries it). The
+    database key is Rekordbox's well-known one, taken from the MIT-licensed pyrekordbox project.
+  - Internally the Traktor playlist code is now shared with Rekordbox (`import_foreign_missing`,
+    `copy_foreign_playlist`); the packaged self-check also reads a small encrypted library.
+
 ## [4.24.0] - 2026-11-03
 
 - **The window title is now "SongSelector 4.24.0"** (name and version) instead of "Traktor Key Calculator".

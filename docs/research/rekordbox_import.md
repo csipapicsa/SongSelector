@@ -1,8 +1,9 @@
 # Importing Rekordbox playlists into SongSelector
 
-Checked 2026-11-03 on the development machine. Nothing is built yet; this is the feasibility and the plan.
-Compare what was done for Traktor's playlists in 4.23.0 (read-only entries in the Browser, "import its missing
-tracks", "copy to my playlists").
+Checked 2026-11-03 on the development machine. **Built the same day as route B (direct read, 4.25.0)**: the user
+did not want to export anything from Rekordbox by hand. Same features as Traktor's playlists in 4.23.0 (read-only
+entries in the Browser, "import its missing tracks", "copy to my playlists"). The text below is the comparison that
+led there; "Built" at the end says how.
 
 ## What is installed and where the data is
 
@@ -44,3 +45,16 @@ fields (rating 0-5, colour, key) would map onto the app's columns.
 
 Effort: about the same as the Traktor playlists work (parser, Browser root, menu, tests), plus a path mapping:
 Rekordbox stores locations as `file://localhost/E:/DJ/a.mp3` (XML) or `E:/DJ/a.mp3` (database).
+
+## Built (4.25.0): route B, without pyrekordbox
+
+- `core/rekordbox_library.py` opens a temporary copy of `master.db` with `sqlcipher3-wheels` (a 1 MB binary wheel; the
+  only new dependency) and runs three plain queries (`djmdPlaylist`, `djmdSongPlaylist` joined to `djmdContent`). The
+  key is the one published by pyrekordbox (MIT), kept in its obfuscated form. pyrekordbox and SQLAlchemy are not
+  needed, which keeps the exe small and avoids following pyrekordbox's API renames.
+- Measured on this library: 0.25 s for 4,166 tracks and 5 playlists; a re-read happens only when `master.db` (or its
+  `-wal`) changes size or time, in the background watcher also used for Traktor.
+- Not read: ratings, colours, BPM, key, cues of Rekordbox (columns exist: `Rating`, `ColorID`, `BPM`, `KeyID`,
+  `DJPlayCount`); streaming tracks (`FolderPath` is not a file path). Smartlists (`Attribute` 4) are listed only.
+- Risk that stays: the key or the schema may change with a future Rekordbox. Then the read fails with a message in
+  the status bar and the Browser keeps the last playlists; the XML export (route A) would be the fallback.

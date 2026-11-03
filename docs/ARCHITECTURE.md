@@ -43,6 +43,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `key_tables.py` | Static key lookup tables (also contains unused leftovers from the thesis project) |
 | `audio_metadata.py` | Read ID3 / FLAC / WAV tags with mutagen into `config.AudioMetadata` |
 | `traktor_collection.py` | Read-only, cached index of Traktor's `collection.nml`; lookup by exact path, then by unique filename + file size |
+| `rekordbox_library.py` | Read-only playlists (folders, order, file of each track) from Rekordbox's encrypted `master.db`, via `sqlcipher3` and the published key; reads a temporary copy. Same shape as `TraktorCollection`, so `ui/traktor_watcher.py` and the Browser serve both |
 | `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
 | `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded), the user's Song Selector rating/color, and the saved Library / Playlist lists |
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |

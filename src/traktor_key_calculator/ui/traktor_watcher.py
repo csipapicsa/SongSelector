@@ -1,10 +1,12 @@
-"""Watches Traktor's collection.nml and re-reads it in the background after Traktor saves.
+"""Watches Traktor's collection.nml (or Rekordbox's master.db) and re-reads it in the background
+after the program saves.
 
 Traktor rewrites the whole file (often by replacing it), mostly when it closes, so the
 folder is watched as well as the file, and a slow poll catches what the watcher misses
 (e.g. network drives). After a change the file must stay unchanged for SETTLE_MS before it
 is read: a half-written NML would not parse. Reading runs in a low-priority thread; the
 result arrives in the GUI thread as one TraktorCollection (the window applies it in one batch).
+Rekordbox's library works the same way: pass `reader=RekordboxLibrary` and its `signature`.
 """
 import os
 import sys
@@ -20,7 +22,7 @@ POLL_MS = 60000          # fallback check of size and modification time
 FIRST_CHECK_MS = 5000    # after start: changes made in Traktor while the app was closed
 
 
-def _signature(path):
+def file_signature(path):
     try:
         stat = os.stat(path)
         return stat.st_mtime_ns, stat.st_size
@@ -39,11 +41,14 @@ def _lower_thread_priority():
 
 
 class CollectionWatcher(QObject):
-    loaded = pyqtSignal(object)   # TraktorCollection, read after a change
+    loaded = pyqtSignal(object)   # TraktorCollection (or the reader's object), read after a change
+    failed = pyqtSignal(str)      # the file changed but could not be read: the message
     _done = pyqtSignal(object)    # from the reading thread
 
-    def __init__(self, path='', parent=None, first_check_ms=FIRST_CHECK_MS):
+    def __init__(self, path='', parent=None, first_check_ms=FIRST_CHECK_MS, reader=TraktorCollection,
+                 signature=file_signature):
         super().__init__(parent)
+        self._reader, self._signature = reader, signature
         self.path = ''
         self._read_signature = None   # signature of the file the last result came from
         self._pending = None          # signature seen at the last change, waiting to settle
@@ -87,14 +92,14 @@ class CollectionWatcher(QObject):
             return
         if self.path not in self._watcher.files() and os.path.isfile(self.path):
             self._watcher.addPath(self.path)  # Traktor replaced the file: watch the new one
-        signature = _signature(self.path)
+        signature = self._signature(self.path)
         if signature is None or signature == self._read_signature:
             return
         self._pending = signature
         self._settle.start(SETTLE_MS)  # restarts while Traktor keeps writing
 
     def _settled(self):
-        signature = _signature(self.path)
+        signature = self._signature(self.path)
         if self._stopped or signature is None:
             return
         if signature != self._pending and self._pending is not None:
@@ -111,7 +116,7 @@ class CollectionWatcher(QObject):
 
         def work():
             _lower_thread_priority()
-            collection = TraktorCollection(path)
+            collection = self._reader(path)
             collection._load()
             self._done.emit((path, signature, collection))
 
@@ -123,5 +128,7 @@ class CollectionWatcher(QObject):
         if self._stopped or path != self.path:
             return
         self._read_signature = signature  # an unreadable version is not retried; the next save is
-        if not collection.error:
+        if collection.error:
+            self.failed.emit(collection.error)
+        else:
             self.loaded.emit(collection)
