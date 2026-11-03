@@ -6,6 +6,8 @@ can be identified.
 
 ## [4.24.0] - 2026-11-03
 
+- **The window title is now "SongSelector 4.24.0"** (name and version) instead of "Traktor Key Calculator".
+
 - **Map and group only the listed tracks.** The new **Only listed tracks** button on the map
   arranges and groups just the tracks the List shows now (a genre, a playlist, a search result),
   so the layout, the groups and the closest-match similarities fit that set and separate it

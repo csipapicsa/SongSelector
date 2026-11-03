@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDi
 
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
+from traktor_key_calculator import __version__
 from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
 from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
@@ -64,7 +65,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
     """Main application window"""
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Traktor Key Calculator")
+        self.setWindowTitle(f"SongSelector {__version__}")
         self.setGeometry(100, 100, WINDOW_SIZE[0], WINDOW_SIZE[1])
         
         # Initialize components
