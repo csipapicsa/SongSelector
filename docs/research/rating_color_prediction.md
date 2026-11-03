@@ -63,6 +63,27 @@ Reading: the sound carries some signal for colours 1 and 5 (and 4), a little for
 nothing that would justify filling hundreds of empty cells automatically. A correction to the
 first exploratory read: it is colours 1 and 5, not only 5.
 
+## Other information: BPM, key, usage (2026-11-03, `experiments/rating_color/metadata.py`)
+
+Traktor's `collection.nml` holds BPM, key, loudness, bitrate, length, and how the track was *used*: play count,
+last played, import date, hot cues, cues and the number of playlists it is on. Same validation as above
+(development artists, grouped by artist); results in `experiments/results/2026-11-03_metadata.txt`.
+
+| Target | Sound only (CNN14) | All of the above, no sound | Both |
+|---|---|---|---|
+| Rating 4-5 vs 1-3 (AUC) | 0.61 | **0.66** | **0.67** |
+| ... without the usage features | 0.61 | 0.55 (BPM, key etc. alone: nothing) | 0.61 |
+| Rating 1-5, balanced accuracy | 22 % | 26 % | 26 % |
+| Colour 1-7, balanced accuracy | 20 % | 20 % | 23 % |
+| Colour 5 against the rest (AUC) | 0.84 | 0.77 | 0.83 |
+
+- **BPM, key, length, bitrate and loudness predict almost nothing about rating** (AUC 0.55); for colour they
+  carry some signal (colour 5: 0.76, probably slower tempos) but add little on top of the sound.
+- **Usage helps rating a bit** (0.61 to 0.66-0.67): played, cued and playlisted tracks are rated higher. But it is
+  a trap: it measures that a track was *used*, and the tracks that still need a rating are mostly unused
+  (never played: 77 % of the unlabelled tracks, against 44 % of the labelled ones; no hot cues: 80 % against 53 %).
+  A model that leans on usage would put "average" on exactly the new tracks it should help with.
+
 ## What the literature says (searched 2026-11-03; no DJ-specific study found)
 
 - Audio explains little of **personal liking**. Singing-voice liking: acoustic features barely
