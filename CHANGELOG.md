@@ -4,6 +4,20 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.25.1] - 2026-11-03
+
+- **Fixed: some tracks were never analysed ("has not been analysed yet" on the map, e.g. Adam Freeland -
+  L.I.F.E.).** The MP3 had a damaged frame near its end; the decoder stopped with an error and the
+  whole track was written off. A track is now analysed from what could be decoded when that is at
+  least half of it (and 10 s): the vector is an average over the whole track, so a missing last few
+  seconds change it very little. Of the 48 tracks in the library that had failed, 33 can be analysed
+  now (they lose 7 s at the end on average, at most 114 s). The other 15 stay failed: 3 are `.m4a` /
+  `.mp4` files, which the decoder cannot open at all, and 12 are broken early in the file.
+  - Tracks that failed earlier are tried again once, automatically, when the app starts (the
+    embeddings database is marked with a version; a future decoder improvement bumps it again).
+  - Dropping a track on the map that could not be analysed now says so ("cannot be on the map: its
+    audio could not be analysed (reason)") instead of "not analysed yet", which suggested waiting.
+
 ## [4.25.0] - 2026-11-03
 
 - **Rekordbox's playlists in the Browser**, under *Rekordbox Playlists*, read straight from Rekordbox's

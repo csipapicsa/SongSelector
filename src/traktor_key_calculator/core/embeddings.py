@@ -34,6 +34,10 @@ EMBEDDING_DIM = 2048
 # about 21% because ~87% of CNN14 embedding values are exactly zero (ReLU output).
 ENCODING = 'float16-zlib'
 _DECODE_BLOCK = 1 << 18  # frames per read, so a long file can be interrupted between blocks
+PARTIAL_MIN_SECONDS = 10  # a file that stops decoding is still analysed if this much, and
+PARTIAL_MIN_SHARE = 0.5   # this share of its length, could be read (see load_audio)
+# Bump when a change could make earlier failures succeed: failed tracks are then tried again once.
+_FAILURES_VERSION = 2
 
 
 class Cancelled(Exception):
@@ -47,19 +51,33 @@ def file_fingerprint(path):
 
 
 def load_audio(path, should_stop=lambda: False):
-    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True)."""
+    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True).
+
+    A damaged MP3 (a bad frame, often near the end) stops libsndfile with an error. The track
+    is still analysed from what was decoded if that is most of it (at least PARTIAL_MIN_SHARE of
+    the file and PARTIAL_MIN_SECONDS); the embedding is an average over the whole track, so a
+    missing last few seconds change it very little. Otherwise the error is raised.
+    """
     import soundfile
     import soxr
-    blocks = []
+    blocks, decoded = [], 0
     with soundfile.SoundFile(str(path)) as audio_file:
         sample_rate = audio_file.samplerate
-        while True:
-            if should_stop():
-                raise Cancelled()
-            block = audio_file.read(_DECODE_BLOCK, dtype='float32', always_2d=True)
-            if not len(block):
-                break
-            blocks.append(block.mean(axis=1))
+        expected = audio_file.frames  # an estimate for MP3; 0 when unknown
+        try:
+            while True:
+                if should_stop():
+                    raise Cancelled()
+                block = audio_file.read(_DECODE_BLOCK, dtype='float32', always_2d=True)
+                if not len(block):
+                    break
+                blocks.append(block.mean(axis=1))
+                decoded += len(block)
+        except Cancelled:
+            raise
+        except Exception:
+            if decoded < max(PARTIAL_MIN_SECONDS * sample_rate, PARTIAL_MIN_SHARE * max(expected, 0)):
+                raise
     mono = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
     if sample_rate != SAMPLE_RATE and len(mono):
         mono = soxr.resample(mono, sample_rate, SAMPLE_RATE, quality='HQ')
@@ -197,6 +215,10 @@ class EmbeddingStore:
         connection.execute('PRAGMA journal_mode=WAL')
         connection.execute('PRAGMA synchronous=NORMAL')
         connection.executescript(self._SCHEMA)
+        if connection.execute('PRAGMA user_version').fetchone()[0] < _FAILURES_VERSION:
+            with connection:  # a failure is remembered only until the decoder improves: retry them once
+                connection.execute('DELETE FROM embeddings WHERE error IS NOT NULL')
+                connection.execute(f'PRAGMA user_version = {_FAILURES_VERSION}')
         return connection
 
     @contextmanager
@@ -240,6 +262,13 @@ class EmbeddingStore:
             row = connection.execute('SELECT frames, dim, data FROM embeddings WHERE path_key = ? AND model = ? '
                                      'AND data IS NOT NULL', (path_key, model)).fetchone()
         return decode(row[2], row[0], row[1]) if row else None
+
+    def failure(self, path_key, model=MODEL_ID):
+        """Why a track could not be analysed (text), or None if it was analysed or not tried."""
+        with self._open() as connection:
+            row = connection.execute('SELECT error FROM embeddings WHERE path_key = ? AND model = ? '
+                                     'AND error IS NOT NULL', (path_key, model)).fetchone()
+        return row[0] if row else None
 
     def update_fingerprint(self, path_key, fingerprint):
         """After a tag-only edit the audio is unchanged: keep the embedding current."""

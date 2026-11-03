@@ -12,6 +12,7 @@
   the Traktor colour.
 """
 import os
+import sqlite3
 import threading
 from html import escape
 from dataclasses import dataclass, field
@@ -813,7 +814,14 @@ class SimilarityMapWidget(QWidget):
                 self.show_reference(key, fields)
                 return True
         name = os.path.basename(paths[0]) if paths else ''
-        self.status.setText(f'{name} is not on the map yet: it has not been analysed.')
+        try:
+            failure = self.store.failure(canonical_path(paths[0])) if paths else None
+        except sqlite3.Error:
+            failure = None
+        if failure:  # tried and failed: waiting would not help
+            self.status.setText(f'{name} cannot be on the map: its audio could not be analysed ({failure}).')
+        else:
+            self.status.setText(f'{name} is not on the map yet: it has not been analysed.')
         return False
 
     def show_reference(self, key, fields):

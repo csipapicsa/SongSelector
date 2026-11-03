@@ -654,6 +654,10 @@ class MapDropTests(MapWindowTestBase):
         self.drop_on_map(self.root / 'track24.mp3')  # in the library, but not analysed
         self.assertEqual(self.map.selected_key, self.key(7))
         self.assertIn('track24.mp3 is not on the map yet', self.map.status.text())
+        self.map.store.save_error(self.key(24), (1, 2), 'LibsndfileError: Unspecified internal error.')
+        self.drop_on_map(self.root / 'track24.mp3')  # tried and failed: the message says so, not "not analysed"
+        self.assertIn('track24.mp3 cannot be on the map', self.map.status.text())
+        self.assertIn('LibsndfileError', self.map.status.text())
 
 
 class ListGroupTests(MapWindowTestBase):
