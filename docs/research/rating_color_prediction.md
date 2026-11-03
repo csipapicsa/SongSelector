@@ -63,6 +63,32 @@ Reading: the sound carries some signal for colours 1 and 5 (and 4), a little for
 nothing that would justify filling hundreds of empty cells automatically. A correction to the
 first exploratory read: it is colours 1 and 5, not only 5.
 
+## Four embeddings compared (2026-11-03, 800 tracks, first 800 of the random extraction order)
+
+CNN14, MusiCNN, Discogs-EffNet and OpenL3 on exactly the same 800 tracks: 630 rated and 565 coloured
+tracks of the development artists, logistic regression, artist-grouped validation, 95 % intervals.
+`evaluate.py --model <m> --keys-of musicnn`, `neighbours.py`; results in `experiments/results/*_on-musicnn.json`.
+(Only 800 tracks, so the intervals are wide; the library has about 2,400 rated tracks.)
+
+| | CNN14 | MusiCNN | Discogs-EffNet | OpenL3 |
+|---|---|---|---|---|
+| Of a track's 10 nearest tracks, share with the same style (chance 35 %; 388 tracks with a clear style) | 71 % | 66 % | **86 %** | 55 % |
+| Rating 4-5 vs 1-3, AUC | 0.60 (0.55-0.64) | 0.61 (0.58-0.66) | 0.61 (0.57-0.65) | 0.58 (0.54-0.63) |
+| Rating 1-5, balanced accuracy | 21 % | 21 % | 22 % | 20 % |
+| Colour 1-7, balanced accuracy | 19 % | 18 % | 18 % | 19 % |
+| Colour 1 against the rest, AUC | 0.78 | 0.80 | 0.79 | 0.80 |
+| Colour 3 | 0.74 | 0.73 | 0.73 | 0.72 |
+| Colour 5 | 0.86 | 0.86 | 0.83 | 0.84 |
+| Colour 6 | 0.69 | 0.68 | 0.74 | 0.66 |
+
+**The four are indistinguishable on rating and colour (all intervals overlap), although they differ a lot in
+how well they group styles.** Discogs-EffNet, trained on Discogs styles, is much better at "same style
+nearby" (86 % against CNN14's 71 %), and that did not carry over to rating or colour. So the limit is
+not how well the embedding captures sound: it is what in the sound the labels depend on, i.e. the labels.
+Cost-benefit: no reason to move away from CNN14 for this task.
+
+Speeds are in `model_candidates.md`. The extraction of these three models was stopped at 800 tracks (resumable).
+
 ## Other information: BPM, key, usage (2026-11-03, `experiments/rating_color/metadata.py`)
 
 Traktor's `collection.nml` holds BPM, key, loudness, bitrate, length, and how the track was *used*: play count,

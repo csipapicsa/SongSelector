@@ -1,6 +1,6 @@
 # Research plan: suggest missing ratings and colours from sound
 
-Status 2026-11-03: step 0 done; step 1 sheet made (docs/research/sheets/), waiting for the user; step 2 extraction running. Findings so far: [rating_color_prediction.md](rating_color_prediction.md).
+Status 2026-11-03: step 0 done; step 1 sheet made (docs/research/sheets/), waiting for the user; step 2 done on 800 tracks: no small model beats CNN14; step 3 on hold; step 4 (BPM, key, usage) done. Findings so far: [rating_color_prediction.md](rating_color_prediction.md).
 
 ## Goal and the decision it serves
 

@@ -26,6 +26,7 @@ parser.add_argument('--app-data', default=str(REPO / 'dist'), help="folder of th
 parser.add_argument('--keys-of', default='', help='only the tracks another model has vectors for (same tracks for a fair comparison)')
 parser.add_argument('--refresh', action='store_true', help='copy the app data again')
 parser.add_argument('--probes', default='majority,knn,logistic')
+parser.add_argument('--min-positives', default=60, help='skip one-against-rest rows with fewer positives (30 for small subsets)')
 parser.add_argument('--final', action='store_true',
                     help='ONCE, for the chosen setup: train on the development artists, test on the locked 20 %%')
 args = parser.parse_args() if sys.argv[0].endswith('evaluate.py') else parser.parse_args([])
@@ -49,7 +50,7 @@ print(f'{args.model}: {len(vectors.keys)} tracks, {vectors.matrix.shape[1]} valu
 # * Colour 0 means "no colour" in Traktor and is left out, like unrated tracks.
 
 # %%
-MIN_POSITIVES = 60
+MIN_POSITIVES = int(args.min_positives)
 results = {'model': args.model, 'tracks': len(vectors.keys), 'date': time.strftime('%Y-%m-%d'), 'targets': {}}
 
 
