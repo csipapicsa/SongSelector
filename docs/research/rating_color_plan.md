@@ -1,6 +1,6 @@
 # Research plan: suggest missing ratings and colours from sound
 
-Status 2026-11-03: steps 0 done, step 1 next. Findings so far: [rating_color_prediction.md](rating_color_prediction.md).
+Status 2026-11-03: step 0 done; step 1 sheet made (docs/research/sheets/), waiting for the user; step 2 extraction running. Findings so far: [rating_color_prediction.md](rating_color_prediction.md).
 
 ## Goal and the decision it serves
 
@@ -37,7 +37,7 @@ colour 5 31 %. Ratings are far from it.
 ## Steps
 
 0. **Harness and CNN14 baseline.** Done: `experiments/rating_color/evaluate.py`, result 2026-11-03.
-1. **How consistent are the labels?** Export about 60 labelled tracks (stratified by rating and
+1. **How consistent are the labels?** (sheet: `sheets/rerate_<date>.csv`, `taste_sheets.py rerate-make/rerate-score`.) Export about 60 labelled tracks (stratified by rating and
    colour) as a blind sheet, re-rate them without seeing the old values, compute agreement
    (weighted kappa; share exactly equal). This is the ceiling for any model. If agreement is
    low, stop expecting a model to do better and use the time on easier tools (bulk set by group).

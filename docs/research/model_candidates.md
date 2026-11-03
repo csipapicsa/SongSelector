@@ -51,9 +51,22 @@ Speed on the same 10 library tracks (60.8 minutes of audio) used for the CNN14 m
 [audio_embeddings.md](audio_embeddings.md): model time per 6-minute track on the GPU and on 4 CPU
 threads (decoding excluded), model load time, vector size per track.
 
-Measured so far: CNN14 only.
+Measured 2026-11-03 (GTX 1650 Ti through DirectML, one process, 4 tracks of 6-7 minutes, scaled to 6
+minutes; the three small models' time includes their numpy spectrogram, which runs on the CPU):
 
-| Model | GPU, s per 6-min track | CPU (4 threads), s | Load, s | Values per track |
-|---|---|---|---|---|
-| CNN14 | 0.6 | 7.1 | 1.0 | 4096 (mean + std of 2048) |
-| others | *to measure* | *to measure* | *to measure* | |
+| Model | GPU, s per 6-min track | Values per track (mean + std) | Notes |
+|---|---|---|---|
+| CNN14 | 0.6 (+ 0.8 decoding) | 4096 | from audio_embeddings.md, batches of 16 |
+| MusiCNN | 1.1 | 400 | needed graph optimisation off on DirectML, otherwise onnxruntime falls back to the CPU (3x slower) |
+| Discogs-EffNet | 0.4 | 2560 | the dynamic-batch ONNX (`discogs-effnet-bsdynamic-1.onnx`) |
+| OpenL3 | 1.5 | 1024 | one 1 s window every 3 s; every second would be about 3x as long (the spectrogram is the cost) |
+| MAEST, MERT, CLAP | *to measure* | | PyTorch; not integrated |
+
+Reading: only Discogs-EffNet is faster than CNN14. MusiCNN and OpenL3 are small files but not faster here,
+because their cost is the CPU spectrogram, not the network. Extracting all three for the whole library ran at
+about 8 s per track and worker with two workers sharing the GPU and CPU (4+ hours for 3,600 tracks).
+
+Front ends were reimplemented in numpy (Essentia has no Windows build here) and checked (`selfcheck.py`):
+the MusiCNN spectrogram equals librosa's to 5e-7, and Discogs-EffNet names the right styles for tracks of
+known genre ("Breaks" for breakbeat, "Drum n Bass / Jungle" for DnB, "House / Tech House" for house).
+MusiCNN's 50 tags are all electronic / dance for electronic music, which is what its training data can say.
