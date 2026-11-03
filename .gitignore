@@ -22,3 +22,6 @@ imported_tracks.json
 .idea/
 Thumbs.db
 desktop.ini
+
+# Research scratch: downloaded models, data snapshots, extracted embeddings (large, local only)
+.research_cache/
