@@ -4,6 +4,17 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.24.0] - 2026-11-03
+
+- **Map and group only the listed tracks.** The new **Only listed tracks** button on the map
+  arranges and groups just the tracks the List shows now (a genre, a playlist, a search result),
+  so the layout, the groups and the closest-match similarities fit that set and separate it
+  better than the whole library does. It takes seconds (about 0.3 s for 200 tracks, 3 s for 500).
+  - It is a snapshot: change the List and press **Re-arrange map** to map the new list. Switch the
+    button off to get the library map back; the library's stored layout is never touched.
+  - The group summary says "of the N mapped tracks", and the List's Group column holds the groups
+    of this smaller set (tracks outside it have none).
+
 ## [4.23.0] - 2026-10-30
 
 - **Fixed: tracks dropped while the List shows a playlist were not added to it.** Dropping files

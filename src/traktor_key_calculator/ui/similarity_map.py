@@ -115,25 +115,29 @@ def _layout(keys, vectors, stored, dims, should_stop):
     return positions
 
 
-def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=False):
+def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=False, only=None):
     """Load embeddings, compute vectors and positions (and the 3D view's, if asked); None if
-    stopped. Slow: run in a thread."""
-    matrices = store.load_many()
+    stopped. Slow: run in a thread.
+
+    only: path_keys to map on their own. Vectors (centred on these tracks), layout and
+    everything built on them then fit just this set, e.g. one genre, which separates it better
+    than the whole library does. Computed fresh and not stored: the library's layout stays."""
+    matrices = store.load_many() if only is None else store.load_many(only)
     keys = sorted(matrices)
     vectors = track_vectors([matrices[key] for key in keys])
-    stored = {} if rearrange else store.load_layout()
+    stored = {} if rearrange or only is not None else store.load_layout()
     positions = _layout(keys, vectors, stored, 2, should_stop)
     if positions is None:
         return None
-    if positions != stored:
+    if only is None and positions != stored:
         store.save_layout(positions)
     positions3d = {}
     if with_3d:
-        stored = {} if rearrange else store.load_layout_3d()
+        stored = {} if rearrange or only is not None else store.load_layout_3d()
         positions3d = _layout(keys, vectors, stored, 3, should_stop)
         if positions3d is None:
             return None
-        if positions3d != stored:
+        if only is None and positions3d != stored:
             store.save_layout_3d(positions3d)
     return MapData(keys, vectors, positions, positions3d)
 
@@ -454,6 +458,9 @@ class SimilarityMapWidget(QWidget):
         self.match_keys = []      # closest matches of the selected track, ringed on the map
         self._base_status = ''
         self._loading = False
+        self.only = None          # frozenset of path_keys while the map shows just those tracks, else None
+        self._again = False       # the mode changed during a load: load once more when it ends
+        self._fit_next = False    # fit the view to the dots when the next load arrives
         self._stop = threading.Event()
         self._loader = _Loader()
         self._loader.done.connect(self._loaded)
@@ -529,8 +536,11 @@ class SimilarityMapWidget(QWidget):
                                        'The first 3D arrangement takes about as long as Re-arrange map.')
         self.view_3d_button.toggled.connect(self.set_3d)
         self.rearrange_button = QPushButton('Re-arrange map')
-        self.rearrange_button.setToolTip('Compute the map again from all analysed tracks (takes a few minutes).')
-        self.rearrange_button.clicked.connect(lambda: self.load(rearrange=True))
+        self.rearrange_button.clicked.connect(self._rearrange)
+        self.only_button = QPushButton('Only listed tracks')
+        self.only_button.setCheckable(True)
+        self.only_button.toggled.connect(self.set_only_listed)
+        self._describe_buttons()
 
         self.details = QLabel('Click a track on the map.')
         self.details.setWordWrap(True)
@@ -566,6 +576,7 @@ class SimilarityMapWidget(QWidget):
         bar.addStretch()
         bar.addWidget(self.view_3d_button)
         bar.addWidget(fit)
+        bar.addWidget(self.only_button)
         bar.addWidget(self.rearrange_button)
         group_bar = QHBoxLayout()
         for widget in (QLabel('Groups:'), self.grouping, self.grouping_parameter, self.grouping_summary):
@@ -614,6 +625,34 @@ class SimilarityMapWidget(QWidget):
 
     # -- data ---------------------------------------------------------------
 
+    def _describe_buttons(self):
+        if self.only is None:
+            self.rearrange_button.setToolTip('Compute the map again from all analysed tracks (takes a few minutes).')
+        else:
+            self.rearrange_button.setToolTip('Map the tracks the list shows now, on their own (seconds).')
+        self.only_button.setToolTip(
+            'Map and group only the tracks the list shows now (a genre, a playlist...): the arrangement and\n'
+            'the groups then fit just these tracks, which separates them better than the whole library does.\n'
+            'Takes seconds. Change the list and press Re-arrange map to map the new list; switch this off\n'
+            'to get the library map back.')
+
+    def set_only_listed(self, on):
+        """Map just the tracks the list shows now (a snapshot), or the whole library again."""
+        self.only = frozenset(self.listed) if on else None
+        self._describe_buttons()
+        self._fit_next = True
+        if self.data is None:
+            return
+        if self._loading:
+            self._again = True  # the running load is for the other mode
+        else:
+            self.load()
+
+    def _rearrange(self):
+        if self.only is not None:
+            self.only = frozenset(self.listed)  # the list as it is now
+        self.load(rearrange=True)
+
     def load(self, rearrange=False):
         """(Re)compute map data in the background; the view keeps working meanwhile."""
         if self._loading:
@@ -622,14 +661,15 @@ class SimilarityMapWidget(QWidget):
         self.rearrange_button.setEnabled(False)
         first_3d = self.view_3d and (self.data is None or not self.data.positions3d)
         self.status.setText('Arranging the map... (similar tracks are being placed close together)'
-                            + (' The first 3D view takes a few minutes.' if first_3d else '')
-                            if rearrange or self.data is None or first_3d else 'Updating the map...')
+                            + (' The first 3D view takes a few minutes.' if first_3d and self.only is None else '')
+                            if rearrange or self.data is None or first_3d or self.only is not None
+                            else 'Updating the map...')
         self._stop.clear()
-        with_3d = self.view_3d
+        with_3d, only = self.view_3d, self.only
 
         def work():
             try:
-                result = build_map_data(self.store, rearrange, self._stop.is_set, with_3d)
+                result = build_map_data(self.store, rearrange, self._stop.is_set, with_3d, only)
             except Exception as error:  # e.g. database busy: report, keep the old map
                 result = error
             self._loader.done.emit(result)
@@ -641,12 +681,17 @@ class SimilarityMapWidget(QWidget):
     def _loaded(self, result):
         self._loading = False
         self.rearrange_button.setEnabled(True)
+        if self._again:  # the mode changed while this was computed: this result is for the other one
+            self._again = False
+            self.load()
+            return
         if isinstance(result, Exception):
             self.status.setText(f'Could not build the map: {result}')
             return
         if result is None:
             return
-        first = self.data is None
+        first = self.data is None or self._fit_next
+        self._fit_next = False
         self.data = result
         self._rebuild_dots()
         if first:
@@ -712,7 +757,8 @@ class SimilarityMapWidget(QWidget):
         self.groups = result
         labels = np.array(list(result.values()))
         sizes = np.bincount(labels[labels >= 0]) if (labels >= 0).any() else np.zeros(0, int)
-        summary = f'{len(sizes)} groups of all {len(labels)} analysed tracks'
+        summary = f'{len(sizes)} groups of ' + (f'all {len(labels)} analysed tracks' if self.only is None
+                                                else f'the {len(labels)} mapped tracks')
         if len(sizes):
             summary += f'; largest {sizes[0] / len(labels):.0%}'
         if (labels < 0).any():
@@ -906,8 +952,12 @@ class SimilarityMapWidget(QWidget):
             dot.setBrush(QBrush(self._dot_colour(key, fields)))
             self._outline(key)
         missing = len(self.fields) - shown
-        self._base_status = (f'{shown} tracks on the map' +
-                             (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '') +
+        if self.only is None:
+            note = f'; {missing} listed tracks are not analysed yet' if missing > 0 else ''
+        else:
+            note = ' (only the tracks listed when the map was arranged)' + \
+                (f'; {missing} listed tracks are not on it: press Re-arrange map' if missing > 0 else '')
+        self._base_status = (f'{shown} tracks on the map' + note +
                              '. Scroll: zoom, drag background: move, drag dot: file to Traktor, '
                              'hover: details, click: closest matches, Ctrl+click: compare with the selected track.')
         if self.selected_key not in self.fields:

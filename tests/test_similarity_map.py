@@ -416,6 +416,41 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual({key: dot.brush().color().name() for key, dot in self.map.dots.items()}, traktor)
         self.assertFalse(self.map.grouping_parameter.isVisible())
 
+    def wait_for_map(self):
+        deadline = time.monotonic() + 60
+        while (self.map._loading or self.map._again) and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.01)
+        self.application.processEvents()
+
+    def test_only_listed_tracks_are_mapped_and_grouped_on_their_own_and_the_library_map_returns(self):
+        store = EmbeddingStore(self.root / 'embeddings.sqlite')
+        library_layout = store.load_layout()
+        self.map.grouping.setCurrentIndex(self.map.grouping.findData('kmeans'))
+        self.map.grouping_parameter.setValue(2)
+        self.wait_for_groups()
+        self.window.search_bar.setText('breaks')
+        self.map.only_button.setChecked(True)
+        self.wait_for_map()
+        self.wait_for_groups()
+        self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(12)})
+        self.assertEqual(set(self.map.groups), set(self.map.data.keys))  # grouped among themselves
+        self.assertIn('of the 12 mapped tracks', self.map.grouping_summary.text())
+        self.assertEqual(store.load_layout(), library_layout)             # the library layout is untouched
+        self.assertEqual(self.visible(), set(self.map.data.keys))
+        self.window.search_bar.clear()                                     # a snapshot: the list moved on
+        self.assertEqual(self.visible(), {self.key(i) for i in range(12)})
+        self.assertIn('Re-arrange map', self.map.status.text() + self.map._base_status)
+        self.map.rearrange_button.click()                                  # maps the list as it is now
+        self.wait_for_map()
+        self.assertEqual(len(self.map.data.keys), 24)
+        self.map.only_button.setChecked(False)
+        self.wait_for_map()
+        self.wait_for_groups()
+        self.assertEqual(len(self.map.data.keys), 24)
+        self.assertIn('of all 24 analysed tracks', self.map.grouping_summary.text())
+        self.assertEqual(store.load_layout(), library_layout)
+
     def test_every_grouping_method_runs_on_the_map(self):
         for method in ('kmeans', 'communities', 'density'):
             self.map.grouping.setCurrentIndex(self.map.grouping.findData(method))
