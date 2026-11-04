@@ -132,8 +132,8 @@ class RatingGuiTests(unittest.TestCase):
     def test_refresh_csv_load_and_collection_link_enrich_ratings(self):
         window=self.window()
         table=self.library()
-        with patch.object(window.data_manager,'load_default_data',return_value=table):
-            window.refresh_data()
+        window.library_store.upsert_tracks(table.to_dict('records'))  # Refresh rebuilds from the collection
+        window.refresh_data()
         self.assertEqual(window.table.iloc[0]['Rating'],5)
         csv=self.root/'library.csv'
         table.to_csv(csv,index=False)

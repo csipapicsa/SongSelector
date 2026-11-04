@@ -37,7 +37,7 @@ _DECODE_BLOCK = 1 << 18  # frames per read, so a long file can be interrupted be
 PARTIAL_MIN_SECONDS = 10  # a file that stops decoding is still analysed if this much, and
 PARTIAL_MIN_SHARE = 0.5   # this share of its length, could be read (see load_audio)
 # Bump when a change could make earlier failures succeed: failed tracks are then tried again once.
-_FAILURES_VERSION = 2
+_FAILURES_VERSION = 3  # 3: FFmpeg (PyAV) as a second decoder; 2: partial decoding
 
 
 class Cancelled(Exception):
@@ -50,17 +50,19 @@ def file_fingerprint(path):
     return stat.st_size, stat.st_mtime_ns
 
 
-def load_audio(path, should_stop=lambda: False):
-    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True).
+def _enough(decoded_seconds, expected_seconds):
+    """A file that stops decoding is still analysed if at least PARTIAL_MIN_SECONDS and
+    PARTIAL_MIN_SHARE of its length could be read: the embedding is an average over the whole
+    track, so a missing last stretch changes it very little."""
+    return decoded_seconds >= max(PARTIAL_MIN_SECONDS, PARTIAL_MIN_SHARE * max(expected_seconds, 0))
 
-    A damaged MP3 (a bad frame, often near the end) stops libsndfile with an error. The track
-    is still analysed from what was decoded if that is most of it (at least PARTIAL_MIN_SHARE of
-    the file and PARTIAL_MIN_SECONDS); the embedding is an average over the whole track, so a
-    missing last few seconds change it very little. Otherwise the error is raised.
-    """
+
+def _read_soundfile(path, should_stop):
+    """(mono float32 at 32 kHz, problem): problem is None, or the error that stopped libsndfile
+    after enough was decoded. Raises if the file cannot be opened or too little was decoded."""
     import soundfile
     import soxr
-    blocks, decoded = [], 0
+    blocks, decoded, problem = [], 0, None
     with soundfile.SoundFile(str(path)) as audio_file:
         sample_rate = audio_file.samplerate
         expected = audio_file.frames  # an estimate for MP3; 0 when unknown
@@ -75,13 +77,72 @@ def load_audio(path, should_stop=lambda: False):
                 decoded += len(block)
         except Cancelled:
             raise
-        except Exception:
-            if decoded < max(PARTIAL_MIN_SECONDS * sample_rate, PARTIAL_MIN_SHARE * max(expected, 0)):
+        except Exception as error:  # a bad frame, often near the end of an MP3
+            if not _enough(decoded / sample_rate, expected / sample_rate):
                 raise
+            problem = error
     mono = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
     if sample_rate != SAMPLE_RATE and len(mono):
         mono = soxr.resample(mono, sample_rate, SAMPLE_RATE, quality='HQ')
-    return mono.astype(np.float32, copy=False)
+    return mono.astype(np.float32, copy=False), problem
+
+
+def _read_av(path, should_stop):
+    """Mono float32 at 32 kHz decoded with FFmpeg (PyAV). It reads what libsndfile cannot: AAC
+    (.m4a, .mp4) and MP3s with damaged frames, which FFmpeg skips and reads on past, as its own
+    command line does. A file read without any damage is returned whatever its length; after damage
+    it must pass _enough. Raises (ImportError if PyAV is missing) when too little could be decoded."""
+    import av
+    resampler = av.AudioResampler(format='fltp', rate=SAMPLE_RATE)  # keeps the channels; averaged below
+    pieces, damaged = [], False
+    with av.open(str(path)) as container:
+        stream = container.streams.audio[0]
+        expected = container.duration / av.time_base if container.duration else 0
+        try:
+            for packet in container.demux(stream):
+                if should_stop():
+                    raise Cancelled()
+                try:
+                    frames = packet.decode()
+                except av.error.FFmpegError:  # a damaged packet: skip it
+                    damaged = True
+                    continue
+                for frame in frames:
+                    pieces.extend(piece.to_ndarray().mean(axis=0) for piece in resampler.resample(frame))
+            pieces.extend(piece.to_ndarray().mean(axis=0) for piece in resampler.resample(None))
+        except av.error.FFmpegError:  # the file cannot be read on from here
+            damaged = True
+    audio = np.concatenate(pieces).astype(np.float32, copy=False) if pieces else np.zeros(0, dtype=np.float32)
+    if not len(audio) or (damaged and not _enough(len(audio) / SAMPLE_RATE, expected)):
+        raise ValueError(f'FFmpeg decoded only {len(audio) / SAMPLE_RATE:.0f} s of {expected:.0f} s')
+    return audio
+
+
+def load_audio(path, should_stop=lambda: False):
+    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True).
+
+    libsndfile decodes first (MP3, FLAC, WAV). If it cannot open the file (AAC) or stops at a
+    damaged frame, FFmpeg is tried as well and the longer result is used; see _enough for how
+    little may be missing. If neither decodes enough, libsndfile's error is raised.
+    """
+    candidates, problem = [], None
+    try:
+        audio, problem = _read_soundfile(path, should_stop)
+        candidates.append(audio)
+    except Cancelled:
+        raise
+    except Exception as error:
+        problem = error
+    if problem is not None:
+        try:
+            candidates.append(_read_av(path, should_stop))
+        except Cancelled:
+            raise
+        except Exception:  # PyAV not installed, or FFmpeg cannot read the file either
+            pass
+    if not candidates:
+        raise problem
+    return max(candidates, key=len)
 
 
 def split_chunks(audio):

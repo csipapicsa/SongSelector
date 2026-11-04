@@ -4,6 +4,27 @@ Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
 
+## [4.26.0] - 2026-11-04
+
+- **AAC files (`.m4a`, `.mp4`) and damaged MP3s can be analysed.** The decoder used so far
+  (libsndfile) cannot open AAC and stops at a bad MP3 frame. FFmpeg, through the new `av` package
+  (PyAV), is now the second decoder: it is tried when libsndfile fails or stops early, and the longer
+  result is used. FFmpeg skips damaged frames and reads on, so Adam Freeland - L.I.F.E. is decoded in
+  full (379.8 s) instead of losing its last second. Of the 15 library tracks that could not be
+  analysed in 4.25.1 (3 AAC, 12 damaged), all 15 decode now (the worst loses 2 s of 671 s).
+  - A short complete AAC sample (a few seconds) is fine; the "at least half and 10 s" rule applies only
+    to files that are damaged.
+  - Tracks that failed before are tried again once at the next start (the failure version is 3 now).
+  - The exe gets bigger: the PyAV wheel carries FFmpeg (about 70 MB of DLLs). That FFmpeg build is
+    GPL (it includes libx264/libx265): fine for a personal tool, to be reconsidered if the exe is
+    ever distributed. The packaged self-check writes and reads an AAC file.
+- **The temporary library CSV (`music_test.csv`) is gone.** The app only read it on a very first
+  start and when *Refresh* was pressed. A fresh install now starts with an empty library; tracks come
+  in by import. **Refresh now rebuilds the list from every track in `library.sqlite`** (the collection
+  of all tracks the app has ever loaded) instead of "CSV + imported tracks": without this, Refresh
+  would have dropped the 2,396 tracks that only the CSV had brought in. *Load CSV* (a CSV file you
+  pick) is unchanged. The packaged self-check and a test now expect an empty first start.
+
 ## [4.25.1] - 2026-11-03
 
 - **Fixed: some tracks were never analysed ("has not been analysed yet" on the map, e.g. Adam Freeland -

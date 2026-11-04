@@ -102,11 +102,6 @@ MIN_BPM = 70
 MAX_BPM = 200
 
 
-# Read-only files shipped with the app (bundled into the exe by PyInstaller).
-PACKAGE_DATA_DIR = Path(__file__).resolve().parent / 'data'
-DEFAULT_LIBRARY_CSV = PACKAGE_DATA_DIR / 'music_test.csv'
-
-
 def _default_app_data_dir():
     """Where settings and imported tracks are stored.
 

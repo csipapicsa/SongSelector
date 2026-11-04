@@ -34,6 +34,30 @@ def _check_embedding_process():
     return f'ok, {matrix.shape[0]}x{matrix.shape[1]} on {analyzer.device}'
 
 
+def _check_aac_decoding():
+    """Writes a short AAC (.m4a) file with FFmpeg and decodes it with the app's loader: proves the
+    FFmpeg libraries (PyAV) are in the exe and that the fallback after libsndfile works."""
+    import av
+    import numpy as np
+    from traktor_key_calculator.config import APP_DATA_DIR
+    from traktor_key_calculator.core.embeddings import SAMPLE_RATE, load_audio
+    path=APP_DATA_DIR/'aac_check.m4a'
+    seconds=np.arange(4*44100)/44100
+    tone=(0.3*np.sin(2*np.pi*440*seconds)).astype(np.float32)
+    with av.open(str(path),'w',format='ipod') as container:
+        stream=container.add_stream('aac',rate=44100)
+        stream.layout='stereo'
+        frame=av.AudioFrame.from_ndarray(np.stack([tone,tone]),format='fltp',layout='stereo')
+        frame.sample_rate=44100
+        for packet in stream.encode(frame)+stream.encode(None):
+            container.mux(packet)
+    audio=load_audio(path)
+    path.unlink()
+    assert abs(len(audio)/SAMPLE_RATE-4)<0.2,f'Decoded {len(audio)/SAMPLE_RATE:.2f} s of a 4 s AAC file'
+    assert abs(float(np.sqrt((audio**2).mean()))-0.3/2**0.5)<0.03,'AAC file decoded at the wrong level'
+    return 'ok'
+
+
 def _check_rekordbox_reader():
     """Writes a small encrypted library like Rekordbox's master.db and reads its playlists with
     the app's own reader: proves the SQLCipher module and the key work inside the frozen exe."""
@@ -109,14 +133,10 @@ def run():
         settings_path.write_text(json.dumps(legacy))
         window=TraktorKeyCalculator()
         assert window.search_column_actions['Rating'].isChecked()
-        library_ratings=sum(bool(window.candidate_tree.topLevelItem(i).text(HEADER_INDEX['Rating']))
-                            for i in range(window.candidate_tree.topLevelItemCount()))
-        if window.importer.collection.by_path:
-            assert library_ratings>0,'Existing library ratings were not enriched'
+        baseline=window.candidate_tree.topLevelItemCount()
+        assert baseline==0,f'A fresh install must start with an empty library, found {baseline} tracks'
         window.importer=TrackImporter(test_collection)
         window.coloring_mode='song'
-        baseline=window.candidate_tree.topLevelItemCount()
-        assert baseline>=2920,baseline
         window.bpm_slider.setValue(100)
 
         def drop(tree,paths):
@@ -241,15 +261,16 @@ def run():
         assert restored.delete_duplicate_tracks()==0
         restored.close()
         rekordbox=_check_rekordbox_reader()
+        aac=_check_aac_decoding()
         embedding=_check_embedding_process()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
                 'drop_events':True,'duplicates':True,'playlist_key_at_150_bpm':'G major',
                 'imports_survive_restart':True,'real_open_key_mp3':real_checked,
                 'traktor_category_colors':True,'key_colors_follow_tempo':True,'painted_color_dot':True,'numeric_search_comparisons':True,
-                'ratings_visible_and_searchable':True,'existing_library_ratings':library_ratings,
+                'ratings_visible_and_searchable':True,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'embedding_process':embedding}
+                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}

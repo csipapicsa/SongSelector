@@ -433,7 +433,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         
         # Buttons
         self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.setToolTip('Rebuild the library list from the default CSV plus all imported tracks')
+        self.refresh_button.setToolTip('Rebuild the library list from every track of the collection (library.sqlite)')
         self.refresh_button.clicked.connect(self.refresh_data)
         control_layout.addWidget(self.refresh_button)
         
@@ -799,8 +799,9 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
             self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(message)
     
-    def _load_library(self, table):
-        merged = merge_tracks(table, self.saved_imports.values())
+    def _load_library(self, table, records=None):
+        """A library list from `table` plus the tracks imported so far (or `records`)."""
+        merged = merge_tracks(table, self.saved_imports.values() if records is None else records)
         return self._with_user_fields(enrich_ratings(merged, self.importer.collection))
 
     def _rekordbox_changed(self, library):
@@ -851,9 +852,9 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
     def _restore_lists(self):
         """Load the library and playlist saved at the last change.
 
-        On the first start (no saved library list yet) the library is built from the
-        default CSV plus imports saved by versions up to 4.5.0 in imported_tracks.json.
-        That file is only read, and is kept as a backup.
+        On the first start (no saved library list yet) the library is empty plus the imports
+        saved by versions up to 4.5.0 in imported_tracks.json. That file is only read, and is
+        kept as a backup.
         """
         try:
             if self.library_store.track_count() == 0:
@@ -1377,8 +1378,13 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
             self.start_embedding_analysis()
 
     def refresh_data(self):
-        """Rebuild the library list from the default CSV plus all imported tracks"""
-        self.table = self._load_library(self.data_manager.load_default_data())
+        """Rebuild the library list from every track of the collection (library.sqlite)"""
+        try:
+            records = self.library_store.all_tracks().values()
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Could not read {self.library_store.path}: {error}')
+            return
+        self.table = self._load_library(pd.DataFrame(), records)
         self._save_library()
         self._queue_embeddings()
         self.populate_tree()  # keeps the current sort

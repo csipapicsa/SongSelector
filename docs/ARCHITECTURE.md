@@ -50,7 +50,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
 | `embeddings.py` | CNN14 embeddings: `load_audio`, `Cnn14Embedder` (onnxruntime, GPU if available), `EmbeddingStore` (`embeddings.sqlite`), `run_analysis` (entry point of the analysis process). Must not import Qt |
-| `data_manager.py` | Loads the library CSV (bundled `data/music_test.csv` by default) into a pandas DataFrame |
+| `data_manager.py` | Loads a library CSV picked by the user (*Load CSV*) into a pandas DataFrame; `load_default_data` is the empty starting library |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
 
@@ -89,8 +89,8 @@ Until 4.14.0 they were always hidden, which made searches miss them without noti
 
 ```text
 start ──> library.sqlite: saved 'Library' list ──> DataFrame (window.table) ──> _track_item() per row ──> tree rows
-          (first start only: data/music_test.csv          │                        │
-           + imported_tracks.json)                        │                        └─ KeyCalculator at slider BPM
+          (first start only: empty, plus                  │                        │
+           the old imported_tracks.json)                  │                        └─ KeyCalculator at slider BPM
                                                           └─ saved 'Playlist' list ──> left panel
 Dropped audio file ──> TrackImporter.read()
                          ├─ tags (mutagen)
@@ -152,9 +152,11 @@ Modelled on how Traktor and Rekordbox separate the collection from playlists:
   the step to `LibraryStore._migrate`, which upgrades existing files in place.
 
 On start, the window restores both lists (`_restore_lists`). Only on the very
-first start, when no `Library` list exists yet, is the library built from
-`data/music_test.csv` plus the old `imported_tracks.json`. After that, *Refresh*
-rebuilds the list from those sources on request, and *Load CSV* replaces it.
+first start, when no `Library` list exists yet, is the library empty (plus what the old
+`imported_tracks.json` holds). Tracks come in by import. *Refresh* rebuilds the list from
+every track in the collection table (`LibraryStore.all_tracks`) on request, and *Load CSV*
+replaces it with a CSV file you pick. (Until 4.26.0 a bundled `music_test.csv` with the
+developer's own 2,920 tracks was the starting library; those tracks live in `library.sqlite` now.)
 SQLite was chosen after measuring on the real 5,100-track library: loading it
 takes 10 ms in SQLite vs 18 ms in JSON, and updating one track 0.1 ms vs
 22 ms, because JSON rewrites the whole file. Writes are transactional.
@@ -176,8 +178,15 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   once filled the OS pipe, and the queue's feeder thread then kept the app from
   exiting (regression test: `test_app_can_exit_after_stopping_with_a_large_backlog`).
 - **Up to date = same file size and mtime** (`file_fingerprint`). Undecodable
-  files are stored with `error` and retried only when the file changes. A tag
-  edit updates the fingerprint, because the audio itself did not change.
+  files are stored with `error` and retried only when the file changes (or once
+  after a decoder improvement: `_FAILURES_VERSION`, kept in `PRAGMA user_version`).
+  A tag edit updates the fingerprint, because the audio itself did not change.
+- **Decoding** (`load_audio`): soundfile/libsndfile first (MP3, FLAC, WAV). If it cannot
+  open the file (AAC: `.m4a`, `.mp4`) or stops at a damaged frame, FFmpeg through PyAV
+  (`av`) is tried too and the longer result is used. A damaged file is still analysed when at
+  least half of it (and 10 s) decoded, `_enough`. Both give the same audio (correlation
+  0.99998 on a real track). The PyAV wheel carries FFmpeg (about 70 MB of DLLs, a GPL build:
+  it includes libx264/libx265), which matters only if the exe is ever distributed.
 - **Storage:** float16 + zlib, lossless; about 17–21 % of raw size, because ~87 %
   of the values are exactly 0. A 6-minute track takes ~50 KB. WAL mode lets the
   UI read while the process writes.
@@ -268,7 +277,5 @@ fixed colours, so they stay readable on both backgrounds. Row tint opacity comes
 ## Packaging
 
 `packaging/TraktorKeyCalculator.spec` builds a one-file, windowed exe from
-`packaging/launcher.py`. The library CSV is bundled as
-`traktor_key_calculator/data/music_test.csv` inside the archive. `config.py` finds
-it relative to its own `__file__`, which works both from source and frozen.
+`packaging/launcher.py`. No data files are bundled (the former starting library CSV was removed in 4.26.0).
 Large unused libraries are excluded explicitly to keep the exe size down.

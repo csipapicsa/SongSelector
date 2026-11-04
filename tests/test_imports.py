@@ -202,7 +202,7 @@ class GuiTests(unittest.TestCase):
         make_collection(nml, [(fallback, 23, 125.23)])
         init_settings()
         window = TraktorKeyCalculator()
-        self.assertEqual(len(window.table), 2920)
+        self.assertEqual(len(window.table), 0)  # a fresh install starts with an empty library
         window.importer = TrackImporter(nml)
         window.table = pd.DataFrame()
         window.bpm_slider.setValue(100)

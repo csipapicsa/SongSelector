@@ -12,6 +12,7 @@ sqlcipher3-wheels==0.5.7  # reads Rekordbox's encrypted library (playlists); bin
 onnxruntime-directml==1.24.4  # GPU via DirectX 12 (any vendor) with CPU fallback; CUDA: requirements-gpu.txt
 soundfile==0.14.0          # bundles libsndfile 1.2 (MP3, FLAC, WAV decoding)
 soxr==1.1.0                # resampling, same algorithm as librosa's default
+av==18.1.0                 # PyAV: FFmpeg, second decoder for AAC (.m4a, .mp4) and damaged MP3s; large binary wheel
 flatbuffers==25.12.19
 sympy==1.14.0              # required by onnxruntime-directml; not bundled into the exe
 mpmath==1.3.0

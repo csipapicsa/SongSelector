@@ -178,6 +178,23 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         window._count_timer.timeout.emit()
         self.assertEqual(window.playlist_count_label.text(), '2 tracks, 1 selected')
 
+    def test_refresh_rebuilds_the_list_from_every_track_of_the_collection_without_any_csv(self):
+        window = self.window()
+        window.table = window.table[window.table['Title'] != 'two'].reset_index(drop=True)  # 'two' left the list
+        window._save_library()
+        window.populate_tree()
+        self.assertNotIn('two', list(window.table['Title']))
+        with patch.object(window.data_manager, 'load_default_data', side_effect=AssertionError('no CSV any more')):
+            window.refresh_data()
+        # one record per path: the starting tracks were never "imported", yet they all come back
+        self.assertEqual(sorted(window.table['Title']), ['one', 'three', 'two'])
+        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['one', 'three', 'two'])
+        self.assertEqual(len(self.restart(window).table), 3)
+
+    def test_a_fresh_install_starts_with_an_empty_library(self):
+        self.default_library = pd.DataFrame()  # what DataManager.load_default_data returns now
+        self.assertEqual(len(self.window().table), 0)
+
     def test_library_and_playlist_are_restored_after_restart(self):
         from traktor_key_calculator.config import HEADER_INDEX
         window = self.window()

@@ -12,7 +12,7 @@ CHANGELOG when they ship.
 - [ ] Follow Traktor's live master BPM (idea only; nothing exists yet).
 - [ ] "Key at Master BPM" column inside Traktor itself: investigated 2026-10-14, not feasible
       directly (the desktop browser is a native control). See `docs/history/`.
-- [ ] Replace the bundled `music_test.csv` with a library built from the user's own collection.
+- [x] The bundled `music_test.csv` is gone; the library lives in `library.sqlite` and starts empty (4.26.0).
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
 - [x] More than one playlist: Browser tab with saved playlists and smartlists (4.21.0).
 - [x] Traktor's playlists in the Browser (*Traktor Playlists*, read-only, 4.23.0).
@@ -74,9 +74,8 @@ CHANGELOG when they ship.
 The exe is already self-contained (Python, Qt, pandas, ...), but it is set up for one machine.
 Do 1–2 first; they matter even without an installer.
 
-- [ ] 1. Ship without the developer's library: `data/music_test.csv` holds the developer's own
-      2,920 tracks with `E:\DJ\...` paths. New users should start with an empty library
-      (keep the CSV as a test fixture only).
+- [x] 1. Ship without the developer's library: done in 4.26.0, the bundled CSV is removed and a
+      fresh install starts with an empty library.
 - [ ] 2. Store user data in `%LOCALAPPDATA%\TraktorKeyCalculator\` instead of next to the exe.
       `C:\Program Files` is not writable for normal users, so today the app would fail with
       "Cannot start" there. Keep a "portable" mode (data next to the exe) when a marker file exists,

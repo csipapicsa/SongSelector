@@ -90,7 +90,6 @@ src/traktor_key_calculator/
     selfcheck.py        End-to-end check that runs inside the packaged exe
     core/               Logic without UI widgets (keys, tags, Traktor NML, search)
     ui/                 PyQt5 main window, tree widgets, dialogs, delegates
-    data/music_test.csv Bundled default track library
 tests/                  pytest suite (unittest-style test classes)
 packaging/              PyInstaller spec and launcher script
 scripts/                setup / test / build / verify PowerShell scripts

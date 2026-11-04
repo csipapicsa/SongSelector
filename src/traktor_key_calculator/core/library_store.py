@@ -244,6 +244,12 @@ class LibraryStore:
                 records.update((canonical_path(record['File_Path']), record) for record in map(self._record, rows))
         return records
 
+    def all_tracks(self):
+        """Every track of the collection, keyed by canonical path, oldest first."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(_SELECT_TRACKS + ' ORDER BY rowid').fetchall()
+        return {canonical_path(record['File_Path']): record for record in map(self._record, rows)}
+
     def imported_tracks(self):
         """Tracks added by drag and drop or file picker, keyed by canonical path."""
         with closing(self._connect()) as connection:
