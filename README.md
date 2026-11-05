@@ -1,5 +1,7 @@
 # Traktor Key Calculator
 
+[![CI](https://github.com/csipapicsa/SongSelector/actions/workflows/ci.yml/badge.svg)](https://github.com/csipapicsa/SongSelector/actions/workflows/ci.yml)
+
 A Windows desktop tool for DJs. Given a track's original BPM and key, it shows the
 key the track will play in at another tempo, assuming **Key Lock is off**, so you
 can pick harmonically compatible tracks at the tempo you are actually playing.

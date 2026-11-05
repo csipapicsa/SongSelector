@@ -52,4 +52,9 @@ ignore = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra"
+addopts = "-ra --strict-markers"
+markers = [
+    # Acceptance tests against the developer's real Traktor collection and audio files. They are not in the repo
+    # (personal library, commercial tracks), so CI deselects them; the same logic is covered by generated fixtures.
+    "local_data: needs files outside the repo (real library, real MP3s); deselected in CI",
+]
