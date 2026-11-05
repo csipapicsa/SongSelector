@@ -33,3 +33,23 @@ class ColorDotDelegate(QStyledItemDelegate):
                                 center.y() - self.dot_size // 2,
                                 self.dot_size, self.dot_size)
         painter.restore()
+
+
+def stars(value, empty=''):
+    """'★★★☆☆' for a 1-5 rating given as text or a number; `empty` for no rating
+    (0 is "unrated" in Traktor, so it is empty too)."""
+    try:
+        count = max(0, min(5, int(round(float(value)))))
+    except (TypeError, ValueError, OverflowError):
+        return empty
+    if count == 0:
+        return empty
+    return '★' * count + '☆' * (5 - count)
+
+
+class StarRatingDelegate(QStyledItemDelegate):
+    """Shows a 0-5 rating as stars. The cell text stays the number, so sorting, searching
+    and the filters work as before."""
+
+    def displayText(self, value, locale):
+        return stars(value)

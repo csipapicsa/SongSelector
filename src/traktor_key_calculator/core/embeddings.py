@@ -34,6 +34,10 @@ EMBEDDING_DIM = 2048
 # about 21% because ~87% of CNN14 embedding values are exactly zero (ReLU output).
 ENCODING = 'float16-zlib'
 _DECODE_BLOCK = 1 << 18  # frames per read, so a long file can be interrupted between blocks
+PARTIAL_MIN_SECONDS = 10  # a file that stops decoding is still analysed if this much, and
+PARTIAL_MIN_SHARE = 0.5   # this share of its length, could be read (see load_audio)
+# Bump when a change could make earlier failures succeed: failed tracks are then tried again once.
+_FAILURES_VERSION = 3  # 3: FFmpeg (PyAV) as a second decoder; 2: partial decoding
 
 
 class Cancelled(Exception):
@@ -46,24 +50,99 @@ def file_fingerprint(path):
     return stat.st_size, stat.st_mtime_ns
 
 
-def load_audio(path, should_stop=lambda: False):
-    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True)."""
+def _enough(decoded_seconds, expected_seconds):
+    """A file that stops decoding is still analysed if at least PARTIAL_MIN_SECONDS and
+    PARTIAL_MIN_SHARE of its length could be read: the embedding is an average over the whole
+    track, so a missing last stretch changes it very little."""
+    return decoded_seconds >= max(PARTIAL_MIN_SECONDS, PARTIAL_MIN_SHARE * max(expected_seconds, 0))
+
+
+def _read_soundfile(path, should_stop):
+    """(mono float32 at 32 kHz, problem): problem is None, or the error that stopped libsndfile
+    after enough was decoded. Raises if the file cannot be opened or too little was decoded."""
     import soundfile
     import soxr
-    blocks = []
+    blocks, decoded, problem = [], 0, None
     with soundfile.SoundFile(str(path)) as audio_file:
         sample_rate = audio_file.samplerate
-        while True:
-            if should_stop():
-                raise Cancelled()
-            block = audio_file.read(_DECODE_BLOCK, dtype='float32', always_2d=True)
-            if not len(block):
-                break
-            blocks.append(block.mean(axis=1))
+        expected = audio_file.frames  # an estimate for MP3; 0 when unknown
+        try:
+            while True:
+                if should_stop():
+                    raise Cancelled()
+                block = audio_file.read(_DECODE_BLOCK, dtype='float32', always_2d=True)
+                if not len(block):
+                    break
+                blocks.append(block.mean(axis=1))
+                decoded += len(block)
+        except Cancelled:
+            raise
+        except Exception as error:  # a bad frame, often near the end of an MP3
+            if not _enough(decoded / sample_rate, expected / sample_rate):
+                raise
+            problem = error
     mono = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
     if sample_rate != SAMPLE_RATE and len(mono):
         mono = soxr.resample(mono, sample_rate, SAMPLE_RATE, quality='HQ')
-    return mono.astype(np.float32, copy=False)
+    return mono.astype(np.float32, copy=False), problem
+
+
+def _read_av(path, should_stop):
+    """Mono float32 at 32 kHz decoded with FFmpeg (PyAV). It reads what libsndfile cannot: AAC
+    (.m4a, .mp4) and MP3s with damaged frames, which FFmpeg skips and reads on past, as its own
+    command line does. A file read without any damage is returned whatever its length; after damage
+    it must pass _enough. Raises (ImportError if PyAV is missing) when too little could be decoded."""
+    import av
+    resampler = av.AudioResampler(format='fltp', rate=SAMPLE_RATE)  # keeps the channels; averaged below
+    pieces, damaged = [], False
+    with av.open(str(path)) as container:
+        stream = container.streams.audio[0]
+        expected = container.duration / av.time_base if container.duration else 0
+        try:
+            for packet in container.demux(stream):
+                if should_stop():
+                    raise Cancelled()
+                try:
+                    frames = packet.decode()
+                except av.error.FFmpegError:  # a damaged packet: skip it
+                    damaged = True
+                    continue
+                for frame in frames:
+                    pieces.extend(piece.to_ndarray().mean(axis=0) for piece in resampler.resample(frame))
+            pieces.extend(piece.to_ndarray().mean(axis=0) for piece in resampler.resample(None))
+        except av.error.FFmpegError:  # the file cannot be read on from here
+            damaged = True
+    audio = np.concatenate(pieces).astype(np.float32, copy=False) if pieces else np.zeros(0, dtype=np.float32)
+    if not len(audio) or (damaged and not _enough(len(audio) / SAMPLE_RATE, expected)):
+        raise ValueError(f'FFmpeg decoded only {len(audio) / SAMPLE_RATE:.0f} s of {expected:.0f} s')
+    return audio
+
+
+def load_audio(path, should_stop=lambda: False):
+    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True).
+
+    libsndfile decodes first (MP3, FLAC, WAV). If it cannot open the file (AAC) or stops at a
+    damaged frame, FFmpeg is tried as well and the longer result is used; see _enough for how
+    little may be missing. If neither decodes enough, libsndfile's error is raised.
+    """
+    candidates, problem = [], None
+    try:
+        audio, problem = _read_soundfile(path, should_stop)
+        candidates.append(audio)
+    except Cancelled:
+        raise
+    except Exception as error:
+        problem = error
+    if problem is not None:
+        try:
+            candidates.append(_read_av(path, should_stop))
+        except Cancelled:
+            raise
+        except Exception:  # PyAV not installed, or FFmpeg cannot read the file either
+            pass
+    if not candidates:
+        raise problem
+    return max(candidates, key=len)
 
 
 def split_chunks(audio):
@@ -171,6 +250,14 @@ class EmbeddingStore:
         y        REAL NOT NULL,
         PRIMARY KEY (path_key, model)
     );
+    CREATE TABLE IF NOT EXISTS map_layout_3d (
+        path_key TEXT NOT NULL,
+        model    TEXT NOT NULL,
+        x        REAL NOT NULL,
+        y        REAL NOT NULL,
+        z        REAL NOT NULL,
+        PRIMARY KEY (path_key, model)
+    );
     """
 
     def __init__(self, path, keep_open=False):
@@ -189,6 +276,10 @@ class EmbeddingStore:
         connection.execute('PRAGMA journal_mode=WAL')
         connection.execute('PRAGMA synchronous=NORMAL')
         connection.executescript(self._SCHEMA)
+        if connection.execute('PRAGMA user_version').fetchone()[0] < _FAILURES_VERSION:
+            with connection:  # a failure is remembered only until the decoder improves: retry them once
+                connection.execute('DELETE FROM embeddings WHERE error IS NOT NULL')
+                connection.execute(f'PRAGMA user_version = {_FAILURES_VERSION}')
         return connection
 
     @contextmanager
@@ -233,6 +324,13 @@ class EmbeddingStore:
                                      'AND data IS NOT NULL', (path_key, model)).fetchone()
         return decode(row[2], row[0], row[1]) if row else None
 
+    def failure(self, path_key, model=MODEL_ID):
+        """Why a track could not be analysed (text), or None if it was analysed or not tried."""
+        with self._open() as connection:
+            row = connection.execute('SELECT error FROM embeddings WHERE path_key = ? AND model = ? '
+                                     'AND error IS NOT NULL', (path_key, model)).fetchone()
+        return row[0] if row else None
+
     def update_fingerprint(self, path_key, fingerprint):
         """After a tag-only edit the audio is unchanged: keep the embedding current."""
         with self._open() as connection, connection:
@@ -261,6 +359,18 @@ class EmbeddingStore:
         with self._open() as connection:
             rows = connection.execute('SELECT path_key, x, y FROM map_layout WHERE model = ?', (model,)).fetchall()
         return {key: (x, y) for key, x, y in rows}
+
+    def save_layout_3d(self, positions, model=MODEL_ID):
+        """Replace the stored 3D view with {path_key: (x, y, z)}."""
+        with self._open() as connection, connection:
+            connection.execute('DELETE FROM map_layout_3d WHERE model = ?', (model,))
+            connection.executemany('INSERT INTO map_layout_3d VALUES (?, ?, ?, ?, ?)',
+                                   [(key, model, float(x), float(y), float(z)) for key, (x, y, z) in positions.items()])
+
+    def load_layout_3d(self, model=MODEL_ID):
+        with self._open() as connection:
+            rows = connection.execute('SELECT path_key, x, y, z FROM map_layout_3d WHERE model = ?', (model,)).fetchall()
+        return {key: (x, y, z) for key, x, y, z in rows}
 
     def counts(self, model=MODEL_ID):
         """(analysed, failed) number of tracks."""

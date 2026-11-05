@@ -3,7 +3,7 @@ Data management for the Traktor Key Calculator
 """
 import os
 import pandas as pd
-from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, DEFAULT_LIBRARY_CSV
+from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
 
 class DataManager:
     """Class to handle loading and manipulating track data"""
@@ -14,27 +14,10 @@ class DataManager:
         self.status_callback = status_callback
         
     def load_default_data(self):
-        """Load the default dataset"""
-        try:
-            default_path = DEFAULT_LIBRARY_CSV
-
-            if os.path.exists(default_path):
-                df = pd.read_csv(default_path)
-                if self.status_callback:
-                    self.status_callback(f"Loaded {len(df)} tracks from music_test.csv")
-                self.table = df
-                return df
-            else:
-                # For testing, create a sample dataframe if file doesn't exist
-                if self.status_callback:
-                    self.status_callback("CSV file not found. Using sample data.")
-
-                self.table = pd.DataFrame()
-                return self.table
-        except Exception as e:
-            if self.status_callback:
-                self.status_callback(f"Error loading data: {str(e)}")
-            return pd.DataFrame()
+        """The library a fresh install starts with: empty. Tracks come in by import (drag and drop,
+        Add files / folder, Traktor and Rekordbox playlists); they are kept in library.sqlite."""
+        self.table = pd.DataFrame()
+        return self.table
     
     def load_csv(self, file_path):
         """Load data from a specific CSV file"""

@@ -43,13 +43,14 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `key_tables.py` | Static key lookup tables (also contains unused leftovers from the thesis project) |
 | `audio_metadata.py` | Read ID3 / FLAC / WAV tags with mutagen into `config.AudioMetadata` |
 | `traktor_collection.py` | Read-only, cached index of Traktor's `collection.nml`; lookup by exact path, then by unique filename + file size |
+| `rekordbox_library.py` | Read-only playlists (folders, order, file of each track) from Rekordbox's encrypted `master.db`, via `sqlcipher3` and the published key; reads a temporary copy. Same shape as `TraktorCollection`, so `ui/traktor_watcher.py` and the Browser serve both |
 | `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
 | `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded), the user's Song Selector rating/color, and the saved Library / Playlist lists |
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
 | `embeddings.py` | CNN14 embeddings: `load_audio`, `Cnn14Embedder` (onnxruntime, GPU if available), `EmbeddingStore` (`embeddings.sqlite`), `run_analysis` (entry point of the analysis process). Must not import Qt |
-| `data_manager.py` | Loads the library CSV (bundled `data/music_test.csv` by default) into a pandas DataFrame |
+| `data_manager.py` | Loads a library CSV picked by the user (*Load CSV*) into a pandas DataFrame; `load_default_data` is the empty starting library |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
 
@@ -58,10 +59,12 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | Module | Responsibility |
 |---|---|
 | `main_window.py` | The main window: layout, BPM slider, search, sorting, import, settings persistence |
-| `tree_widgets.py` | `PoolTreeWidget` (library, right) and `PlaylistTreeWidget` (left); drag and drop between them and from Explorer |
+| `tree_widgets.py` | `PoolTreeWidget` (List view, right) and `PlaylistTreeWidget` (Playlist tab, left: reordering by drag); drag and drop between them and from Explorer |
+| `list_browser.py` | `ListBrowser`, the Browser tab: Track Collection (all, artists, albums, genres) and saved playlists / smartlists; emits what was clicked, double-clicked or dropped |
+| `saved_lists.py` | `SavedListsMixin` of the main window: shows a Browser entry in the List view (# column for playlists), loads it into the Playlist tab, saves / renames / deletes playlists and smartlists |
 | `delegates.py` | Paints the Traktor category color dot |
 | `menu_bar.py` | Menu definitions, emitted as signals |
-| `advanced_search_dialog.py` | Complex Search dialog (`AdvancedSearchDialog`, `AdvancedSearchRow`) |
+| `advanced_search_dialog.py` | Complex Search dialog (`AdvancedSearchDialog`, `AdvancedSearchRow`); also edits a smartlist's rules |
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
@@ -86,8 +89,8 @@ Until 4.14.0 they were always hidden, which made searches miss them without noti
 
 ```text
 start ──> library.sqlite: saved 'Library' list ──> DataFrame (window.table) ──> _track_item() per row ──> tree rows
-          (first start only: data/music_test.csv          │                        │
-           + imported_tracks.json)                        │                        └─ KeyCalculator at slider BPM
+          (first start only: empty, plus                  │                        │
+           the old imported_tracks.json)                  │                        └─ KeyCalculator at slider BPM
                                                           └─ saved 'Playlist' list ──> left panel
 Dropped audio file ──> TrackImporter.read()
                          ├─ tags (mutagen)
@@ -149,9 +152,11 @@ Modelled on how Traktor and Rekordbox separate the collection from playlists:
   the step to `LibraryStore._migrate`, which upgrades existing files in place.
 
 On start, the window restores both lists (`_restore_lists`). Only on the very
-first start, when no `Library` list exists yet, is the library built from
-`data/music_test.csv` plus the old `imported_tracks.json`. After that, *Refresh*
-rebuilds the list from those sources on request, and *Load CSV* replaces it.
+first start, when no `Library` list exists yet, is the library empty (plus what the old
+`imported_tracks.json` holds). Tracks come in by import. *Refresh* rebuilds the list from
+every track in the collection table (`LibraryStore.all_tracks`) on request, and *Load CSV*
+replaces it with a CSV file you pick. (Until 4.26.0 a bundled `music_test.csv` with the
+developer's own 2,920 tracks was the starting library; those tracks live in `library.sqlite` now.)
 SQLite was chosen after measuring on the real 5,100-track library: loading it
 takes 10 ms in SQLite vs 18 ms in JSON, and updating one track 0.1 ms vs
 22 ms, because JSON rewrites the whole file. Writes are transactional.
@@ -173,8 +178,15 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   once filled the OS pipe, and the queue's feeder thread then kept the app from
   exiting (regression test: `test_app_can_exit_after_stopping_with_a_large_backlog`).
 - **Up to date = same file size and mtime** (`file_fingerprint`). Undecodable
-  files are stored with `error` and retried only when the file changes. A tag
-  edit updates the fingerprint, because the audio itself did not change.
+  files are stored with `error` and retried only when the file changes (or once
+  after a decoder improvement: `_FAILURES_VERSION`, kept in `PRAGMA user_version`).
+  A tag edit updates the fingerprint, because the audio itself did not change.
+- **Decoding** (`load_audio`): soundfile/libsndfile first (MP3, FLAC, WAV). If it cannot
+  open the file (AAC: `.m4a`, `.mp4`) or stops at a damaged frame, FFmpeg through PyAV
+  (`av`) is tried too and the longer result is used. A damaged file is still analysed when at
+  least half of it (and 10 s) decoded, `_enough`. Both give the same audio (correlation
+  0.99998 on a real track). The PyAV wheel carries FFmpeg (about 70 MB of DLLs, a GPL build:
+  it includes libx264/libx265), which matters only if the exe is ever distributed.
 - **Storage:** float16 + zlib, lossless; about 17–21 % of raw size, because ~87 %
   of the values are exactly 0. A 6-minute track takes ~50 KB. WAL mode lets the
   UI read while the process writes.
@@ -206,7 +218,13 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   from `fields_provider` (`TraktorKeyCalculator._fields_for_key`).
 - **Edges** (`SimilarityMapWidget._edges`): tracks are grouped by tempo-adjusted Camelot key,
   colour and rating, and partners are looked up per group (no all-pairs loop); one edge per
-  pair, capped at `MAX_EDGES`.
+  pair, capped at `MAX_EDGES`. `_edge_sources` decides which tracks edges start from: all visible
+  tracks, or the selected track plus, at half opacity, a match clicked in the list (`preview_key`).
+  Per source only the `lines_per_track` partners with the highest cosine similarity are kept;
+  `_add_edge_items` maps similarity within a layer to `STRENGTH_LEVELS` opacity steps.
+- **Groups** (`core/clustering.py`, `SimilarityMapWidget._update_groups`): all analysed tracks are
+  grouped in a thread with the chosen method; a request counter drops results of superseded
+  choices. Groups only change the dot colours (`_dot_colour`), tooltips and details.
 - **Choices backed by measurements** (2026-10-27, ~450–700 analysed tracks; see
   `docs/research/audio_embeddings.md`): t-SNE kept 41–47 % of each track's 10 true neighbours as
   map neighbours (UMAP 37–42 %, PCA 26 %). The numpy t-SNE matches scikit-learn's quality
@@ -259,7 +277,5 @@ fixed colours, so they stay readable on both backgrounds. Row tint opacity comes
 ## Packaging
 
 `packaging/TraktorKeyCalculator.spec` builds a one-file, windowed exe from
-`packaging/launcher.py`. The library CSV is bundled as
-`traktor_key_calculator/data/music_test.csv` inside the archive. `config.py` finds
-it relative to its own `__file__`, which works both from source and frozen.
+`packaging/launcher.py`. No data files are bundled (the former starting library CSV was removed in 4.26.0).
 Large unused libraries are excluded explicitly to keep the exe size down.

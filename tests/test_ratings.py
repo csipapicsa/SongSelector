@@ -110,7 +110,10 @@ class RatingGuiTests(unittest.TestCase):
         window.populate_tree()
         item=next(window.candidate_tree.topLevelItem(i) for i in range(2)
                   if window.candidate_tree.topLevelItem(i).text(HEADER_INDEX['Title'])=='Rated')
-        self.assertEqual(item.text(HEADER_INDEX['Rating']),'5')
+        self.assertEqual(item.text(HEADER_INDEX['Rating']),'5')  # the number, for sorting and search
+        for tree in (window.candidate_tree, window.playlist_tree):  # shown as stars
+            for column in ('Rating', 'Rating - Song Selector'):
+                self.assertEqual(tree.itemDelegateForColumn(HEADER_INDEX[column]).displayText('5', None), '★★★★★')
         for name,action in window.search_column_actions.items(): action.setChecked(name=='Rating')
         window.search_bar.setText('5')
         window.filter_items()
@@ -129,8 +132,8 @@ class RatingGuiTests(unittest.TestCase):
     def test_refresh_csv_load_and_collection_link_enrich_ratings(self):
         window=self.window()
         table=self.library()
-        with patch.object(window.data_manager,'load_default_data',return_value=table):
-            window.refresh_data()
+        window.library_store.upsert_tracks(table.to_dict('records'))  # Refresh rebuilds from the collection
+        window.refresh_data()
         self.assertEqual(window.table.iloc[0]['Rating'],5)
         csv=self.root/'library.csv'
         table.to_csv(csv,index=False)

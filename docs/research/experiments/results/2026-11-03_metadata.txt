@@ -1,0 +1,22 @@
+python metadata.py  (2026-11-03; development artists only, 5-fold artist-grouped CV x2; AUC = one class against the rest)
+3617 of 3617 tracks found in the collection; 13107 collection entries
+Labelled vs unlabelled tracks:
+  playcount          labelled: share > 0  56% | unlabelled: share > 0  23%
+  hotcues            labelled: share > 0  47% | unlabelled: share > 0  20%
+  playlists          labelled: share > 0  96% | unlabelled: share > 0  85%
+rating 4-5 vs 1-3: 1944 tracks
+  meta   balanced accuracy 62 (60-64) %, AUC 0.66
+  sound  balanced accuracy 58 (56-60) %, AUC 0.61
+  both   balanced accuracy 63 (60-65) %, AUC 0.67
+rating 1-5: 1944 tracks
+  meta   balanced accuracy 26 (25-28) % | 1 star AUC 0.71 | 2: 0.60 | 3: 0.59 | 4: 0.56 | 5: 0.65
+  sound  balanced accuracy 22 (21-23) % | 1: 0.67 | 2: 0.63 | 3: 0.57 | 4: 0.57 | 5: 0.59
+  both   balanced accuracy 26 (25-28) % | 1: 0.74 | 2: 0.57 | 3: 0.61 | 4: 0.58 | 5: 0.66
+colour 1-7: 1686 tracks
+  meta   balanced accuracy 20 (19-21) % | colour 1: 0.67 | 2: 0.61 | 3: 0.68 | 4: 0.59 | 5: 0.77 | 6: 0.69
+  sound  balanced accuracy 20 (19-21) % | 1: 0.79 | 2: 0.64 | 3: 0.69 | 4: 0.75 | 5: 0.84 | 6: 0.70
+  both   balanced accuracy 23 (21-24) % | 1: 0.80 | 2: 0.66 | 3: 0.75 | 4: 0.71 | 5: 0.83 | 6: 0.73
+Without usage features (play count, last played, hot cues, cues, playlists):
+rating 4-5 vs 1-3:  meta AUC 0.55 (balanced accuracy 55 %) | both AUC 0.61 (58 %)
+colour 1-7:         meta balanced accuracy 18 % (colour 1: 0.65, 2: 0.59, 3: 0.65, 4: 0.61, 5: 0.76, 6: 0.71) |
+                    both 23 % (1: 0.79, 2: 0.65, 3: 0.74, 4: 0.72, 5: 0.83, 6: 0.73)

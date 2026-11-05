@@ -102,11 +102,6 @@ MIN_BPM = 70
 MAX_BPM = 200
 
 
-# Read-only files shipped with the app (bundled into the exe by PyInstaller).
-PACKAGE_DATA_DIR = Path(__file__).resolve().parent / 'data'
-DEFAULT_LIBRARY_CSV = PACKAGE_DATA_DIR / 'music_test.csv'
-
-
 def _default_app_data_dir():
     """Where settings and imported tracks are stored.
 
@@ -164,12 +159,26 @@ SS_COLOR_COLUMN = 'Color - Song Selector'
 HEADER_LABELS += [SS_RATING_COLUMN, SS_COLOR_COLUMN]
 HEADER_INDEX.update({SS_RATING_COLUMN: len(HEADER_LABELS) - 2, SS_COLOR_COLUMN: len(HEADER_LABELS) - 1})
 
+# Track fields: searchable, usable in Complex Search and on the map.
+FIELD_LABELS = list(HEADER_LABELS)
+# Position in the playlist ("1", "2", ...): the Playlist tab, and the List view while it
+# shows a saved playlist. Not a track field. Shown as the first column.
+POSITION_COLUMN = '#'
+HEADER_LABELS += [POSITION_COLUMN]
+HEADER_INDEX[POSITION_COLUMN] = len(HEADER_LABELS) - 1
+# The track's group on the similarity map (1 = largest), with the map's grouping method; empty
+# when grouping is off or the track is not analysed / in no group. Numbers change when the
+# tracks are grouped again, so this is not a track field either.
+GROUP_COLUMN = 'Group'
+HEADER_LABELS += [GROUP_COLUMN]
+HEADER_INDEX[GROUP_COLUMN] = len(HEADER_LABELS) - 1
+
 test = 100
 
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,
     "Visible column right": HEADER_LABELS,
-    "Search columns": HEADER_LABELS,
+    "Search columns": FIELD_LABELS,
     "Master Tempo": 120
 }
 

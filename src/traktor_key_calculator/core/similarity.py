@@ -67,8 +67,8 @@ def _affinities(distances, perplexity, steps=64):
     return np.maximum(p, 1e-12)
 
 
-def tsne_layout(vectors, perplexity=PERPLEXITY, iterations=750, seed=0, should_stop=lambda: False):
-    """(n, 2) map coordinates; similar tracks end up close together.
+def tsne_layout(vectors, perplexity=PERPLEXITY, iterations=750, seed=0, should_stop=lambda: False, dims=2):
+    """(n, dims) map coordinates (2D map or 3D view); similar tracks end up close together.
 
     Exact t-SNE (van der Maaten & Hinton 2008) with PCA initialisation, early
     exaggeration and adaptive gains, as in scikit-learn's defaults. O(n^2) memory and
@@ -76,13 +76,13 @@ def tsne_layout(vectors, perplexity=PERPLEXITY, iterations=750, seed=0, should_s
     """
     n = len(vectors)
     if n < 3:
-        return np.zeros((n, 2), dtype=np.float32)
+        return np.zeros((n, dims), dtype=np.float32)
     data = _pca(np.asarray(vectors, np.float64), min(50, n - 1, vectors.shape[1]))
     squared = (data ** 2).sum(1)
     distances = np.maximum(squared[:, None] + squared[None, :] - 2 * data @ data.T, 0)
     p = _affinities(distances / np.median(distances[distances > 0]), min(perplexity, (n - 1) / 3))
 
-    y = _pca(data, 2)
+    y = _pca(data, dims)
     y = y / max(y[:, 0].std(), 1e-12) * 1e-4
     rng = np.random.default_rng(seed)
     y += rng.normal(0, 1e-6, y.shape)
@@ -111,10 +111,11 @@ def tsne_layout(vectors, perplexity=PERPLEXITY, iterations=750, seed=0, should_s
 def place_new(known_points, known_vectors, new_vectors, neighbours=5):
     """Map positions for tracks analysed after the last layout: the similarity-weighted
     average position of their most similar already-placed tracks (instant, no t-SNE)."""
+    dims = np.asarray(known_points).shape[1] if len(known_points) else 2
     if not len(new_vectors):
-        return np.zeros((0, 2), dtype=np.float32)
+        return np.zeros((0, dims), dtype=np.float32)
     if not len(known_vectors):
-        return np.zeros((len(new_vectors), 2), dtype=np.float32)
+        return np.zeros((len(new_vectors), dims), dtype=np.float32)
     scores = np.asarray(new_vectors) @ np.asarray(known_vectors).T
     count = min(neighbours, scores.shape[1])
     top = np.argsort(-scores, axis=1)[:, :count]

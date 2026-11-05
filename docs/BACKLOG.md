@@ -12,13 +12,42 @@ CHANGELOG when they ship.
 - [ ] Follow Traktor's live master BPM (idea only; nothing exists yet).
 - [ ] "Key at Master BPM" column inside Traktor itself: investigated 2026-10-14, not feasible
       directly (the desktop browser is a native control). See `docs/history/`.
-- [ ] Replace the bundled `music_test.csv` with a library built from the user's own collection.
+- [x] The bundled `music_test.csv` is gone; the library lives in `library.sqlite` and starts empty (4.26.0).
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
-- [ ] More than one playlist: the store already supports named lists (`library_store.py`); needs UI.
+- [x] More than one playlist: Browser tab with saved playlists and smartlists (4.21.0).
+- [x] Traktor's playlists in the Browser (*Traktor Playlists*, read-only, 4.23.0).
+- [ ] Traktor's smartlists: evaluate their queries (`$BPM > 126 & $GENRE % "break" | ...`; operators
+      `== <> < <= > >= % !% ~`, `&` and `|`). Fields the app lacks: `$PLAYCOUNT`, `$TIME`
+      (track length); they would have to be read from the NML. 43 in the user's collection.
+- [x] Rekordbox's playlists in the Browser (*Rekordbox Playlists*, read directly from `master.db`, read-only, 4.25.0).
+- [ ] Other apps' playlists (Serato, VirtualDJ, Engine DJ); Rekordbox's own ratings / colours / BPM / key as import sources.
+- [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
+- [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
+      models and ideas in the DJ mix segmentation project). Plan only.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
-- [ ] Map: "edges only to the N closest matches" (harmonic *and* similar), likely the most useful edge mode.
-- [ ] Map: 3D view (pyqtgraph.opengl or vispy).
+- [x] Map: "edges only to the N closest matches" (harmonic *and* similar): 4.16.0, with opacity by similarity.
+- [x] Map: 3D view, 4.19.0: 3D t-SNE projected onto the same scene (no OpenGL dependency),
+      Shift+drag rotates, depth fades far dots. Follow-up: a 3D-aware "Map density" grouping
+      (it still uses the 2D positions); compare whether 3D splits the "one big blob" better.
+- [x] Background sync from Traktor's collection.nml (key, BPM, colour, rating), 4.19.0.
+      Follow-up: write the Song Selector rating/colour back to Traktor (needs care: Traktor
+      overwrites the NML when it closes).
+- [x] Map: **unsupervised clustering**, shipped in 4.16.0 (k-means, neighbour communities, map
+      density). Follow-ups: name groups by their most common genre; filter the list by group.
+      Original plan, method chosen in the map settings, to try several
+      (user request 2026-10-28: the map is mostly one big blob, yet some groups are expected).
+      Colour dots by cluster as an alternative to the Traktor colour; cluster sizes in the status.
+      Lightweight candidates (numpy only, the exe has no scikit-learn; seconds on 5k tracks):
+      1. k-means (cosine) on the full vectors reduced by PCA to ~50 dims; k from the user or by
+         silhouette score.
+      2. Graph communities on the k-nearest-neighbour graph (label propagation or Louvain): finds
+         groups even inside a blob, because it follows neighbours instead of gaps in density.
+      3. Density clustering (HDBSCAN-style) on the 2D map positions: groups exactly what the eye
+         sees; tracks in sparse areas stay unclustered.
+      Possibly first: check whether the blob comes from the vectors themselves (PCA whitening,
+      dropping the first few dominant components) rather than from t-SNE; measure with the
+      genre/colour labels as in `docs/research/audio_embeddings.md`.
 - [ ] Map: faster layout for very large libraries (Barnes-Hut t-SNE, or arrange a sample + place_new).
 - [ ] Map: lasso selection, labels for the selected track's neighbours, a legend for the edge colours.
 - [ ] Re-check the per-track vector (`similarity.track_vectors`) once more styles are analysed.
@@ -45,9 +74,8 @@ CHANGELOG when they ship.
 The exe is already self-contained (Python, Qt, pandas, ...), but it is set up for one machine.
 Do 1–2 first; they matter even without an installer.
 
-- [ ] 1. Ship without the developer's library: `data/music_test.csv` holds the developer's own
-      2,920 tracks with `E:\DJ\...` paths. New users should start with an empty library
-      (keep the CSV as a test fixture only).
+- [x] 1. Ship without the developer's library: done in 4.26.0, the bundled CSV is removed and a
+      fresh install starts with an empty library.
 - [ ] 2. Store user data in `%LOCALAPPDATA%\TraktorKeyCalculator\` instead of next to the exe.
       `C:\Program Files` is not writable for normal users, so today the app would fail with
       "Cannot start" there. Keep a "portable" mode (data next to the exe) when a marker file exists,

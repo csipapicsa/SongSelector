@@ -63,6 +63,7 @@ All on one real 6-minute track (72 chunks), unless noted.
 | Alternatives considered | uint8 + zlib: ~13 % of raw, cosine 0.99999 (lossy). PCA 256 dims: 97.7 % variance (lossy, needs a fitted basis). Not used: storing full data keeps every option open, and recomputing takes hours |
 | CPU speed (4 of 8 threads) | 5.5 s model + 0.8 s decode per track; batching does not help |
 | GPU speed (GTX 1650 Ti, onnxruntime-gpu 1.22, CUDA 12) | 1.6 s one chunk at a time, **0.6 s in batches of 16**, + 0.8 s decode, so ~4x faster per track |
+| PyTorch vs compiled vs onnxruntime on the CPU (2026-10-30, 10 random library tracks, 60.8 min of audio, 4 threads, `tests/test_inference_speed.py`) | Model time per track: PyTorch eager 10.5 s, TorchScript 8.0 s (1.32x), onnxruntime without graph optimisations 7.3 s (1.45x), onnxruntime as the app 7.1 s (**1.49x**). Model load 6.9 s vs 1.0 s. Most of the gain comes from not driving each layer from Python; the graph optimisations add only ~2 %. Same embeddings (max diff 2e-05) |
 | onnxruntime-gpu 1.31 | Built for CUDA 13, which needs NVIDIA driver ≥ 580 (this machine: 555.97), so it falls back to the CPU |
 
 Library estimate (5,105 tracks, 6-minute average): about 9 h on the CPU or 2 h on the

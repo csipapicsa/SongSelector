@@ -10,17 +10,19 @@ import sqlite3
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QLabel, QPushButton, QFileDialog, QTreeWidgetItem,
                             QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog
+from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog, QCheckBox
 
 from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
 
+from traktor_key_calculator import __version__
 from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
 from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
 from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
+from traktor_key_calculator.config import FIELD_LABELS, POSITION_COLUMN, GROUP_COLUMN
 from traktor_key_calculator.ui.delegates import ColorDotDelegate
-from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget
+from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget, TrackItem
 from traktor_key_calculator.core.data_manager import DataManager
 from traktor_key_calculator.core.key_calculator import KeyCalculator
 
@@ -37,28 +39,34 @@ from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
 from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
 from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
-from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget
+from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
 from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
 from traktor_key_calculator.ui.theme import (DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha,
                                              status_style)
 from mutagen import MutagenError
+from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, discover_library, signature as rekordbox_signature
 from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
 from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
-from traktor_key_calculator.core.search_filters import matches_condition
+from traktor_key_calculator.core.search_filters import matches_condition, active_filters
 from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKEN, parse_color_search,
                                                       replace_color_filter)
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
+from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
+from traktor_key_calculator.ui.list_browser import ListBrowser, ORDERED_KINDS, node_label
+from traktor_key_calculator.ui.saved_lists import SavedListsMixin
+from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 
 
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
+GROUPING_MESSAGE = 'Grouping tracks for the List...'
 
 
-class TraktorKeyCalculator(QMainWindow):
+class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
     """Main application window"""
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Traktor Key Calculator")
+        self.setWindowTitle(f"SongSelector {__version__}")
         self.setGeometry(100, 100, WINDOW_SIZE[0], WINDOW_SIZE[1])
         
         # Initialize components
@@ -133,12 +141,39 @@ class TraktorKeyCalculator(QMainWindow):
                     searchable.append(column)
             self.settings['Song Selector columns version'] = 1
 
+        # 4.21: the playlist position column (#), shown once in both panels.
+        if not self.settings.get('Position column version'):
+            for side in ('left', 'right'):
+                visible = self.settings.setdefault('Visible column ' + side, list(HEADER_LABELS))
+                if POSITION_COLUMN not in visible:
+                    visible.append(POSITION_COLUMN)
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                if sizes.get(POSITION_COLUMN, 0) <= 0:
+                    sizes[POSITION_COLUMN] = 36
+            self.settings['Position column version'] = 1
+
+        # 4.22: the map group column, shown once in the List (the Playlist can show it too).
+        if not self.settings.get('Group column version'):
+            visible = self.settings.setdefault('Visible column right', list(HEADER_LABELS))
+            if GROUP_COLUMN not in visible:
+                visible.append(GROUP_COLUMN)
+            left = self.settings.setdefault('Visible column left', list(HEADER_LABELS))
+            if GROUP_COLUMN in left:
+                left.remove(GROUP_COLUMN)
+            for side in ('left', 'right'):
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                if sizes.get(GROUP_COLUMN, 0) <= 0:
+                    sizes[GROUP_COLUMN] = 50
+            self.settings['Group column version'] = 1
 
         
         self.playlist_paths = set()
         collection_path = self.settings.get('Traktor collection') or discover_collection()
         self.settings['Traktor collection'] = collection_path
         self.importer = TrackImporter(collection_path)
+        rekordbox_path = self.settings.get('Rekordbox library') or discover_library()
+        self.settings['Rekordbox library'] = rekordbox_path
+        self.rekordbox_library = RekordboxLibrary(rekordbox_path)  # filled by the watcher below
         self.setAcceptDrops(True)
 
         # Initialize UI
@@ -153,6 +188,15 @@ class TraktorKeyCalculator(QMainWindow):
         self.table = pd.DataFrame()
         self._restore_lists()
         self.populate_tree()
+        self._init_browser()
+        # Changes made in Traktor (key, BPM, colour, rating) come in after Traktor saves.
+        self.collection_watcher = CollectionWatcher(collection_path, self)
+        self.collection_watcher.loaded.connect(self._collection_changed)
+        # Rekordbox's playlists, read straight from its library; Rekordbox is never touched
+        self.rekordbox_watcher = CollectionWatcher(rekordbox_path, self, reader=RekordboxLibrary,
+                                                   signature=rekordbox_signature)
+        self.rekordbox_watcher.loaded.connect(self._rekordbox_changed)
+        self.rekordbox_watcher.failed.connect(lambda message: self.status_bar.showMessage(message))
 
         # Embeddings of every library track, analysed in the background
         self.embedding_store = EmbeddingStore(Path(SETTINGS_FILE).with_name('embeddings.sqlite'))
@@ -166,13 +210,22 @@ class TraktorKeyCalculator(QMainWindow):
         self.similarity_map.request_context_menu.connect(self._map_context_menu)
         self.similarity_map.selected.connect(self._select_in_list)
         self.similarity_map.fields_provider = self._fields_for_key
+        self.similarity_map.playlist_keys = lambda: {canonical_path(path) for path in self.playlist_paths}
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
         self._map_stale = True
+        self.similarity_map.groups_changed.connect(self._apply_groups)
+        # Groups for the List (colours or the Group column) without opening the map first
+        if self.group_colours_switch.isChecked() or (
+                not self.candidate_tree.isColumnHidden(HEADER_INDEX[GROUP_COLUMN]) and self.settings.get('Map grouping')):
+            self._ensure_groups()
 
     def apply_row_shading_from_color(self, item):
         color = None
-        if self.coloring_mode == 'key':
+        if self._group_colours_on() and item.treeWidget() is self.candidate_tree:
+            group = self._group(item.text(HEADER_INDEX['Path']))
+            color = group_colour(group) if group is not None else None
+        elif self.coloring_mode == 'key':
             color = OPEN_KEY_COLOR_MAPPING.get(item.text(HEADER_INDEX['Open Key New']).lower())
         else:
             try:
@@ -184,7 +237,7 @@ class TraktorKeyCalculator(QMainWindow):
             shaded = QColor(color)
             shaded.setAlpha(row_tint_alpha())
             brush = QBrush(shaded)
-        for column in range(item.columnCount()):
+        for column in range(len(HEADER_LABELS)):
             item.setBackground(column, brush)
 
 
@@ -215,50 +268,60 @@ class TraktorKeyCalculator(QMainWindow):
         # Create a splitter for the two panes
         self.splitter = QSplitter(Qt.Horizontal)
         
-        # Left pane for playlist (initially empty)
+        # Left pane: the Playlist (the set, in order) and the Browser (collection, saved
+        # playlists and smartlists), as two tabs
         left_pane = QWidget()
-        left_layout = QVBoxLayout(left_pane)
-        
+        pane_layout = QVBoxLayout(left_pane)
+        pane_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_tabs = QTabWidget()
+        pane_layout.addWidget(self.left_tabs)
+        self.playlist_page = QWidget()
+        left_layout = QVBoxLayout(self.playlist_page)
+
         # Playlist label
         playlist_label = QLabel("Playlist (Drag Tracks Here)")
         playlist_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(playlist_label)
-        
-        # Clear playlist button
+
+        # Clear and save buttons
+        playlist_buttons = QHBoxLayout()
         clear_playlist_btn = QPushButton("Clear Playlist")
         clear_playlist_btn.clicked.connect(self.clear_playlist)
-        left_layout.addWidget(clear_playlist_btn)
+        playlist_buttons.addWidget(clear_playlist_btn)
+        save_playlist_btn = QPushButton("Save as Playlist...")
+        save_playlist_btn.setToolTip('Save these tracks, in this order, under Playlists in the Browser tab')
+        save_playlist_btn.clicked.connect(lambda: self.save_playlist_as())
+        playlist_buttons.addWidget(save_playlist_btn)
+        left_layout.addLayout(playlist_buttons)
         
         # Playlist tree
         self.playlist_tree = PlaylistTreeWidget(self)
         self.playlist_tree.setColumnCount(len(HEADER_LABELS))
         self.playlist_tree.setHeaderLabels(HEADER_LABELS)
 
+        # Columns are resized by hand (Stretch mode made that impossible) and the widths are
+        # saved on close under the same key. The mode is set before columns are hidden: set
+        # after, Qt leaves each hidden column's old width as an empty gap.
+        self.playlist_tree.header().setStretchLastSection(False)
+        self.playlist_tree.header().setSectionResizeMode(QHeaderView.Interactive)
         visible_columns = self.settings.get("Visible column left", HEADER_LABELS)
         for col, name in enumerate(HEADER_LABELS):
             is_visible = name in visible_columns
             self.playlist_tree.setColumnHidden(col, not is_visible)
-
-        column_sizes = self.settings.get("Column Sizes left", {})
+        column_sizes = self.settings.get("Column sizes left", {})
         for col, label in enumerate(HEADER_LABELS):
             width = column_sizes.get(label)
             if width is not None and width > 0:
                 self.playlist_tree.setColumnWidth(col, width)
-
-        # Set column widths for playlist tree
-        self.playlist_tree.header().setStretchLastSection(False)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Artist"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Title"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Original BPM"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Original Key"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["New Key"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Camelot Key New"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Open Key New"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Path"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Comment"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Genre"], QHeaderView.Stretch)
-        self.playlist_tree.header().setSectionResizeMode(HEADER_INDEX["Color"], QHeaderView.Stretch)
         left_layout.addWidget(self.playlist_tree)
+        self.playlist_count_label = QLabel('')
+        left_layout.addWidget(self.playlist_count_label)
+        self.left_tabs.addTab(self.playlist_page, 'Playlist')
+        self.list_browser = ListBrowser(self)
+        self.list_browser.setToolTip('Click an entry to show its tracks in the List, or drag it there.\n'
+                                     'Double-click a playlist or smartlist to load it into the Playlist tab.\n'
+                                     'Drag tracks onto a playlist to add them. Right-click for more.')
+        self.left_tabs.addTab(self.list_browser, 'Browser')
 
 
         # ------------------------------------------------------- # 
@@ -296,7 +359,7 @@ class TraktorKeyCalculator(QMainWindow):
         # Store checkbox actions
         self.search_column_actions = {}
 
-        for column in HEADER_LABELS:
+        for column in FIELD_LABELS:
             action = QAction(column, self)
             action.setCheckable(True)
             action.setChecked(column in self.search_columns)
@@ -370,7 +433,7 @@ class TraktorKeyCalculator(QMainWindow):
         
         # Buttons
         self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.setToolTip('Rebuild the library list from the default CSV plus all imported tracks')
+        self.refresh_button.setToolTip('Rebuild the library list from every track of the collection (library.sqlite)')
         self.refresh_button.clicked.connect(self.refresh_data)
         control_layout.addWidget(self.refresh_button)
         
@@ -430,10 +493,55 @@ class TraktorKeyCalculator(QMainWindow):
         self.candidate_tree.customContextMenuRequested.connect(
             lambda pos: self.show_track_context_menu(self.candidate_tree, pos))
         
+        # Bar above the List while it shows one Browser entry
+        self.source_bar = QWidget()
+        source_layout = QHBoxLayout(self.source_bar)
+        source_layout.setContentsMargins(0, 0, 0, 0)
+        self.source_label = QLabel('')
+        self.source_label.setStyleSheet(status_style('warning', bold=True))
+        source_layout.addWidget(self.source_label, 1)
+        self.source_clear_button = QPushButton('Show all tracks')
+        source_layout.addWidget(self.source_clear_button)
+        self.source_bar.hide()
+        right_layout.addWidget(self.source_bar)
+
         # Add tree to right layout
         self.library_tabs = QTabWidget()
         self.library_tabs.addTab(self.candidate_tree, 'List')
+        self.list_count_label = QLabel('')
+        self.list_count_label.setToolTip('Tracks the List view shows (after search and filters) and how many of them are selected')
+        self.group_colours_switch = QCheckBox('Group colours')
+        self.group_colours_switch.setToolTip(
+            "Colour the List's rows by their group on the similarity map, as the map colours its dots,\n"
+            "instead of the Traktor colour. Uses the map's Groups setting (Neighbour communities if it\n"
+            "is off). Sort by the Group column to keep each group together.")
+        self.group_colours_switch.setChecked(bool(self.settings.get('List group colours', False)))
+        self.group_colours_switch.toggled.connect(self.set_group_colours)
+        corner = QWidget()
+        corner_layout = QHBoxLayout(corner)
+        corner_layout.setContentsMargins(0, 0, 0, 0)
+        corner_layout.addWidget(self.group_colours_switch)
+        corner_layout.addSpacing(12)
+        corner_layout.addWidget(self.list_count_label)
+        self.library_tabs.setCornerWidget(corner, Qt.TopRightCorner)
         right_layout.addWidget(self.library_tabs)
+        # Hovering a drag over a tab opens it (e.g. a playlist from the Browser to the Playlist tab)
+        for tabs in (self.left_tabs, self.library_tabs):
+            tabs.tabBar().setChangeCurrentOnDrag(True)
+            tabs.tabBar().setAcceptDrops(True)
+        # The # column comes first
+        for tree in (self.playlist_tree, self.candidate_tree):
+            tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[POSITION_COLUMN]), 0)
+
+        # Track counts under the playlist and next to the tabs. Many changes arrive at once
+        # (thousands of rows added on load), so they are counted once afterwards.
+        self._count_timer = QTimer(self)
+        self._count_timer.setSingleShot(True)
+        self._count_timer.timeout.connect(self._update_counts)
+        for tree in (self.playlist_tree, self.candidate_tree):
+            tree.itemSelectionChanged.connect(self._count_timer.start)
+            for signal in (tree.model().rowsInserted, tree.model().rowsRemoved, tree.model().modelReset):
+                signal.connect(self._count_timer.start)
         
         # Add panes to splitter
         self.splitter.addWidget(left_pane)
@@ -547,9 +655,13 @@ class TraktorKeyCalculator(QMainWindow):
 
     def apply_advanced_filters_tree(self, item):
         """Every active text or numeric condition must match."""
+        return self._matches_rules(item, self.advanced_filters)
+
+    def _matches_rules(self, item, rules):
+        """Every rule ({'column', 'condition', 'value'}) matches this row."""
         columns = {self.candidate_tree.headerItem().text(index): index
                    for index in range(self.candidate_tree.columnCount())}
-        for condition in self.advanced_filters:
+        for condition in rules:
             column = condition['column']
             index = columns.get(column)
             if index is None:
@@ -570,18 +682,22 @@ class TraktorKeyCalculator(QMainWindow):
                 action.blockSignals(False)
             count = len(color_query.included)
             self.color_search_button.setText(f'Colors ({count})' if count else 'Colors')
-        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in HEADER_INDEX]
+        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in FIELD_LABELS]
         playlist_paths = {canonical_path(path) for path in self.playlist_paths}
-        hide_playlist_tracks = self.settings.get('Hide playlist tracks', False)
-        advanced = bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
+        # A saved playlist shown in the List shows all its tracks (those on the Playlist tab dimmed)
+        hide_playlist_tracks = (self.settings.get('Hide playlist tracks', False)
+                                and not (self.list_source and self.list_source['kind'] in ORDERED_KINDS))
+        advanced =bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
         in_playlist_matches = 0
         for index in range(self.candidate_tree.topLevelItemCount()):
             item = self.candidate_tree.topLevelItem(index)
-            in_playlist = canonical_path(item.text(HEADER_INDEX['Path'])) in playlist_paths
+            key = canonical_path(item.text(HEADER_INDEX['Path']))
+            in_playlist = key in playlist_paths
             if bool(item.data(0, IN_PLAYLIST_ROLE)) != in_playlist:
                 item.setData(0, IN_PLAYLIST_ROLE, in_playlist)
                 self._apply_text_colours(item)
-            matches = (color_query.matches(item.text(COLOR_COLUMN_INDEX))
+            matches = (self._in_source(item, key)
+                       and color_query.matches(item.text(COLOR_COLUMN_INDEX))
                        and ss_color_query.matches(item.text(HEADER_INDEX[SS_COLOR_COLUMN])))
             if matches and search_text:
                 matches = any(search_text in item.text(column).casefold() for column in search_indices)
@@ -598,8 +714,11 @@ class TraktorKeyCalculator(QMainWindow):
                         else f'; {in_playlist_matches} in the playlist (dimmed)')
         if advanced:
             message += '; Advanced Search is on'
+        if self.list_source is not None:
+            message += f'; {node_label(self.list_source)}'
         self.status_label.setStyleSheet(status_style('ok'))
         self.status_label.setText(message)
+        self._count_timer.start()
         if color_query.error or ss_color_query.error:
             self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(color_query.error or ss_color_query.error)
@@ -651,103 +770,20 @@ class TraktorKeyCalculator(QMainWindow):
 
     
     def on_header_clicked(self, column):
-        """Handle header click to sort the tree"""
-        self.sort_by_column(column)
-    
-    def sort_by_column(self, column):
-        """Sort the tree by the given column"""
-        try:
-            # Toggle sort order if same column
-            if self.sort_column == column:
-                self.sort_ascending = not self.sort_ascending
-            else:
-                self.sort_column = column
-                self.sort_ascending = True
-            
-            # Update status
-            column_name = self.candidate_tree.headerItem().text(column)
-            direction = "ascending" if self.sort_ascending else "descending"
-            
-            # self.status_bar.showMessage(f"Sorting by {column_name} ({direction})...")
-            message = f"Sorting by {column_name} ({direction})..."
-            self.status_label.setStyleSheet(status_style('ok'))
-            self.status_label.setText(message)
-            
-            
-            # Get all items
-            items = []
-            for i in range(self.candidate_tree.topLevelItemCount()):
-                items.append(self.candidate_tree.takeTopLevelItem(0))
-            
-            # Define sort key function based on column
-            if column in (HEADER_INDEX.get("Color"), HEADER_INDEX.get(SS_COLOR_COLUMN)):  # color numbers
-                def get_sort_key(item):
-                    try:
-                        # Extract color value
-                        text = item.text(column)
-                        if text == 'nan' or not text:
-                            return (1, 999)  # Sort 'nan' values at the end
-                        return (0, int(float(text.strip())))
-                    except:
-                        return (1, 999)  # Put errors at the end too
-            elif column in (HEADER_INDEX.get("Original BPM"), HEADER_INDEX.get("Rating"),
-                            HEADER_INDEX.get(SS_RATING_COLUMN)):  # Numeric columns
-                def get_sort_key(item):
-                    try:
-                        # Extract numeric value
-                        text = item.text(column)
-                        if text == 'nan' or not text:
-                            return 999  # Sort 'nan' values at the end
-                        return float(text.strip())
-                    except:
-                        return 999
-            elif column == HEADER_INDEX.get("Camelot Key New"):  # Harmonic Key column
-                def get_sort_key(item):
-                    try:
-                        # Extract camelot key format (e.g., "1A", "12B")
-                        key_text = item.text(column)
-                        # Handle "Unknown" or empty values
-                        if key_text == "Unknown" or not key_text or key_text == 'nan':
-                            return (999, "Z")  # Sort at the end
-                        
-                        # Extract the number and letter parts
-                        number_part = ''.join(c for c in key_text if c.isdigit())
-                        letter_part = ''.join(c for c in key_text if c.isalpha())
-                        
-                        # Ensure number part is valid
-                        if number_part:
-                            # Return a tuple for sorting (number, letter)
-                            return (int(number_part), letter_part)
-                        return (999, "Z")
-                    except:
-                        return (999, "Z")
-            else:
-                # Text columns
-                def get_sort_key(item):
-                    text = item.text(column)
-                    return text if text != 'nan' else "zzzzz"  # Sort 'nan' values at the end
-            
-            # Sort the items
-            items.sort(key=get_sort_key, reverse=not self.sort_ascending)
-            
-            # Add them back to the tree
-            for item in items:
-                self.candidate_tree.addTopLevelItem(item)
-            
-            # Update status
-            visible_count = sum(1 for i in range(self.candidate_tree.topLevelItemCount()) if not self.candidate_tree.topLevelItem(i).isHidden())
-            total_count = self.candidate_tree.topLevelItemCount()
-            
-            # self.status_bar.showMessage(f"Sorted by {column_name} ({direction}). Displaying {visible_count} of {total_count} tracks")
-            message = f"Sorted by {column_name} ({direction}). Displaying {visible_count} of {total_count} tracks"
-            self.status_label.setStyleSheet(status_style('info'))
-            self.status_label.setText(message)
-            
-        except Exception as e:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Sort Error", f"Error sorting: {str(e)}")
-            self.status_bar.showMessage(f"Error sorting: {str(e)}")
-    
+        """Qt has sorted the list already (sorting is enabled; TrackItem gives the order)."""
+        self.sort_column = column
+        self.sort_ascending = self.candidate_tree.header().sortIndicatorOrder() == Qt.AscendingOrder
+        direction = 'ascending' if self.sort_ascending else 'descending'
+        self.status_label.setStyleSheet(status_style('info'))
+        self.status_label.setText(f'Sorted by {self.candidate_tree.headerItem().text(column)} ({direction})')
+
+    def sort_by_column(self, column, ascending=None):
+        """Sort the library list; by default the same column again reverses the order."""
+        if ascending is None:
+            ascending = not self.sort_ascending if column == self.sort_column else True
+        self.sort_column, self.sort_ascending = column, ascending
+        self.candidate_tree.sortItems(column, Qt.AscendingOrder if ascending else Qt.DescendingOrder)
+
     def on_item_double_clicked(self, item, column):
         """Handle double-click on tree item"""
         file_path = item.text(HEADER_INDEX.get("Path"))
@@ -763,16 +799,62 @@ class TraktorKeyCalculator(QMainWindow):
             self.status_label.setStyleSheet(status_style('error'))
             self.status_label.setText(message)
     
-    def _load_library(self, table):
-        merged = merge_tracks(table, self.saved_imports.values())
+    def _load_library(self, table, records=None):
+        """A library list from `table` plus the tracks imported so far (or `records`)."""
+        merged = merge_tracks(table, self.saved_imports.values() if records is None else records)
         return self._with_user_fields(enrich_ratings(merged, self.importer.collection))
+
+    def _rekordbox_changed(self, library):
+        """Rekordbox saved its library (or the app just started): refresh its playlists in the Browser."""
+        self.rekordbox_library = library
+        self.refresh_rekordbox_playlists()
+
+    def _collection_changed(self, collection):
+        """Traktor saved its collection: take the values changed in Traktor into the library,
+        all at once (see core/traktor_sync.py)."""
+        self.importer.collection = collection  # imports use the fresh copy, no second read
+        self.refresh_traktor_playlists()
+        try:
+            seen = self.library_store.traktor_seen()
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Traktor sync skipped: {error}')
+            return
+        changes = collection_changes(self.table, collection.by_path, seen)
+        now = {key: seen_values(record) for key, record in collection.by_path.items()}
+        try:
+            self.library_store.save_traktor_seen({key: values for key, values in now.items() if seen.get(key) != values})
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Could not save the Traktor sync state: {error}')
+        if not changes:
+            return
+        self.table = apply_changes(self.table, changes)
+        self.data_manager.table = self.table
+        rows = {}
+        for index, changed in changes.items():
+            key = canonical_path(self.table.at[index, 'File_Path'])
+            rows[key] = self.table.loc[index]
+            if key in self.saved_imports:  # Refresh rebuilds the list from these
+                self.saved_imports[key].update(changed)
+        error = self._save_library()
+        for tree in (self.candidate_tree, self.playlist_tree):
+            for item_index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(item_index)
+                row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
+                if row is not None:
+                    self._track_item(row, item)
+        error = self._save_playlist() or error
+        self.filter_items()  # changed values may (no longer) match the search
+        message = f'Updated from Traktor: {summary(changes)}'
+        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
+        self.status_label.setText(error or message)
+        self.status_bar.showMessage(message)
 
     def _restore_lists(self):
         """Load the library and playlist saved at the last change.
 
-        On the first start (no saved library list yet) the library is built from the
-        default CSV plus imports saved by versions up to 4.5.0 in imported_tracks.json.
-        That file is only read, and is kept as a backup.
+        On the first start (no saved library list yet) the library is empty plus the imports
+        saved by versions up to 4.5.0 in imported_tracks.json. That file is only read, and is
+        kept as a backup.
         """
         try:
             if self.library_store.track_count() == 0:
@@ -794,6 +876,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.data_manager.table = self.table
         for record in saved_playlist:
             self._add_to_playlist(record)
+        self._renumber_playlist()
 
     def _save_list(self, name, records):
         """Persist one list; returns an error message, or '' on success."""
@@ -808,7 +891,12 @@ class TraktorKeyCalculator(QMainWindow):
     def _save_library(self):
         return self._save_list(LIBRARY_LIST, self.table.to_dict('records') if self.table is not None else [])
 
-    def _save_playlist(self):
+    def _renumber_playlist(self):
+        for index in range(self.playlist_tree.topLevelItemCount()):
+            self.playlist_tree.topLevelItem(index).setText(HEADER_INDEX[POSITION_COLUMN], str(index + 1))
+
+    def _playlist_records(self):
+        """Records of the Playlist tab's tracks, in order: library rows, else the collection's."""
         keys = [canonical_path(self.playlist_tree.topLevelItem(i).text(HEADER_INDEX['Path']))
                 for i in range(self.playlist_tree.topLevelItemCount())]
         records = {}
@@ -816,7 +904,17 @@ class TraktorKeyCalculator(QMainWindow):
             subset = self.table[self.table['File_Path'].map(canonical_path).isin(keys)]
             for row in subset.to_dict('records'):
                 records.setdefault(canonical_path(row['File_Path']), row)
-        return self._save_list(PLAYLIST_LIST, [records[key] for key in keys if key in records])
+        missing = [key for key in keys if key not in records]
+        if missing:
+            try:
+                records.update(self.library_store.tracks(missing))
+            except sqlite3.Error:
+                pass
+        return [records[key] for key in keys if key in records]
+
+    def _save_playlist(self):
+        self._renumber_playlist()
+        return self._save_list(PLAYLIST_LIST, self._playlist_records())
 
     def delete_duplicate_tracks(self):
         """Remove library rows whose path repeats an earlier row. Files on disk are untouched."""
@@ -971,6 +1069,7 @@ class TraktorKeyCalculator(QMainWindow):
                 row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
                 if row is not None:
                     self._track_item(row, item)
+        self.list_browser.set_collection(self.table)  # e.g. an edited artist
         self.filter_items()
 
     def set_song_selector_fields(self, paths, **fields):
@@ -1077,6 +1176,21 @@ class TraktorKeyCalculator(QMainWindow):
 
     # -- similarity map -----------------------------------------------------
 
+    def _update_counts(self):
+        """'1,234 of 3,489 tracks, 3 selected' for the List view; '28 tracks, 2 selected' for
+        the playlist. Selected rows hidden by a search are not counted."""
+        def counts(tree):
+            items = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+            shown = [item for item in items if not item.isHidden()]
+            return len(items), len(shown), sum(item.isSelected() for item in shown)
+
+        total, shown, selected = counts(self.candidate_tree)
+        text = f'{shown:,} of {total:,} tracks' if shown != total else f'{total:,} tracks'
+        self.list_count_label.setText(f'{text}, {selected:,} selected  ' if selected else f'{text}  ')
+        total, _shown, selected = counts(self.playlist_tree)
+        text = f'{total:,} track' + ('' if total == 1 else 's')
+        self.playlist_count_label.setText(f'{text}, {selected:,} selected' if selected else text)
+
     def map_visible(self):
         return hasattr(self, 'similarity_map') and self.library_tabs.currentWidget() is self.similarity_map
 
@@ -1130,7 +1244,7 @@ class TraktorKeyCalculator(QMainWindow):
         self.track_context_menu(self.candidate_tree).exec_(position)
 
     def choose_hover_fields(self):
-        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), HEADER_LABELS, self)
+        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), FIELD_LABELS, self)
         if dialog.exec_() == QDialog.Accepted:
             self.settings['Map hover fields'] = dialog.selected()
             self._refresh_map()
@@ -1155,6 +1269,48 @@ class TraktorKeyCalculator(QMainWindow):
             self.btn_advanced_search.setText('Advanced Search')
             self.btn_advanced_search.setStyleSheet('')
             self.btn_advanced_search.setToolTip('Filter by column conditions, e.g. BPM between 120 and 130.')
+
+    # -- map groups in the List ----------------------------------------------
+
+    def _group(self, path):
+        """Map group of a track (0 = largest, -1 = in no group); None while not grouped or not analysed."""
+        groups = self.similarity_map.groups if hasattr(self, 'similarity_map') else {}
+        return groups.get(canonical_path(path)) if groups else None
+
+    def _group_text(self, path):
+        group = self._group(path)
+        return str(group + 1) if group is not None and group >= 0 else ''
+
+    def _group_colours_on(self):
+        return hasattr(self, 'group_colours_switch') and self.group_colours_switch.isChecked()
+
+    def _ensure_groups(self):
+        if self.similarity_map.ensure_grouping():
+            self._map_stale = False  # loading now; opening the map need not load again
+            self.status_label.setStyleSheet(status_style('info'))
+            self.status_label.setText(GROUPING_MESSAGE)
+
+    def set_group_colours(self, on):
+        self.settings['List group colours'] = on
+        if on:
+            self._ensure_groups()
+        self._apply_groups()
+
+    def _apply_groups(self):
+        """Fill the Group column of both panels and recolour the List's rows (groups changed)."""
+        if self.status_label.text() == GROUPING_MESSAGE and self.similarity_map.groups:
+            self.status_label.setStyleSheet(status_style('ok'))
+            self.status_label.setText(f'Grouped: {self.similarity_map.grouping_summary.text()}')
+        column = HEADER_INDEX[GROUP_COLUMN]
+        for tree in (self.candidate_tree, self.playlist_tree):
+            sorting = tree.isSortingEnabled()
+            tree.setSortingEnabled(False)  # Qt would re-sort after every change while sorted by Group
+            for index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(index)
+                item.setText(column, self._group_text(item.text(HEADER_INDEX['Path'])))
+                if tree is self.candidate_tree:
+                    self.apply_row_shading_from_color(item)
+            tree.setSortingEnabled(sorting)
 
     def _init_analysis_menu(self):
         menu = self.menuBar().addMenu('Analysis')
@@ -1222,16 +1378,17 @@ class TraktorKeyCalculator(QMainWindow):
             self.start_embedding_analysis()
 
     def refresh_data(self):
-        """Rebuild the library list from the default CSV plus all imported tracks"""
-        self.table = self._load_library(self.data_manager.load_default_data())
+        """Rebuild the library list from every track of the collection (library.sqlite)"""
+        try:
+            records = self.library_store.all_tracks().values()
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Could not read {self.library_store.path}: {error}')
+            return
+        self.table = self._load_library(pd.DataFrame(), records)
         self._save_library()
         self._queue_embeddings()
-        self.populate_tree()
-        
-        # Re-apply current sort
-        if hasattr(self, 'sort_column'):
-            self.sort_by_column(self.sort_column)
-    
+        self.populate_tree()  # keeps the current sort
+
     def load_csv(self):
         """Load a custom CSV file"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1244,11 +1401,7 @@ class TraktorKeyCalculator(QMainWindow):
                 self.table = self._load_library(result)
                 self._save_library()
                 self._queue_embeddings()
-                self.populate_tree()
-                
-                # Re-apply current sort
-                if hasattr(self, 'sort_column'):
-                    self.sort_by_column(self.sort_column)
+                self.populate_tree()  # keeps the current sort
     
     def get_full_path(self, row):
         """Generate full path to the track file"""
@@ -1261,22 +1414,14 @@ class TraktorKeyCalculator(QMainWindow):
 
     def open_advanced_search(self):
         """Open advanced search dialog"""
-        column_names = [self.candidate_tree.headerItem().text(i) 
-                        for i in range(self.candidate_tree.columnCount())]
-        
-        self.advanced_search_dialog = AdvancedSearchDialog(column_names, self)
-        
+        self.advanced_search_dialog = AdvancedSearchDialog(FIELD_LABELS, self,
+                                                           save_smartlist=self.save_smartlist_from_search)
+
         # Restore previous settings
         self.advanced_search_dialog.checkbox_enable.setChecked(
             self.current_advanced_search['enabled']
         )
-        
-        for i, filter_data in enumerate(self.current_advanced_search['filters']):
-            if i < len(self.advanced_search_dialog.filter_rows):
-                row = self.advanced_search_dialog.filter_rows[i]
-                row.column_combo.setCurrentText(filter_data['column'])
-                row.condition_combo.setCurrentText(filter_data['condition'])
-                row.value_edit.setText(filter_data['value'])
+        self.advanced_search_dialog.set_filters(self.current_advanced_search['filters'])
         
         if self.advanced_search_dialog.exec_() == QDialog.Accepted:
             # Save current state
@@ -1285,20 +1430,15 @@ class TraktorKeyCalculator(QMainWindow):
             
             # Apply filters
             if self.current_advanced_search['enabled']:
-                self.advanced_filters = self.current_advanced_search['filters']
+                self.advanced_filters = active_filters(self.current_advanced_search['filters'])
             else:
                 self.advanced_filters = []
             self.filter_items()
 
 
     def get_filters_from_dialog(self):
-        """Extract filters from dialog"""
-        filters = []
-        for row in self.advanced_search_dialog.filter_rows:
-            filter_data = row.get_filter()
-            if filter_data['value']:  # Only add if value is not empty
-                filters.append(filter_data)
-        return filters
+        """Extract filters from dialog; rows set to None are kept so they come back next time"""
+        return self.advanced_search_dialog.saved_filters()
     
     def populate_tree(self):
         sort_column = self.candidate_tree.sort_column
@@ -1313,8 +1453,12 @@ class TraktorKeyCalculator(QMainWindow):
                 self.all_items.append(item)
         self.candidate_tree.setSortingEnabled(True)
         self.candidate_tree.sortItems(sort_column, sort_order)
-        self.advanced_filters = [f for f in self.current_advanced_search.get('filters', []) if f.get('value')]
+        self.advanced_filters = active_filters(self.current_advanced_search.get('filters', []))
         self._refresh_playlist()
+        self.list_browser.set_collection(self.table)
+        self._apply_source_positions()
+        if self._group_colours_on():
+            self._apply_groups()
         self.filter_items()
         self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
 
@@ -1358,6 +1502,8 @@ class TraktorKeyCalculator(QMainWindow):
 
     def closeEvent(self, event):
         """Save settings before closing the app"""
+        self.collection_watcher.stop()
+        self.rekordbox_watcher.stop()
         if self.embedding_analyzer is not None:
             self.embedding_analyzer.stop(timeout=2)
         if hasattr(self, 'similarity_map'):
@@ -1419,6 +1565,8 @@ class TraktorKeyCalculator(QMainWindow):
         add_folder.triggered.connect(self.choose_audio_folder)
         collection = menu.addAction('Link Traktor collection...')
         collection.triggered.connect(self.choose_traktor_collection)
+        rekordbox = menu.addAction('Link Rekordbox library...')
+        rekordbox.triggered.connect(self.choose_rekordbox_library)
 
     def choose_audio_files(self):
         paths, _ = QFileDialog.getOpenFileNames(self, 'Add audio files', '',
@@ -1449,10 +1597,29 @@ class TraktorKeyCalculator(QMainWindow):
             return
         self.importer = importer
         self.settings['Traktor collection'] = path
+        self.collection_watcher.set_path(path)  # its changed values come in with the next sync
         self.table = enrich_ratings(self.table, importer.collection)
         self._save_library()
         self.populate_tree()
         self.status_label.setText(f'Linked {len(importer.collection.by_path)} Traktor tracks')
+        self.status_bar.showMessage(path)
+
+    def choose_rekordbox_library(self):
+        """Only needed when the Rekordbox library is not found by itself (master.db)."""
+        path, _ = QFileDialog.getOpenFileName(self, 'Link Rekordbox library',
+                                              self.settings.get('Rekordbox library', ''),
+                                              'Rekordbox library (master.db);;All files (*)')
+        if not path:
+            return
+        library = RekordboxLibrary(path)
+        library._load()
+        if library.error:
+            QMessageBox.warning(self, 'Cannot read the Rekordbox library', library.error)
+            return
+        self.settings['Rekordbox library'] = path
+        self.rekordbox_watcher.set_path(path)  # reads it again in a moment
+        self._rekordbox_changed(library)
+        self.status_label.setText(f'Linked the Rekordbox library: {library.track_count} tracks')
         self.status_bar.showMessage(path)
 
     def dragEnterEvent(self, event):
@@ -1474,7 +1641,10 @@ class TraktorKeyCalculator(QMainWindow):
         else:
             event.ignore()
 
-    def import_audio_files(self, paths, to_playlist=False):
+    def import_audio_files(self, paths, to_playlist=False, keep_view=False):
+        """Read and add audio files to the library (and the Playlist tab if `to_playlist`).
+        Unless `keep_view`, the search is cleared and the List shows all tracks, so the new
+        tracks are visible."""
         records, failures = {}, []
         previous_rows = self._rows_by_path()
         # Reading tags takes a few ms per file: show progress (with Cancel) for big imports,
@@ -1511,9 +1681,13 @@ class TraktorKeyCalculator(QMainWindow):
         persistence_error = self._save_library()
         self._queue_embeddings()
         # A dropped file should be immediately visible even if a previous filter excluded it.
-        self.search_bar.clear()
-        self.current_advanced_search['enabled'] = False
-        self.advanced_filters = []
+        if not keep_view:
+            self.search_bar.clear()
+            self.current_advanced_search['enabled'] = False
+            self.advanced_filters = []
+            if not to_playlist:
+                self.list_source = None
+                self._resolve_source()
         self.populate_tree()
         if to_playlist:
             for record in records.values():
@@ -1566,7 +1740,7 @@ class TraktorKeyCalculator(QMainWindow):
         return rows
 
     def _track_item(self, row, item=None):
-        item = item if item is not None else QTreeWidgetItem()
+        item = item if item is not None else TrackItem()
         base, scale = self._text(row.get('Musical_Key_Base')), self._text(row.get('BaseMinorOrMajor'))
         key = parse_key(f'{base} {scale}') or parse_key(base)
         bpm = parse_bpm(row.get('BPM'))
@@ -1588,7 +1762,8 @@ class TraktorKeyCalculator(QMainWindow):
                   'Genre': self._text(row.get('Genre')), 'Color': self._rating_text(row.get('Color')) or '0',
                   'Album': self._text(row.get('Album')), 'Rating': self._rating_text(row.get('Rating')),
                   SS_RATING_COLUMN: self._rating_text(row.get('SS_Rating')),
-                  SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color'))}
+                  SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color')),
+                  GROUP_COLUMN: self._group_text(self._text(row.get('File_Path')))}
         key_source = self._text(row.get('Key_Source')) or ('Loaded CSV' if key else 'Not available')
         bpm_source = self._text(row.get('BPM_Source')) or ('Loaded CSV' if bpm else 'Not available')
         color_source = self._text(row.get('Color_Source')) or ('Saved import' if self._text(row.get('Imported')) else 'Loaded CSV')
@@ -1610,7 +1785,7 @@ class TraktorKeyCalculator(QMainWindow):
         dimmed = bool(item.data(0, IN_PLAYLIST_ROLE))
         font = item.font(0)
         font.setItalic(dimmed)
-        for column in range(item.columnCount()):
+        for column in range(len(HEADER_LABELS)):
             item.setForeground(column, QBrush(dim_text_colour()) if dimmed else QBrush())
             item.setFont(column, font)
         if dimmed:
@@ -1620,14 +1795,19 @@ class TraktorKeyCalculator(QMainWindow):
             item.setForeground(HEADER_INDEX['Original Key'] if missing_key else HEADER_INDEX['Original BPM'],
                                QBrush(QColor('darkorange')))
 
-    def _add_to_playlist(self, row):
+    def _add_to_playlist(self, row, index=None):
+        """Append (or insert at row `index`) a track; one already on the playlist is updated in place."""
         path = canonical_path(row.get('File_Path'))
-        for index in range(self.playlist_tree.topLevelItemCount()):
-            item = self.playlist_tree.topLevelItem(index)
+        for row_index in range(self.playlist_tree.topLevelItemCount()):
+            item = self.playlist_tree.topLevelItem(row_index)
             if canonical_path(item.text(HEADER_INDEX['Path'])) == path:
                 self._track_item(row, item)
                 return
-        self.playlist_tree.addTopLevelItem(self._track_item(row))
+        item = self._track_item(row)
+        if index is None:
+            self.playlist_tree.addTopLevelItem(item)
+        else:
+            self.playlist_tree.insertTopLevelItem(index, item)
         self.playlist_paths.add(self._text(row.get('File_Path')))
 
     def _refresh_playlist(self):

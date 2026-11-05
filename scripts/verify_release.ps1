@@ -92,7 +92,7 @@ public static class TkcNativeWindow {
             uint id; GetWindowThreadProcessId(hwnd, out id);
             if (!allowed.Contains((int)id)) return true;
             var title = new StringBuilder(512); GetWindowText(hwnd, title, title.Capacity);
-            if (title.ToString() != "Traktor Key Calculator") return true;
+            if (!title.ToString().StartsWith("SongSelector")) return true;
             found = hwnd; return false;
         }, IntPtr.Zero);
         return found;

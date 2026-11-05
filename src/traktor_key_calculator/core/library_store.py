@@ -5,6 +5,9 @@
 - lists: ordered track paths per named list, i.e. what each panel showed when it
   was last saved. LIBRARY_LIST is the right-hand library, PLAYLIST_LIST the
   left-hand playlist.
+- saved lists: the user's playlists (ordered tracks) and smartlists (Complex
+  Search rules, matched live), shown under Playlists in the Browser tab. Names
+  are unique ignoring case.
 
 SQLite was chosen over JSON because single-track updates do not rewrite the
 whole file, reads and searches are faster, and writes are transactional (a crash
@@ -19,9 +22,12 @@ from pathlib import Path
 
 from traktor_key_calculator.core.traktor_collection import canonical_path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 LIBRARY_LIST = 'Library'
 PLAYLIST_LIST = 'Playlist'
+# Kinds of saved list
+PLAYLIST = 'playlist'
+SMARTLIST = 'smartlist'
 
 # The app's own per-track values (record key -> column). They are written only by
 # set_user_fields; upserting track metadata never overwrites them.
@@ -52,6 +58,9 @@ _SELECT_TRACKS = 'SELECT ' + ', '.join(_RECORD_COLUMNS) + ' FROM tracks'
 _SELECT_LIST = ('SELECT ' + ', '.join('t.' + column for column in _RECORD_COLUMNS) +
                 ' FROM list_tracks l JOIN tracks t ON t.path_key = l.path_key'
                 ' WHERE l.list_name = ? ORDER BY l.position')
+_SELECT_SAVED_LIST = ('SELECT ' + ', '.join('t.' + column for column in _RECORD_COLUMNS) +
+                      ' FROM saved_list_tracks l JOIN tracks t ON t.path_key = l.path_key'
+                      ' WHERE l.list_name = ? ORDER BY l.position')
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -88,6 +97,27 @@ CREATE TABLE IF NOT EXISTS lists (
     name     TEXT PRIMARY KEY,
     saved_at TEXT NOT NULL
 );
+-- schema 3: the user's playlists and smartlists
+CREATE TABLE IF NOT EXISTS saved_lists (
+    name     TEXT PRIMARY KEY COLLATE NOCASE,
+    kind     TEXT NOT NULL,             -- 'playlist' or 'smartlist'
+    rules    TEXT,                      -- smartlist: Complex Search rows as JSON
+    saved_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS saved_list_tracks (
+    list_name TEXT NOT NULL COLLATE NOCASE,
+    position  INTEGER NOT NULL,
+    path_key  TEXT NOT NULL REFERENCES tracks(path_key),
+    PRIMARY KEY (list_name, position)
+);
+-- Values of each track as Traktor's collection had them at the last sync (core/traktor_sync.py).
+CREATE TABLE IF NOT EXISTS traktor_seen (
+    path_key TEXT PRIMARY KEY,
+    key      TEXT,
+    bpm      REAL,
+    color    INTEGER,
+    rating   REAL
+);
 """
 
 
@@ -122,11 +152,26 @@ class LibraryStore:
         if row is not None and row[0] == str(SCHEMA_VERSION):
             return  # up to date: no write (this runs on every connection)
         existing = {row[1] for row in connection.execute('PRAGMA table_info(tracks)')}
-        with connection:
+        with connection:  # 2 -> 3 only adds tables, which _SCHEMA creates
             for column, kind in (('ss_rating', 'REAL'), ('ss_color', 'INTEGER')):  # 1 -> 2
                 if column not in existing:
                     connection.execute(f'ALTER TABLE tracks ADD COLUMN {column} {kind}')
             connection.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+
+    # -- Traktor sync -----------------------------------------------------------
+
+    def traktor_seen(self):
+        """{path_key: {'key', 'bpm', 'color', 'rating'}} as Traktor had them at the last sync."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute('SELECT path_key, key, bpm, color, rating FROM traktor_seen').fetchall()
+        return {row[0]: dict(zip(('key', 'bpm', 'color', 'rating'), row[1:])) for row in rows}
+
+    def save_traktor_seen(self, values):
+        """Store {path_key: values} (the whole collection, in one transaction)."""
+        with closing(self._connect()) as connection, connection:
+            connection.executemany('INSERT OR REPLACE INTO traktor_seen VALUES (?, ?, ?, ?, ?)',
+                                   [(key, value['key'], value['bpm'], value['color'], value['rating'])
+                                    for key, value in values.items()])
 
     # -- collection -----------------------------------------------------------
 
@@ -187,6 +232,24 @@ class LibraryStore:
         with closing(self._connect()) as connection:
             return connection.execute('SELECT COUNT(*) FROM tracks').fetchone()[0]
 
+    def tracks(self, keys):
+        """Records of these canonical paths that are in the collection, by path."""
+        keys = list(keys)
+        records = {}
+        with closing(self._connect()) as connection:
+            for start in range(0, len(keys), 500):  # SQLite limits the number of parameters
+                chunk = keys[start:start + 500]
+                rows = connection.execute(_SELECT_TRACKS + f' WHERE path_key IN ({", ".join("?" * len(chunk))})',
+                                          chunk).fetchall()
+                records.update((canonical_path(record['File_Path']), record) for record in map(self._record, rows))
+        return records
+
+    def all_tracks(self):
+        """Every track of the collection, keyed by canonical path, oldest first."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(_SELECT_TRACKS + ' ORDER BY rowid').fetchall()
+        return {canonical_path(record['File_Path']): record for record in map(self._record, rows)}
+
     def imported_tracks(self):
         """Tracks added by drag and drop or file picker, keyed by canonical path."""
         with closing(self._connect()) as connection:
@@ -213,6 +276,79 @@ class LibraryStore:
                 return None
             rows = connection.execute(_SELECT_LIST, (name,)).fetchall()
         return [self._record(row) for row in rows]
+
+    # -- saved playlists and smartlists ----------------------------------------
+
+    def saved_lists(self):
+        """[(name, kind)] of the user's playlists and smartlists, by name."""
+        with closing(self._connect()) as connection:
+            return connection.execute('SELECT name, kind FROM saved_lists ORDER BY name COLLATE NOCASE').fetchall()
+
+    def saved_list(self, name):
+        """{'name', 'kind', 'rules'} (rules: smartlist rows, else None), or None if there is no such list."""
+        with closing(self._connect()) as connection:
+            row = connection.execute('SELECT name, kind, rules FROM saved_lists WHERE name = ?', (name,)).fetchone()
+        if row is None:
+            return None
+        return {'name': row[0], 'kind': row[1], 'rules': json.loads(row[2]) if row[2] else None}
+
+    def save_playlist(self, name, records):
+        """Create or replace a playlist with these tracks, in order (a track at most once)."""
+        records = list(records)
+        self.upsert_tracks(records)
+        keys = list(dict.fromkeys(key for key in (canonical_path(record.get('File_Path')) for record in records) if key))
+        with closing(self._connect()) as connection, connection:
+            self._replace_list(connection, name, PLAYLIST, None)
+            connection.executemany('INSERT INTO saved_list_tracks VALUES (?, ?, ?)',
+                                   [(name, position, key) for position, key in enumerate(keys)])
+
+    def add_to_playlist(self, name, records):
+        """Append tracks that are not on the playlist yet; returns how many were added."""
+        records = list(records)
+        self.upsert_tracks(records)
+        present = set(self.playlist_keys(name))
+        keys = [key for key in dict.fromkeys(canonical_path(record.get('File_Path')) for record in records)
+                if key and key not in present]
+        with closing(self._connect()) as connection, connection:
+            start = connection.execute('SELECT COALESCE(MAX(position) + 1, 0) FROM saved_list_tracks '
+                                       'WHERE list_name = ?', (name,)).fetchone()[0]
+            connection.executemany('INSERT INTO saved_list_tracks VALUES (?, ?, ?)',
+                                   [(name, start + offset, key) for offset, key in enumerate(keys)])
+        return len(keys)
+
+    def playlist_keys(self, name):
+        """Canonical paths of a playlist's tracks, in order."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute('SELECT path_key FROM saved_list_tracks WHERE list_name = ? '
+                                      'ORDER BY position', (name,)).fetchall()
+        return [row[0] for row in rows]
+
+    def load_playlist(self, name):
+        """Records of a playlist's tracks, in order."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(_SELECT_SAVED_LIST, (name,)).fetchall()
+        return [self._record(row) for row in rows]
+
+    def save_smartlist(self, name, rules):
+        """Create or replace a smartlist: Complex Search rows ({'column', 'condition', 'value'})."""
+        with closing(self._connect()) as connection, connection:
+            self._replace_list(connection, name, SMARTLIST, json.dumps(list(rules), ensure_ascii=False))
+
+    def rename_saved_list(self, old, new):
+        with closing(self._connect()) as connection, connection:
+            connection.execute('UPDATE saved_lists SET name = ?, saved_at = ? WHERE name = ?', (new, _now(), old))
+            connection.execute('UPDATE saved_list_tracks SET list_name = ? WHERE list_name = ?', (new, old))
+
+    def delete_saved_list(self, name):
+        with closing(self._connect()) as connection, connection:
+            connection.execute('DELETE FROM saved_list_tracks WHERE list_name = ?', (name,))
+            connection.execute('DELETE FROM saved_lists WHERE name = ?', (name,))
+
+    @staticmethod
+    def _replace_list(connection, name, kind, rules):
+        connection.execute('DELETE FROM saved_list_tracks WHERE list_name = ?', (name,))
+        connection.execute('DELETE FROM saved_lists WHERE name = ?', (name,))
+        connection.execute('INSERT INTO saved_lists VALUES (?, ?, ?, ?)', (name, kind, rules, _now()))
 
     @staticmethod
     def _record(row):

@@ -17,8 +17,8 @@ a = Analysis(
     [str(ROOT / 'packaging' / 'launcher.py')],
     pathex=[str(ROOT / 'src')],
     binaries=[],
-    datas=[(str(PACKAGE / 'data' / 'music_test.csv'), 'traktor_key_calculator/data')],
-    hiddenimports=['mutagen'],
+    datas=[],
+    hiddenimports=['mutagen', 'sqlcipher3', 'sqlcipher3.dbapi2'],  # sqlcipher3: Rekordbox's library
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

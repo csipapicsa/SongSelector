@@ -17,7 +17,7 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 - Dark grey theme (*View → Dark theme* toggles light)
 - **Similarity map**: tracks as dots, similar ones close together; closest matches, harmonic edges
 
-Current version: **4.7.0** (see [CHANGELOG.md](CHANGELOG.md)).
+Current version: **1.0.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Quick start (development)
 
@@ -90,7 +90,6 @@ src/traktor_key_calculator/
     selfcheck.py        End-to-end check that runs inside the packaged exe
     core/               Logic without UI widgets (keys, tags, Traktor NML, search)
     ui/                 PyQt5 main window, tree widgets, dialogs, delegates
-    data/music_test.csv Bundled default track library
 tests/                  pytest suite (unittest-style test classes)
 packaging/              PyInstaller spec and launcher script
 scripts/                setup / test / build / verify PowerShell scripts
@@ -109,19 +108,60 @@ it is filtered now (search, colours, Advanced Search), so narrow the list first 
 |---|---|
 | Hover a dot | Details; choose which in *View → Map hover details…* |
 | Click | Label and details of the track; its 15 most similar tracks: cyan rings, list on the right |
-| Click in the matches list | Orange ring on that track; the selection stays |
+| Click in the matches list | That track glows (magenta) and its edges show pale; the selection stays |
+| Double-click in the matches list | Select that track (its own matches) |
 | Drag a dot or matches | The files, e.g. into Traktor's deck or playlist |
 | Drop a track on the map (e.g. from the playlist) | Selects it there and shows its closest matches |
 | Column headers of the matches | Sort (click again to reverse) |
-| Double-click (dot or list) | Add to playlist |
+| Double-click a dot | Add to playlist |
 | Right-click | The usual track menu (rating, colour, edit, remove) |
 | Scroll / drag | Zoom / move |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour, same rating |
+| *to the N most similar* | Edges only to the N partners that sound most similar; more similar = more opaque |
+| *Groups* | Colour dots by unsupervised groups: k-means, neighbour communities or map density |
+| *Closest matches: harmonic only* | Only harmonic partners, plus tracks without a key in Traktor (*no key*) |
+| Italic match | Already on the playlist |
 | *Re-arrange map* | Recompute the layout from all analysed tracks (a few minutes for 3,000) |
 
 Distances on any 2D map are approximate; the closest-matches list uses the full embeddings and
 is exact. On the developer's library the map separated breakbeat and DnB with about 93 % purity,
 from audio alone.
+
+## Playlists and smartlists
+
+The left pane has two tabs:
+
+- **Playlist**: the set being built, in order (**#** column). Drag rows to reorder them; rows
+  dragged in from the List are inserted where they are dropped. *Save as Playlist...* keeps a
+  copy under *Playlists* in the Browser.
+- **Browser**, as in Traktor: *Track Collection* (All Tracks, Artists, Albums, Genres) and
+  *Playlists*. Click an entry, or drag it onto the List, to show only its tracks there (a
+  playlist in its order, by **#**); *Show all tracks* above the List goes back. Double-click a
+  playlist or smartlist, or drag it onto the Playlist tab, to load it there (replace or add).
+  Drag tracks onto a playlist to add them. Right-click for new, rename, duplicate, delete.
+- A **smartlist** stores Complex Search rows, not tracks: it always lists the tracks that match
+  them now. Create one with *Save as Smartlist...* in the Complex Search dialog or *New
+  smartlist...* in the Browser; *Edit rules...* changes it.
+
+Saved playlists and smartlists live in `library.sqlite`. While the List shows one of your
+playlists, tracks dropped onto it (from Traktor, Explorer or the Playlist tab) are added to it.
+
+**Traktor Playlists** in the Browser lists Traktor's playlists and folders from `collection.nml`
+(read-only, updated when Traktor saves). They show and load like your own playlists;
+right-click to import their missing tracks or copy one to your playlists. Traktor's smartlists
+are listed but not evaluated yet.
+
+**Rekordbox Playlists** works the same way, read directly from Rekordbox's own library
+(`master.db`); nothing has to be exported and Rekordbox does not have to be closed or opened.
+The entry appears once a Rekordbox library is found.
+
+## Groups in the List
+
+The **Group** column shows each track's group on the similarity map (the map's *Groups*
+setting; 1 = largest group). Sort by it to keep similar-sounding tracks together. **Group
+colours** above the List colours the rows like the map's dots instead of by Traktor colour; if
+the map's grouping is off, it turns on *Neighbour communities*. Group numbers change when the
+tracks are grouped again (another method or setting, newly analysed tracks).
 
 ## Search syntax
 
@@ -132,13 +172,15 @@ from audio alone.
 | `sscolor:blue`, `-sscolor:none`, ... | *Color - Song Selector* (same names) |
 
 *Advanced Search* can also compare *Rating - Song Selector* numerically (e.g. at least 4)
-and *Color - Song Selector* by color name.
+and *Color - Song Selector* by color name. Setting a row's column to *None* switches that row off:
+its condition and value stay (and are saved) but do not filter.
 
 ## Configuration
 
 | Setting | How |
 |---|---|
 | Traktor collection | Auto-detected (`E:\DJ\TRAKTOR\collection.nml`, then `Documents\Native Instruments\Traktor*\`). Change via *Import → Link Traktor collection…* |
+| Rekordbox library | Auto-detected (Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`). Change via *Import → Link Rekordbox library…* |
 | Data directory | Set the `TRAKTOR_APP_DATA_DIR` environment variable to override |
 
 ## Tests

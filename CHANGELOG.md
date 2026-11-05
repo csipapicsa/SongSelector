@@ -1,8 +1,246 @@
 # Changelog
 
+This project follows [Semantic Versioning](https://semver.org/).
+
+**About the version numbers.** SongSelector grew out of an earlier personal tool, the Traktor
+Key Calculator, whose builds were numbered v1–v4. Development continued on that numbering, so the
+builds below are called 4.5.0–4.26.0. With the first public release, SongSelector starts its own
+version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
+from that period still mention 4.x numbers.
+
+## [1.0.0] - 2026-11-05
+
+First public version. Functionally identical to internal build 4.26.0.
+
+- Version line restarted at 1.0.0 (see above).
+- `docs/private/` is ignored by git.
+
+# Pre-1.0 history (internal builds, old 4.x numbering)
+
 Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.
+
+## [4.26.0] - 2026-11-04
+
+- **AAC files (`.m4a`, `.mp4`) and damaged MP3s can be analysed.** The decoder used so far
+  (libsndfile) cannot open AAC and stops at a bad MP3 frame. FFmpeg, through the new `av` package
+  (PyAV), is now the second decoder: it is tried when libsndfile fails or stops early, and the longer
+  result is used. FFmpeg skips damaged frames and reads on, so Adam Freeland - L.I.F.E. is decoded in
+  full (379.8 s) instead of losing its last second. Of the 15 library tracks that could not be
+  analysed in 4.25.1 (3 AAC, 12 damaged), all 15 decode now (the worst loses 2 s of 671 s).
+  - A short complete AAC sample (a few seconds) is fine; the "at least half and 10 s" rule applies only
+    to files that are damaged.
+  - Tracks that failed before are tried again once at the next start (the failure version is 3 now).
+  - The exe gets bigger: the PyAV wheel carries FFmpeg (about 70 MB of DLLs). That FFmpeg build is
+    GPL (it includes libx264/libx265): fine for a personal tool, to be reconsidered if the exe is
+    ever distributed. The packaged self-check writes and reads an AAC file.
+- **The temporary library CSV (`music_test.csv`) is gone.** The app only read it on a very first
+  start and when *Refresh* was pressed. A fresh install now starts with an empty library; tracks come
+  in by import. **Refresh now rebuilds the list from every track in `library.sqlite`** (the collection
+  of all tracks the app has ever loaded) instead of "CSV + imported tracks": without this, Refresh
+  would have dropped the 2,396 tracks that only the CSV had brought in. *Load CSV* (a CSV file you
+  pick) is unchanged. The packaged self-check and a test now expect an empty first start.
+
+## [4.25.1] - 2026-11-03
+
+- **Fixed: some tracks were never analysed ("has not been analysed yet" on the map, e.g. Adam Freeland -
+  L.I.F.E.).** The MP3 had a damaged frame near its end; the decoder stopped with an error and the
+  whole track was written off. A track is now analysed from what could be decoded when that is at
+  least half of it (and 10 s): the vector is an average over the whole track, so a missing last few
+  seconds change it very little. Of the 48 tracks in the library that had failed, 33 can be analysed
+  now (they lose 7 s at the end on average, at most 114 s). The other 15 stay failed: 3 are `.m4a` /
+  `.mp4` files, which the decoder cannot open at all, and 12 are broken early in the file.
+  - Tracks that failed earlier are tried again once, automatically, when the app starts (the
+    embeddings database is marked with a version; a future decoder improvement bumps it again).
+  - Dropping a track on the map that could not be analysed now says so ("cannot be on the map: its
+    audio could not be analysed (reason)") instead of "not analysed yet", which suggested waiting.
+
+## [4.25.0] - 2026-11-03
+
+- **Rekordbox's playlists in the Browser**, under *Rekordbox Playlists*, read straight from Rekordbox's
+  own library (`master.db`), so nothing has to be exported and Rekordbox is not touched (it may be
+  running or closed). They behave like Traktor's: click or drag one to show its tracks in Rekordbox's
+  order (#), double-click to load it into the Playlist tab, right-click for *Import its missing tracks*
+  and *Copy to my playlists...*. Folders and order are kept; Rekordbox's smartlists are listed but not
+  evaluated; streaming tracks (Beatport, Apple Music) are skipped, they are not files.
+  - The library is found by itself (Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`);
+    *Import > Link Rekordbox library...* picks another one. It is read from a temporary copy, in the
+    background, and again whenever Rekordbox saves. If it cannot be read (e.g. a future Rekordbox
+    changes its format), the Browser keeps the last playlists and the status bar says why.
+  - Needs the new package `sqlcipher3-wheels` (in `requirements.txt`; the exe carries it). The
+    database key is Rekordbox's well-known one, taken from the MIT-licensed pyrekordbox project.
+  - Internally the Traktor playlist code is now shared with Rekordbox (`import_foreign_missing`,
+    `copy_foreign_playlist`); the packaged self-check also reads a small encrypted library.
+
+## [4.24.0] - 2026-11-03
+
+- **The window title is now "SongSelector 4.24.0"** (name and version) instead of "Traktor Key Calculator".
+
+- **Map and group only the listed tracks.** The new **Only listed tracks** button on the map
+  arranges and groups just the tracks the List shows now (a genre, a playlist, a search result),
+  so the layout, the groups and the closest-match similarities fit that set and separate it
+  better than the whole library does. It takes seconds (about 0.3 s for 200 tracks, 3 s for 500).
+  - It is a snapshot: change the List and press **Re-arrange map** to map the new list. Switch the
+    button off to get the library map back; the library's stored layout is never touched.
+  - The group summary says "of the N mapped tracks", and the List's Group column holds the groups
+    of this smaller set (tracks outside it have none).
+
+## [4.23.0] - 2026-10-30
+
+- **Fixed: tracks dropped while the List shows a playlist were not added to it.** Dropping files
+  (e.g. 136 tracks of a Traktor playlist) onto the List while it showed one of your playlists only
+  imported them into the library, and the List jumped to all tracks. They are now added to that
+  playlist, in the dropped order, and the List keeps showing it. Dropping onto a playlist in the
+  Browser added them but also jumped to all tracks; it no longer does. The status bar says how
+  many files could not be read or no longer exist.
+- **Traktor's playlists in the Browser**, under *Traktor Playlists*, with Traktor's folders and
+  order, read from `collection.nml` (read-only; updated when Traktor saves). Click one, or drag it
+  onto the List, to show its tracks in Traktor's order (#); double-click or drag it onto the
+  Playlist tab to load it. Right-click: *Import its missing tracks into the library*, *Copy to my
+  playlists...* (an editable copy). Traktor's smartlists are listed with their query in the
+  tooltip, but not evaluated yet.
+
+## [4.22.0] - 2026-10-30
+
+- **Map groups in the List.** A new **Group** column holds each track's group on the similarity
+  map (1 = largest; the map's *Groups* method). Sort by it to keep similar-sounding tracks
+  together; tracks not analysed or in no group sort last. A **Group colours** switch above the
+  List colours its rows like the map's dots instead of by Traktor colour (the Playlist keeps its
+  colours). With the map's grouping off, the switch turns on *Neighbour communities*.
+  - The groups are computed in the background at start (about 9 s for 3,534 analysed tracks,
+    including loading the map data) when the switch is on, or the Group column is shown and a
+    grouping method is chosen; the map need not be opened.
+  - Group numbers follow group size and change when the method, its setting or the analysed
+    tracks change, so they are not stored and are not offered in search or Complex Search.
+
+## [4.21.1] - 2026-10-30
+
+- **No unshaded gap between # and Artist.** Qt kept a tree-branch indent in front of the Artist
+  column (the first one internally); with # shown first, it sat between the two without the row
+  colour. The List and Playlist are flat lists, so the indent is gone.
+
+## [4.21.0] - 2026-10-30
+
+- **Browser tab with saved playlists and smartlists.** The left pane now has two tabs:
+  - **Playlist**: the set in order, with a new **#** column. Rows can be dragged to a new
+    position; rows dragged in from the List are inserted where they are dropped (they used to be
+    re-read from the file and appended). *Save as Playlist...* stores it under *Playlists*.
+  - **Browser**, as in Traktor: *Track Collection* (All Tracks, Artists, Albums, Genres) and
+    *Playlists*. Clicking an entry, or dragging it onto the List, shows only its tracks there; a
+    playlist is sorted by its **#**. A bar above the List says what it shows, with *Show all
+    tracks*. Search, colours and Advanced Search still filter on top.
+  - **Playlists** keep tracks in order; **smartlists** keep Complex Search rows and always list
+    the tracks that match them (also *None* rows, kept but ignored). Double-click or drag one onto
+    the Playlist tab to load it (replace, or add after). Drag tracks onto a playlist to add them.
+    Right-click: new playlist / smartlist, edit rules, rename, duplicate, delete.
+  - The Complex Search dialog has *Save as Smartlist...*.
+- With *Hide playlist tracks in the library* on, a saved playlist shown in the List still shows
+  all its tracks (those on the Playlist tab dimmed).
+- `library.sqlite` schema 3: tables `saved_lists` and `saved_list_tracks` are added on start.
+
+## [4.20.0] - 2026-10-30
+
+- **Complex Search: column *None* switches a row off.** The column list of each row now starts
+  with *None*. A row set to *None* keeps its condition and value (also after restarting) but is
+  left out of the search, the *Advanced Search (n active)* count and the input checks, so a rule
+  can be paused and brought back by picking its column again. New rows still start on the first
+  real column.
+
+## [4.19.1] - 2026-10-29
+
+- **3D view: dots get smaller with distance** (half size at the back, 1.6 times at the front), as
+  well as fading, so the depth reads at a glance. The 2D map keeps one size.
+
+## [4.19.0] - 2026-10-29
+
+- **Changes made in Traktor come in by themselves.** The app watches Traktor's `collection.nml`;
+  after Traktor saves it (mostly when Traktor closes), it is read again in a low-priority
+  background thread and all changes are applied at once: list, playlist and `library.sqlite`,
+  with a status message such as *Updated from Traktor: 12 tracks (BPM 3, colour 8, rating 2)*.
+  Changes made while the app was closed come in a few seconds after it starts.
+  - Only what changed **in Traktor** since the last sync is taken (key, BPM, colour, rating, also
+    a cleared colour or rating), so a rating or key read from a file's tags is not overwritten by
+    an old Traktor value. The first sync takes Traktor's colours and fills empty keys, BPMs and
+    ratings.
+  - *Refresh* and *Load CSV* rebuild the list from the CSV as before; imported tracks keep the
+    synced values, CSV rows get them again when Traktor next changes them.
+- **Sorting the list no longer freezes the window.** With a row selected, a click on a column
+  header took about 15 s for 3,600 tracks (the rows were taken out and put back one by one; Qt
+  re-laid out the view each time). Qt now sorts in place: 0.1 s. Numbers still sort as numbers,
+  keys by Camelot number, empty and *Unknown* values last.
+- **Curved edges on the similarity map:** each edge is a gentle arc, so the edges of a track fan
+  out instead of crossing as straight spokes. *Edges → Curved lines* switches back to straight.
+- **3D view** (*3D* button next to *Fit*): the tracks are arranged in three dimensions, Shift+drag
+  rotates, scroll zooms, drag moves. Far dots fade, near ones lie on top; edges, glows, cards and
+  Ctrl+click compare work as in 2D. The first 3D arrangement takes a few minutes in the
+  background (about 3 minutes for 3,500 tracks), then it is cached like the 2D map.
+
+## [4.18.0] - 2026-10-29
+
+- **Ctrl+click a dot on the similarity map to compare it with the selected track.** The selected
+  (base) track stays selected; the clicked one glows magenta, gets a dashed line to the base in the
+  colour of their harmonic mix, and a card with its details, the mix (*Perfect mix*, *+1 mix*, ...)
+  and the similarity score. Its row in the closest matches is marked. Ctrl+click it again to end
+  the comparison; a plain click still selects. Clicking a closest match shows the same card.
+- **Hovering a dot shows a card** instead of the yellow tooltip: artist - title, key and BPM now,
+  the mix and similarity to the selected track, and the hover fields with colours as coloured dots
+  and ratings as stars.
+- **Colours are shown as a coloured dot and name** (● Orange) in the map details instead of the
+  number.
+- Tooltips everywhere use the theme's colours instead of the yellow Windows default.
+
+## [4.17.0] - 2026-10-29
+
+- **Fix: empty, nameless gaps between playlist columns** (since 4.15.0). Every hidden column (e.g.
+  Original BPM, Path) still took about 100 px of blank space. The resize mode was set after the
+  columns were hidden, which Qt answers by keeping their old width; it is now set first.
+- **Track counts:** next to the *List* / *Similarity map* tabs, e.g. *1,234 of 3,651 tracks, 3
+  selected* (after search and filters); under the playlist, e.g. *28 tracks, 2 selected*.
+- **Ratings as stars** (★★★★☆) in both lists, the closest matches and the map details. The cell still
+  holds the number, so sorting, search (`5`) and Advanced Search work as before; 0 (unrated) is blank.
+- **Closest matches on the map:**
+  - *List the 50 closest* (adjustable, 5-2,000; was a fixed 15). The 15 most similar keep their ring
+    on the map, so the map is not covered with rings.
+  - Right-click the header to choose its columns: any library column (BPM, keys, genre, comment,
+    colours as dots, ratings as stars, ...) next to Similarity and Mix. Remembered; numbers sort as
+    numbers.
+
+## [4.16.1] - 2026-10-28
+
+- **Fix: the closest-matches panel disappeared on narrower windows** (since 4.15.0). The longer
+  caption above the matches and the one-line status under the map set the map's minimum width; the
+  map then grew wider than the window and the splitter collapsed the panel to nothing. The caption
+  and status now wrap, the panel cannot collapse (at least 220 px), and its width is remembered.
+
+## [4.16.0] - 2026-10-28
+
+- **Fewer, graded edge lines on the similarity map.** Edges from a track go only to the partners
+  that sound most similar (*to the 20 most similar*, adjustable next to *Edges*); the more similar,
+  the more opaque the line (the weakest at 15 %). Before, every harmonic / same-rating partner got a
+  line, hundreds for one track.
+- **The selected track glows white** (pulsing), like the magenta glow of a clicked match.
+- **Groups:** a new row colours the dots by unsupervised groups instead of the Traktor colour, to
+  compare three methods, each with one parameter: *k-means* (number of groups), *Neighbour
+  communities* (resolution) and *Map density* (dense %; thin areas stay dark grey). The summary shows
+  the number of groups and the largest; hover and the details box show a track's group. About a
+  second for 3,500 tracks, in the background. On the developer's library the groups match the
+  style (DnB / breaks / house) 75-83 % of the time, against 47 % for one group.
+
+## [4.15.0] - 2026-10-28
+
+- **Playlist columns can be resized again.** They were all set to stretch, which blocks resizing by
+  hand; their widths were also never restored, because they were saved as *Column sizes left* and
+  read back as *Column Sizes left*.
+- **Similarity map, closest matches:**
+  - Clicking a match makes it stand out on the map: a pulsing magenta glow and a thick ring (magenta
+    because no Traktor colour is), and its harmonic edges drawn at half opacity next to the selected
+    track's edges. The selection stays. Double-click selects the match (it no longer adds it to the
+    playlist; drag it there instead).
+  - Matches already on the playlist are shown in italics.
+  - *Harmonic only* keeps tracks without a key in Traktor (Mix: *no key*): their sound can still
+    match, and the embeddings do not need Traktor's analysis. Before, they were dropped, and a selected
+    track without a key had an empty list.
 
 ## [4.14.0] - 2026-10-27
 

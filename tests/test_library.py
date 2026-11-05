@@ -137,6 +137,64 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         from traktor_key_calculator.config import HEADER_INDEX
         return [tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount())]
 
+    def test_playlist_columns_can_be_resized_and_keep_their_width(self):
+        from PyQt5.QtWidgets import QHeaderView
+        from traktor_key_calculator.config import HEADER_INDEX
+        window = self.window()
+        header = window.playlist_tree.header()
+        self.assertTrue(all(header.sectionResizeMode(i) == QHeaderView.Interactive for i in range(header.count())))
+        window.playlist_tree.setColumnWidth(HEADER_INDEX['Title'], 333)
+        window = self.restart(window)
+        self.assertEqual(window.playlist_tree.columnWidth(HEADER_INDEX['Title']), 333)
+
+    def test_hidden_playlist_columns_leave_no_empty_gap(self):
+        from traktor_key_calculator.config import HEADER_INDEX
+        settings = json.loads(self.settings_path.read_text())
+        settings['Visible column left'] = ['Artist', 'Title', 'Camelot Key New']
+        self.settings_path.write_text(json.dumps(settings))
+        tree = self.window().playlist_tree
+        header = tree.header()
+        title, camelot = HEADER_INDEX['Title'], HEADER_INDEX['Camelot Key New']
+        self.assertTrue(tree.isColumnHidden(HEADER_INDEX['Original BPM']))
+        # Before 4.16.2 each hidden column in between kept its old width as an empty gap.
+        self.assertEqual(header.sectionPosition(camelot), header.sectionPosition(title) + header.sectionSize(title))
+
+    def test_track_counts_of_the_list_and_the_playlist(self):
+        window = self.window()
+        tree = window.candidate_tree
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.list_count_label.text().strip(), '4 tracks')
+        self.assertEqual(window.playlist_count_label.text(), '0 tracks')
+        window.search_bar.setText('two')
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.list_count_label.text().strip(), '1 of 4 tracks')
+        window.search_bar.clear()
+        tree.topLevelItem(0).setSelected(True)
+        tree.topLevelItem(1).setSelected(True)
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.list_count_label.text().strip(), '4 tracks, 2 selected')
+        window.add_selected_to_playlist()
+        window.playlist_tree.topLevelItem(0).setSelected(True)
+        window._count_timer.timeout.emit()
+        self.assertEqual(window.playlist_count_label.text(), '2 tracks, 1 selected')
+
+    def test_refresh_rebuilds_the_list_from_every_track_of_the_collection_without_any_csv(self):
+        window = self.window()
+        window.table = window.table[window.table['Title'] != 'two'].reset_index(drop=True)  # 'two' left the list
+        window._save_library()
+        window.populate_tree()
+        self.assertNotIn('two', list(window.table['Title']))
+        with patch.object(window.data_manager, 'load_default_data', side_effect=AssertionError('no CSV any more')):
+            window.refresh_data()
+        # one record per path: the starting tracks were never "imported", yet they all come back
+        self.assertEqual(sorted(window.table['Title']), ['one', 'three', 'two'])
+        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['one', 'three', 'two'])
+        self.assertEqual(len(self.restart(window).table), 3)
+
+    def test_a_fresh_install_starts_with_an_empty_library(self):
+        self.default_library = pd.DataFrame()  # what DataManager.load_default_data returns now
+        self.assertEqual(len(self.window().table), 0)
+
     def test_library_and_playlist_are_restored_after_restart(self):
         from traktor_key_calculator.config import HEADER_INDEX
         window = self.window()

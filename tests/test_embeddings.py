@@ -1,13 +1,16 @@
 """Embedding pipeline, storage and the background analyzer (fake model unless TKC_CNN14_ONNX is set)."""
 import os
 import tempfile
+import sqlite3
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import soundfile
 
+from traktor_key_calculator.core import embeddings
 from traktor_key_calculator.core.embeddings import (CHUNK_SAMPLES, EMBEDDING_DIM, SAMPLE_RATE, Cancelled,
                                                     Cnn14Embedder, EmbeddingStore, decode, encode,
                                                     file_fingerprint, load_audio, split_chunks)
@@ -18,6 +21,21 @@ def write_wav(path, seconds, sample_rate=44100, channels=2):
     t = np.arange(int(seconds * sample_rate)) / sample_rate
     tone = 0.3 * np.sin(2 * np.pi * 440 * t)
     soundfile.write(str(path), np.stack([tone] * channels, axis=1), sample_rate)
+    return path
+
+
+def write_m4a(path, seconds, sample_rate=44100):
+    """An AAC file in an MP4 container, written with FFmpeg (PyAV); libsndfile cannot open these."""
+    import av
+    t = np.arange(int(seconds * sample_rate)) / sample_rate
+    tone = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    with av.open(str(path), 'w', format='ipod') as container:
+        stream = container.add_stream('aac', rate=sample_rate)
+        stream.layout = 'stereo'
+        frame = av.AudioFrame.from_ndarray(np.stack([tone, tone]), format='fltp', layout='stereo')
+        frame.sample_rate = sample_rate
+        for packet in stream.encode(frame) + stream.encode(None):
+            container.mux(packet)
     return path
 
 
@@ -135,6 +153,99 @@ class PipelineTests(unittest.TestCase):
         store.update_fingerprint('a', (7, 8))
         self.assertEqual(store.fingerprints()['a'], (7, 8))
         self.assertEqual(store.fingerprints(model='other-model'), {})
+
+    def test_failure_text_is_kept_and_earlier_failures_are_retried_once_after_a_decoder_change(self):
+        path = self.root / 'embeddings.sqlite'
+        store = EmbeddingStore(path)
+        store.save('a', (1, 2), np.ones((3, EMBEDDING_DIM)))
+        store.save_error('b', (5, 6), ValueError('cannot decode'))
+        self.assertEqual(store.failure('b'), 'cannot decode')
+        self.assertIsNone(store.failure('a'))
+        self.assertIsNone(store.failure('never tried'))
+        connection = sqlite3.connect(path)  # a database written before the decoder change
+        connection.execute('PRAGMA user_version = 0')
+        connection.close()
+        retry = EmbeddingStore(path)
+        self.assertEqual(retry.fingerprints(), {'a': (1, 2)})  # the failure is forgotten: the track is tried again
+        retry.save_error('b', (5, 6), ValueError('still broken'))
+        self.assertEqual(EmbeddingStore(path).failure('b'), 'still broken')  # but only once
+
+    def fake_decoder(self, decoded_seconds, total_seconds, error=True):
+        """A SoundFile that delivers `decoded_seconds` of a `total_seconds` MP3, then fails like libsndfile."""
+        class Damaged:
+            samplerate = 44100
+            frames = int(total_seconds * 44100)
+            left = int(decoded_seconds * 44100)
+
+            def __init__(self, _path):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def read(self, count, dtype='float32', always_2d=True):
+                if self.left <= 0:
+                    if error:
+                        raise soundfile.LibsndfileError(29)
+                    return np.zeros((0, 2), dtype=np.float32)
+                count = min(count, self.left)
+                self.left -= count
+                return np.full((count, 2), 0.1, dtype=np.float32)
+
+        return patch('soundfile.SoundFile', Damaged)
+
+    def test_a_damaged_mp3_is_analysed_from_what_could_be_decoded(self):
+        with self.fake_decoder(decoded_seconds=370, total_seconds=380):  # a bad frame near the end
+            audio = load_audio(self.root / 'x.mp3')
+        self.assertAlmostEqual(len(audio) / SAMPLE_RATE, 370, delta=0.1)
+        with self.fake_decoder(decoded_seconds=30, total_seconds=60):  # exactly half: still enough
+            self.assertGreater(len(load_audio(self.root / 'x.mp3')), 29 * SAMPLE_RATE)
+
+    def test_a_file_that_stops_decoding_early_is_still_a_failure(self):
+        for decoded, total in ((5, 380), (100, 380), (0, 60)):  # under 10 s, or under half
+            with self.subTest(decoded=decoded), self.fake_decoder(decoded, total):
+                with self.assertRaises(soundfile.LibsndfileError):
+                    load_audio(self.root / 'x.mp3')
+
+    def test_stopping_is_not_mistaken_for_a_decode_error(self):
+        with self.fake_decoder(370, 380), self.assertRaises(Cancelled):
+            load_audio(self.root / 'x.mp3', should_stop=lambda: True)
+
+    def test_aac_files_are_decoded_with_ffmpeg(self):
+        path = write_m4a(self.root / 'tune.m4a', 12.5)
+        with self.assertRaises(Exception):  # the reason for the second decoder
+            soundfile.SoundFile(str(path))
+        with patch.object(embeddings, '_read_av', wraps=embeddings._read_av) as read_av:
+            audio = load_audio(path)
+        read_av.assert_called_once()
+        self.assertEqual(audio.dtype, np.float32)
+        self.assertAlmostEqual(len(audio) / SAMPLE_RATE, 12.5, delta=0.1)  # AAC adds a few ms of encoder delay
+        self.assertAlmostEqual(float(np.sqrt((audio ** 2).mean())), 0.3 / 2 ** 0.5, delta=0.02)  # 0.3 sine, not scaled
+        with self.assertRaises(Cancelled):  # stopping is not swallowed by the fallback
+            load_audio(path, should_stop=lambda: True)
+        short = write_m4a(self.root / 'sample.m4a', 2)  # a complete short file is fine: the minimum is for damaged ones
+        self.assertAlmostEqual(len(load_audio(short)) / SAMPLE_RATE, 2, delta=0.1)
+
+    def test_ffmpeg_is_not_used_for_files_libsndfile_reads_completely(self):
+        with patch.object(embeddings, '_read_av', side_effect=AssertionError('FFmpeg used')):
+            self.assertAlmostEqual(len(load_audio(write_wav(self.root / 'tone.wav', 3))) / SAMPLE_RATE, 3, places=2)
+
+    def test_the_longer_of_the_two_decodes_of_a_damaged_mp3_wins(self):
+        whole = np.zeros(380 * SAMPLE_RATE, dtype=np.float32)
+        with self.fake_decoder(decoded_seconds=370, total_seconds=380):
+            with patch.object(embeddings, '_read_av', return_value=whole):  # FFmpeg skips the bad frame
+                self.assertEqual(len(load_audio(self.root / 'x.mp3')), len(whole))
+            with patch.object(embeddings, '_read_av', side_effect=ImportError('no av')):  # PyAV not installed
+                self.assertAlmostEqual(len(load_audio(self.root / 'x.mp3')) / SAMPLE_RATE, 370, delta=0.1)
+            with patch.object(embeddings, '_read_av', side_effect=ValueError('too little')):
+                self.assertAlmostEqual(len(load_audio(self.root / 'x.mp3')) / SAMPLE_RATE, 370, delta=0.1)
+        with self.fake_decoder(decoded_seconds=5, total_seconds=380):  # neither decodes enough: libsndfile's error
+            with patch.object(embeddings, '_read_av', side_effect=ValueError('too little')):
+                with self.assertRaises(soundfile.LibsndfileError):
+                    load_audio(self.root / 'x.mp3')
 
 
 class AnalyzerTests(unittest.TestCase):

@@ -31,9 +31,6 @@ version = { attr = "traktor_key_calculator.__version__" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-traktor_key_calculator = ["data/*.csv"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
