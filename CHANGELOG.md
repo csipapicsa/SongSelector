@@ -22,6 +22,10 @@ Development only; the app behaves the same.
   vulnerabilities. CI also runs weekly, so a newly published vulnerability is noticed without a code change.
 - Tests that need the developer's real library are marked `local_data` and deselected in CI, instead of
   skipping silently; `--strict-markers` turns a mistyped marker into an error. CI badge in the README.
+- **Automated releases:** pushing a version tag (`v1.2.3`) builds the exe on GitHub, verifies it (the
+  packaged self-check and a real window) and publishes a GitHub Release with the exe, its SHA-256
+  checksum and this changelog's section as notes. The tag must match the version in the code and be
+  on `main`. Pull requests that change the packaging run the same build as a dry run.
 - **Documentation-only pull requests skip lint, audit and test** (the secret scan always runs). A new
   `changes` job decides; anything outside `docs/`, `*.md` and `LICENSE` counts as code.
 
