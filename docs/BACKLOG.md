@@ -105,6 +105,20 @@ Assessment 2026-10-27: new modules are small and documented, but `ui/main_window
 one class) and `core/key_tables.py` (850 lines, mostly thesis leftovers) are not yet
 human-friendly. Suggested next step, before more features: a behaviour-preserving cleanup pass.
 
+- [ ] **Rename everything to SongSelector** (user request, 2026-11-05). The app is SongSelector (window title, repo,
+      releases), but older names remain in about 60 files: *Traktor Key Calculator* (README title, docs),
+      `TraktorKeyCalculator` (exe name, main window class, PyInstaller spec), the package `traktor_key_calculator` /
+      `traktor-key-calculator`, the `TRAKTOR_*` environment variables (`TRAKTOR_APP_DATA_DIR`, `TRAKTOR_VERIFY_*`, ...),
+      `TKC_*` test variables, and the settings file `SpotNextTrack_settings.json`.
+      - **Keep** names that refer to Native Instruments' Traktor, the DJ software the app reads from
+        (`traktor_sync.py`, `traktor_collection.py`, "Traktor collection", "Traktor Playlists").
+      - **User data must survive:** read `SpotNextTrack_settings.json` when the new settings file is missing (one-time
+        migration, kept for a few releases), and the source-checkout fallback folder `~/.traktor_key_calculator`.
+        Old `TRAKTOR_*` variables can stay as fallbacks for one release.
+      - Exe becomes `SongSelector-<version>.exe`; the release workflow, `verify_release.ps1` and `build.ps1` look for
+        `TraktorKeyCalculator-*.exe` and change with it (the release dry run checks this in the PR).
+      - Separate PRs: (1) docs and user-visible names, (2) exe/spec/scripts/workflow, (3) package rename + settings
+        migration with a test. Behaviour-preserving; full test suite and release dry run must stay green.
 
 - [ ] `config.py` mixes constants, the `AudioMetadata` dataclass and Qt colors; split it so
       `core/` does not depend on PyQt5.
