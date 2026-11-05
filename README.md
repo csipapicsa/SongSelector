@@ -80,12 +80,22 @@ status bar shows progress, and *Analysis → Analyse embeddings in background* p
   and disk priority), so Traktor or a media player reading the same disk go first.
 - **CUDA (optional, from source):** see `requirements-gpu.txt`. Not needed for speed.
 
-Release checklist:
+Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)):
 
-1. Bump `__version__` in `src/traktor_key_calculator/__init__.py`.
-2. Add an entry to `CHANGELOG.md`.
-3. `.\scripts\test.ps1`, then `.\scripts\build.ps1`, then `.\scripts\verify_release.ps1`.
-4. Commit, tag `vX.Y.Z`, and attach the exe to a GitHub release (exes are not committed).
+1. In a pull request: bump `__version__` in `src/traktor_key_calculator/__init__.py` and rename the
+   changelog's `## [Unreleased]` section to `## [X.Y.Z] - <date>`. Merge it.
+2. Tag the merged commit and push the tag:
+   ```powershell
+   git switch main; git pull
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+3. The workflow checks that the tag matches `__version__` and is on `main`, runs the tests, builds the
+   exe, runs `verify_release` on it, and publishes a GitHub Release with the exe, its SHA-256 checksum
+   and the changelog section as release notes. Exes are never committed.
+
+Pull requests that change the packaging run the same build and verification as a dry run.
+Every earlier release stays downloadable: rolling back means installing the previous release's exe.
 
 ## Project layout
 
