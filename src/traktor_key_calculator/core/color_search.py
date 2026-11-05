@@ -1,7 +1,7 @@
 """Named Traktor category colors and search-bar color filters."""
-from dataclasses import dataclass, field
 import math
 import re
+from dataclasses import dataclass, field
 
 COLOR_NAMES = {0: 'none', 1: 'red', 2: 'orange', 3: 'yellow', 4: 'green',
                5: 'blue', 6: 'indigo', 7: 'violet', 8: 'pink', 9: 'brown'}

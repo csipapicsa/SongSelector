@@ -8,6 +8,16 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+Development only; the app behaves the same.
+
+- **Lint gate:** ruff (pinned, rules listed in `pyproject.toml`) runs on every pull request next to the
+  tests; `main` only accepts pull requests whose checks pass. Replaces pyflakes.
+- Existing findings fixed (139 → 0). Two were real: a test helper defined twice in the same class, so
+  the stricter `wait_for_map` (which also waits for a pending reload) was never used; and the module
+  docstring of `config.py` sat after the imports, so Python did not treat it as the docstring.
+
 ## [1.0.0] - 2026-11-05
 
 First public version. Functionally identical to internal build 4.26.0.

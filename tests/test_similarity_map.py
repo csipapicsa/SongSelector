@@ -12,8 +12,16 @@ import numpy as np
 import pandas as pd
 
 from traktor_key_calculator.core.embeddings import EmbeddingStore
-from traktor_key_calculator.core.similarity import (EDGE_SAME_COLOR, EDGE_SAME_RATING, connection, display_color,
-                                                    nearest, place_new, track_vectors, tsne_layout)
+from traktor_key_calculator.core.similarity import (
+    EDGE_SAME_COLOR,
+    EDGE_SAME_RATING,
+    connection,
+    display_color,
+    nearest,
+    place_new,
+    track_vectors,
+    tsne_layout,
+)
 from traktor_key_calculator.core.traktor_collection import canonical_path
 
 
@@ -277,7 +285,8 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
             action.setChecked(name == 'perfect_mix')
         self.map.select(self.key(0))
         # solid edges only: the dashed line to a clicked match is opaque
-        alphas = lambda: {item.pen().color().alpha() for item in self.map.edge_items if item.pen().style() == 1}
+        def alphas():
+            return {item.pen().color().alpha() for item in self.map.edge_items if item.pen().style() == 1}
         self.assertEqual(max(alphas()), 170)  # the selected track's strongest edges
         self.assertNotIn(85, alphas())
         other_key_group = next(item.data(0, 0x0100) for item in self.matches()
@@ -531,19 +540,12 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         delegate = tree.itemDelegateForColumn(rating)
         self.assertEqual(delegate.displayText('3', None), '★★★☆☆')
 
-
-    def wait_for_map(self):
-        deadline = time.monotonic() + 60
-        while self.map._loading and time.monotonic() < deadline:
-            self.application.processEvents()
-            time.sleep(0.02)
-        self.application.processEvents()
-
     def test_edges_are_curved_unless_switched_to_straight(self):
         for name, action in self.map.edge_actions.items():
             action.setChecked(name == 'perfect_mix')
         self.map.select(self.key(0))
-        paths = lambda: [item.path() for item in self.map.edge_items]
+        def paths():
+            return [item.path() for item in self.map.edge_items]
         self.assertTrue(all(path.elementCount() % 4 == 0 for path in paths()))  # move + curve (3 elements)
         start, end = paths()[0].elementAt(0), paths()[0].elementAt(3)
         bend = paths()[0].elementAt(1)
@@ -681,7 +683,7 @@ class ListGroupTests(MapWindowTestBase):
         return HEADER_INDEX
 
     def test_switch_colours_rows_by_map_group_and_group_column_sorts_them(self):
-        from traktor_key_calculator.config import GROUP_COLUMN, COLOR_MAPPING_CATEGORY
+        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, GROUP_COLUMN
         from traktor_key_calculator.ui.similarity_map import group_colour
         self.assertIsNone(self.map.grouping.currentData())  # grouping off
         column = self.header[GROUP_COLUMN]

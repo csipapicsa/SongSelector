@@ -15,6 +15,7 @@ import soundfile
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.wave import WAVE
+from test_imports import tagged_file
 
 from traktor_key_calculator.config import HEADER_INDEX, SS_COLOR_COLUMN, SS_RATING_COLUMN
 from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
@@ -23,7 +24,6 @@ from traktor_key_calculator.core.library_store import LIBRARY_LIST, LibraryStore
 from traktor_key_calculator.core.search_filters import matches_condition
 from traktor_key_calculator.core.tag_writer import write_tags
 from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
-from test_imports import tagged_file
 
 
 def track(path, title='Track', **fields):
@@ -427,6 +427,7 @@ class ThemeTests(GuiTestBase):
     def test_dark_theme_by_default_and_switchable_at_runtime(self):
         from PyQt5.QtGui import QPalette
         from PyQt5.QtWidgets import QApplication
+
         from traktor_key_calculator.ui.theme import status_style
         window = self.window()
         palette = QApplication.instance().palette()

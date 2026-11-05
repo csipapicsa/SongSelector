@@ -5,8 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from traktor_key_calculator.core.rekordbox_library import (RekordboxLibrary, database_key, discover_library,
-                                                           signature)
+from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, database_key, discover_library, signature
 
 
 def write_library(path, playlists, contents, songs):

@@ -17,8 +17,16 @@ from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST
 from traktor_key_calculator.core.search_filters import active_filters
 from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
-from traktor_key_calculator.ui.list_browser import (COLLECTION_GROUPS, FOREIGN_KINDS, ORDERED_KINDS, REKORDBOX,
-                                                     SAVED_KINDS, TRACK_SOURCES, TRAKTOR, node_label)
+from traktor_key_calculator.ui.list_browser import (
+    COLLECTION_GROUPS,
+    FOREIGN_KINDS,
+    ORDERED_KINDS,
+    REKORDBOX,
+    SAVED_KINDS,
+    TRACK_SOURCES,
+    TRAKTOR,
+    node_label,
+)
 from traktor_key_calculator.ui.theme import status_style
 from traktor_key_calculator.ui.tree_widgets import audio_paths, dragged_tracks
 
@@ -176,12 +184,15 @@ class SavedListsMixin:
             rules = active_filters(saved['rules'] or []) if saved else None
             if rules is None:
                 return []
-            match = lambda item: self._matches_rules(item, rules)
+            def match(item):
+                return self._matches_rules(item, rules)
         elif node['kind'] in COLLECTION_GROUPS:
             column = HEADER_INDEX[COLLECTION_GROUPS[node['kind']][1]]
-            match = lambda item: item.text(column).strip() == node['name']
+            def match(item):
+                return item.text(column).strip() == node['name']
         else:
-            match = lambda item: True
+            def match(item):
+                return True
         records = []
         for index in range(self.candidate_tree.topLevelItemCount()):
             item = self.candidate_tree.topLevelItem(index)

@@ -2,8 +2,9 @@
 Data management for the Traktor Key Calculator
 """
 import os
+
 import pandas as pd
-from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
+
 
 class DataManager:
     """Class to handle loading and manipulating track data"""

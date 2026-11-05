@@ -5,19 +5,22 @@ Custom tree widgets for the Traktor Key Calculator
 import json
 import os
 import re
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QMessageBox
-from PyQt5.QtCore import Qt, QMimeData, QUrl
-from PyQt5.QtGui import QDrag, QPainter, QPen
-from PyQt5.QtWidgets import (QTreeWidget, QTreeWidgetItem, QAbstractItemView, 
-                             QMessageBox, QApplication)
 
+from PyQt5.QtCore import QMimeData, Qt, QUrl
+from PyQt5.QtGui import QDrag, QPainter, QPen
+from PyQt5.QtWidgets import QAbstractItemView, QApplication, QTreeWidget, QTreeWidgetItem
+
+from traktor_key_calculator.config import (
+    AUDIO_EXTENSIONS,
+    GROUP_COLUMN,
+    HEADER_INDEX,
+    POSITION_COLUMN,
+    SS_COLOR_COLUMN,
+    SS_RATING_COLUMN,
+)
+from traktor_key_calculator.core.audio_metadata import get_file_extension
 from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate
 from traktor_key_calculator.ui.theme import status_style
-from traktor_key_calculator.config import (HEADER_INDEX, AUDIO_EXTENSIONS, SS_COLOR_COLUMN, SS_RATING_COLUMN,
-                                           POSITION_COLUMN, GROUP_COLUMN)
-from traktor_key_calculator.core.audio_metadata import get_file_extension, extract_audio_metadata
-
-
 
 _NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN,
                                                    POSITION_COLUMN, GROUP_COLUMN)}

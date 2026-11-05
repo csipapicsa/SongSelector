@@ -12,8 +12,8 @@ The window decides what a node shows; this widget only lists them.
 """
 import json
 
-from PyQt5.QtCore import Qt, QMimeData, QPoint, pyqtSignal
-from PyQt5.QtGui import QDrag, QIcon, QPainter, QPixmap, QColor
+from PyQt5.QtCore import QMimeData, QPoint, Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QDrag, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import QAbstractItemView, QApplication, QStyle, QTreeWidget, QTreeWidgetItem
 
 from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST

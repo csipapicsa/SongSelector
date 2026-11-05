@@ -1,7 +1,7 @@
 """Embedding pipeline, storage and the background analyzer (fake model unless TKC_CNN14_ONNX is set)."""
 import os
-import tempfile
 import sqlite3
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -11,9 +11,18 @@ import numpy as np
 import soundfile
 
 from traktor_key_calculator.core import embeddings
-from traktor_key_calculator.core.embeddings import (CHUNK_SAMPLES, EMBEDDING_DIM, SAMPLE_RATE, Cancelled,
-                                                    Cnn14Embedder, EmbeddingStore, decode, encode,
-                                                    file_fingerprint, load_audio, split_chunks)
+from traktor_key_calculator.core.embeddings import (
+    CHUNK_SAMPLES,
+    EMBEDDING_DIM,
+    SAMPLE_RATE,
+    Cancelled,
+    Cnn14Embedder,
+    EmbeddingStore,
+    decode,
+    encode,
+    load_audio,
+    split_chunks,
+)
 from traktor_key_calculator.core.traktor_collection import canonical_path
 
 
@@ -130,7 +139,8 @@ class PipelineTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows priority classes')
     def test_analysis_process_has_below_normal_cpu_and_very_low_io_priority(self):
-        import subprocess, sys
+        import subprocess
+        import sys
         code = ('import ctypes; from ctypes import wintypes; '
                 'from traktor_key_calculator.core.embeddings import _lower_process_priority; '
                 '_lower_process_priority(); k = ctypes.WinDLL("kernel32"); '
@@ -216,7 +226,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_aac_files_are_decoded_with_ffmpeg(self):
         path = write_m4a(self.root / 'tune.m4a', 12.5)
-        with self.assertRaises(Exception):  # the reason for the second decoder
+        with self.assertRaises(soundfile.LibsndfileError):  # the reason for the second decoder
             soundfile.SoundFile(str(path))
         with patch.object(embeddings, '_read_av', wraps=embeddings._read_av) as read_av:
             audio = load_audio(path)
@@ -324,7 +334,8 @@ class AnalyzerTests(unittest.TestCase):
     def test_app_can_exit_after_stopping_with_a_large_backlog(self):
         # Regression: queuing thousands of jobs at once filled the pipe and the
         # queue's feeder thread then kept the app from exiting.
-        import subprocess, sys
+        import subprocess
+        import sys
         script = '\n'.join([
             'import sys, time',
             'from pathlib import Path',
@@ -377,10 +388,13 @@ class WindowAnalysisTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def test_window_analyses_library_tracks_without_blocking(self):
-        import copy, json
+        import copy
+        import json
         from unittest.mock import patch
+
         import pandas as pd
         from PyQt5.QtCore import QTimer
+
         from traktor_key_calculator.config import SETTINGS_DEFAULT
         from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
 

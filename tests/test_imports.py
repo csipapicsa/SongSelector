@@ -1,17 +1,25 @@
-import json
 import ntpath
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TKEY, TBPM, COMM, POPM, TXXX
-from traktor_key_calculator.core.key_formats import parse_key, parse_bpm, nml_key, CAMELOT_MAJOR, CAMELOT_MINOR, OPEN_MAJOR, OPEN_MINOR
+from mutagen.id3 import COMM, ID3, POPM, TALB, TBPM, TCON, TIT2, TKEY, TPE1, TXXX
+
 from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
-from traktor_key_calculator.core.track_import import TrackImporter, ImportedTrackStore, merge_tracks
-from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
+from traktor_key_calculator.core.key_formats import (
+    CAMELOT_MAJOR,
+    CAMELOT_MINOR,
+    OPEN_MAJOR,
+    OPEN_MINOR,
+    nml_key,
+    parse_bpm,
+    parse_key,
+)
 from traktor_key_calculator.core.library_store import LibraryStore
+from traktor_key_calculator.core.track_import import ImportedTrackStore, TrackImporter, merge_tracks
+from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
 from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
 from traktor_key_calculator.ui.theme import row_tint_alpha
 
@@ -186,11 +194,12 @@ class GuiTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def test_multi_file_drop_playlist_duplicates_unknowns_and_restart(self):
-        from PyQt5.QtCore import QCoreApplication, QMimeData, QUrl, QPoint, QPointF, Qt
-        from PyQt5.QtGui import QDragEnterEvent, QDropEvent
-        from traktor_key_calculator.config import init_settings, HEADER_INDEX
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
         import pandas as pd
+        from PyQt5.QtCore import QCoreApplication, QMimeData, QPoint, QPointF, Qt, QUrl
+        from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+
+        from traktor_key_calculator.config import HEADER_INDEX, init_settings
+        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
         data = Path(os.environ['TRAKTOR_APP_DATA_DIR'])
         fixture = data/'gui-fixtures'
         fixture.mkdir(exist_ok=True)
@@ -282,9 +291,10 @@ class ColorGuiTests(unittest.TestCase):
         cls.application=QApplication.instance() or QApplication([])
 
     def setUp(self):
+        import pandas as pd
+
         from traktor_key_calculator.config import init_settings
         from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        import pandas as pd
         self.temp=tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
         self.root=Path(self.temp.name)
         self.file=self.root/'color.mp3'
@@ -307,9 +317,10 @@ class ColorGuiTests(unittest.TestCase):
         self.temp.cleanup()
 
     def drop(self, tree, path):
-        from PyQt5.QtCore import QCoreApplication,QMimeData,QUrl,QPoint,QPointF,Qt
-        from PyQt5.QtGui import QDragEnterEvent,QDropEvent
-        mime=QMimeData();mime.setUrls([QUrl.fromLocalFile(str(path))])
+        from PyQt5.QtCore import QCoreApplication, QMimeData, QPoint, QPointF, Qt, QUrl
+        from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+        mime=QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(path))])
         enter=QDragEnterEvent(QPoint(8,8),Qt.CopyAction,mime,Qt.LeftButton,Qt.NoModifier)
         QCoreApplication.sendEvent(tree.viewport(),enter)
         self.assertTrue(enter.isAccepted())
@@ -319,7 +330,7 @@ class ColorGuiTests(unittest.TestCase):
         self.application.processEvents()
 
     def test_category_color_and_all_collection_details_in_both_panels(self):
-        from traktor_key_calculator.config import HEADER_INDEX,COLOR_MAPPING_CATEGORY
+        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
         self.drop(self.window.candidate_tree,self.file)
         self.drop(self.window.playlist_tree,self.file)
         for tree in (self.window.candidate_tree,self.window.playlist_tree):
@@ -337,7 +348,7 @@ class ColorGuiTests(unittest.TestCase):
             self.assertIn('Color: Traktor collection',item.toolTip(HEADER_INDEX['Color']))
 
     def test_key_colors_change_with_tempo_in_both_panels(self):
-        from traktor_key_calculator.config import HEADER_INDEX,OPEN_KEY_COLOR_MAPPING,COLOR_MAPPING_CATEGORY
+        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
         self.drop(self.window.candidate_tree,self.file)
         self.drop(self.window.playlist_tree,self.file)
         self.window.coloring_mode='key'
@@ -357,8 +368,9 @@ class ColorGuiTests(unittest.TestCase):
             self.assertEqual(tree.topLevelItem(0).background(0).color().rgb(),COLOR_MAPPING_CATEGORY[5].rgb())
 
     def test_clearing_traktor_color_clears_old_background(self):
-        from traktor_key_calculator.config import HEADER_INDEX
         from PyQt5.QtCore import Qt
+
+        from traktor_key_calculator.config import HEADER_INDEX
         self.drop(self.window.candidate_tree,self.file)
         self.drop(self.window.playlist_tree,self.file)
         tree=ET.parse(self.collection)
@@ -371,7 +383,7 @@ class ColorGuiTests(unittest.TestCase):
             self.assertEqual(item.background(0).style(),Qt.NoBrush)
 
     def test_real_mp3_drop_uses_actual_traktor_color(self):
-        from traktor_key_calculator.config import HEADER_INDEX,COLOR_MAPPING_CATEGORY
+        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
         file=Path(r'E:\DJ\BREAKBEAT\8-Bit Krush - robosapiens remix.mp3')
         if not file.exists():
             self.skipTest('Local real MP3 unavailable')
@@ -390,18 +402,23 @@ class ColorGuiTests(unittest.TestCase):
             self.assertTrue(item.text(HEADER_INDEX['Title']))
 
     def test_color_delegate_renders_real_dot_pixels_with_selection(self):
-        from PyQt5.QtWidgets import QStyleOptionViewItem,QStyle
-        from PyQt5.QtGui import QImage,QPainter,QStandardItemModel,QStandardItem
         from PyQt5.QtCore import QRect
+        from PyQt5.QtGui import QImage, QPainter, QStandardItem, QStandardItemModel
+        from PyQt5.QtWidgets import QStyle, QStyleOptionViewItem
+
         from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
         from traktor_key_calculator.ui.delegates import ColorDotDelegate
-        model=QStandardItemModel();model.appendRow(QStandardItem('5.0'))
+        model=QStandardItemModel()
+        model.appendRow(QStandardItem('5.0'))
         delegate=ColorDotDelegate()
         for selected in (False,True):
-            image=QImage(40,30,QImage.Format_ARGB32);image.fill(0xffffffff)
-            option=QStyleOptionViewItem();option.rect=QRect(0,0,40,30)
+            image=QImage(40,30,QImage.Format_ARGB32)
+            image.fill(0xffffffff)
+            option=QStyleOptionViewItem()
+            option.rect=QRect(0,0,40,30)
             option.state=QStyle.State_Enabled|QStyle.State_Active
-            if selected:option.state|=QStyle.State_Selected
+            if selected:
+                option.state|=QStyle.State_Selected
             painter=QPainter(image)
             delegate.paint(painter,option,model.index(0,0))
             painter.end()

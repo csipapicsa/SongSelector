@@ -14,29 +14,56 @@
 import os
 import sqlite3
 import threading
-from html import escape
 from dataclasses import dataclass, field
+from html import escape
 
 import numpy as np
 from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen, QRadialGradient
-from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
-                             QGraphicsEllipseItem, QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem,
-                             QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel,
-                             QMenu, QPushButton, QSizePolicy, QSpinBox, QSplitter, QToolButton, QTreeWidget,
-                             QTreeWidgetItem, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QGraphicsEllipseItem,
+    QGraphicsItem,
+    QGraphicsPathItem,
+    QGraphicsRectItem,
+    QGraphicsScene,
+    QGraphicsSimpleTextItem,
+    QGraphicsTextItem,
+    QGraphicsView,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QSizePolicy,
+    QSpinBox,
+    QSplitter,
+    QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
-from traktor_key_calculator.config import (COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN,
-                                           SS_RATING_COLUMN)
-from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS
-from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
-from traktor_key_calculator.core.color_search import COLOR_NAMES
+from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN
 from traktor_key_calculator.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
+from traktor_key_calculator.core.color_search import COLOR_NAMES
 from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
+from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS
+from traktor_key_calculator.core.similarity import (
+    EDGE_SAME_COLOR,
+    EDGE_SAME_RATING,
+    display_color,
+    nearest,
+    place_new,
+    track_vectors,
+    tsne_layout,
+)
 from traktor_key_calculator.core.traktor_collection import canonical_path
-from traktor_key_calculator.core.similarity import (EDGE_SAME_COLOR, EDGE_SAME_RATING, display_color,
-                                                    nearest, place_new, track_vectors,
-                                                    tsne_layout)
+from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
 
 DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Selector',
                         'Rating - Song Selector', 'Color', 'Rating']
@@ -949,7 +976,6 @@ class SimilarityMapWidget(QWidget):
         self._refresh()
 
     def _refresh(self):
-        hover = self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)
         shown = 0
         for key, dot in self.dots.items():
             fields = self.fields.get(key)

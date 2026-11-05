@@ -1,10 +1,12 @@
 """Read audio metadata without changing tags or audio files."""
 from pathlib import Path
-from mutagen.id3 import ID3, ID3NoHeaderError
+
 from mutagen.flac import FLAC
+from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.wave import WAVE
+
 from traktor_key_calculator.config import AudioMetadata
-from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
+from traktor_key_calculator.core.key_formats import parse_bpm, parse_key
 
 
 def get_file_extension(path):

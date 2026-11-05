@@ -8,11 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
-
-from traktor_key_calculator.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
-from traktor_key_calculator.core.library_store import LibraryStore, PLAYLIST, SMARTLIST
 from PyQt5.QtCore import QUrl
 
+from traktor_key_calculator.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
+from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST, LibraryStore
 from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
 
 POSITION = HEADER_INDEX[POSITION_COLUMN]
@@ -169,6 +168,7 @@ class BrowserGuiTests(unittest.TestCase):
     @staticmethod
     def node_mime(node):
         from PyQt5.QtCore import QMimeData
+
         from traktor_key_calculator.ui.tree_widgets import NODE_MIME
         mime = QMimeData()
         mime.setData(NODE_MIME, json.dumps(node).encode('utf-8'))
@@ -290,6 +290,7 @@ class BrowserGuiTests(unittest.TestCase):
 
     def test_tracks_dropped_on_a_playlist_in_the_browser_are_added(self):
         from PyQt5.QtCore import QMimeData
+
         from traktor_key_calculator.ui.tree_widgets import TRACKS_MIME
         window = self.window()
         window.library_store.save_playlist('Set', [])

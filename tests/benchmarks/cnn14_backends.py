@@ -20,6 +20,7 @@ import numpy as np
 def torch_runner(backend, model_path, threads, example):
     import contextlib
     import io
+
     import torch
     from panns_inference import AudioTagging
     torch.set_num_threads(threads)

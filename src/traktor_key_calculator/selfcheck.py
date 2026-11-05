@@ -1,8 +1,8 @@
 """Packaged-app verification; uses only fixtures and the app's own test data directory."""
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def _check_embedding_process():
@@ -14,6 +14,7 @@ def _check_embedding_process():
         return 'skipped (set TRAKTOR_VERIFY_MODEL to cnn14.onnx)'
     import numpy as np
     import soundfile
+
     from traktor_key_calculator.config import APP_DATA_DIR
     from traktor_key_calculator.core.embeddings import EmbeddingStore
     from traktor_key_calculator.core.traktor_collection import canonical_path
@@ -39,6 +40,7 @@ def _check_aac_decoding():
     FFmpeg libraries (PyAV) are in the exe and that the fallback after libsndfile works."""
     import av
     import numpy as np
+
     from traktor_key_calculator.config import APP_DATA_DIR
     from traktor_key_calculator.core.embeddings import SAMPLE_RATE, load_audio
     path=APP_DATA_DIR/'aac_check.m4a'
@@ -62,6 +64,7 @@ def _check_rekordbox_reader():
     """Writes a small encrypted library like Rekordbox's master.db and reads its playlists with
     the app's own reader: proves the SQLCipher module and the key work inside the frozen exe."""
     from sqlcipher3 import dbapi2 as sqlcipher
+
     from traktor_key_calculator.config import APP_DATA_DIR
     from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, database_key
     path=APP_DATA_DIR/'rekordbox_check.db'
@@ -89,19 +92,27 @@ def run():
     result={}
     window=None
     try:
-        from mutagen.id3 import ID3, TIT2, TPE1, TKEY, TBPM, POPM
-        from PyQt5.QtWidgets import QApplication, QStyleOptionViewItem, QStyle
-        from PyQt5.QtCore import QCoreApplication, QMimeData, QUrl, QPoint, QPointF, Qt
-        from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QImage, QPainter, QStandardItemModel, QStandardItem
-        from traktor_key_calculator.config import init_settings, HEADER_INDEX, HEADER_LABELS, APP_DATA_DIR, COLOR_MAPPING_CATEGORY, OPEN_KEY_COLOR_MAPPING
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        from traktor_key_calculator.core.traktor_collection import canonical_path
-        from traktor_key_calculator.core.track_import import TrackImporter
-        from traktor_key_calculator.ui.delegates import ColorDotDelegate
-        from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchRow
-        from xml.etree import ElementTree as ET
-        from PyQt5.QtCore import QRect
         import ntpath
+        from xml.etree import ElementTree as ET
+
+        from mutagen.id3 import ID3, POPM, TBPM, TIT2, TKEY, TPE1
+        from PyQt5.QtCore import QCoreApplication, QMimeData, QPoint, QPointF, QRect, Qt, QUrl
+        from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QImage, QPainter, QStandardItem, QStandardItemModel
+        from PyQt5.QtWidgets import QApplication, QStyle, QStyleOptionViewItem
+
+        from traktor_key_calculator.config import (
+            APP_DATA_DIR,
+            COLOR_MAPPING_CATEGORY,
+            HEADER_INDEX,
+            HEADER_LABELS,
+            OPEN_KEY_COLOR_MAPPING,
+            init_settings,
+        )
+        from traktor_key_calculator.core.track_import import TrackImporter
+        from traktor_key_calculator.core.traktor_collection import canonical_path
+        from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchRow
+        from traktor_key_calculator.ui.delegates import ColorDotDelegate
+        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
         fixture=APP_DATA_DIR/'packaged_check.mp3'
         tags=ID3()
         tags.add(TIT2(encoding=3,text=['Packaged drop check']))
@@ -229,9 +240,12 @@ def run():
             assert find(view,fixture).background(0).color().rgb()==OPEN_KEY_COLOR_MAPPING['2d'].rgb()
         window.coloring_mode='song'
         window.populate_tree()
-        model=QStandardItemModel();model.appendRow(QStandardItem('5'))
-        image=QImage(40,30,QImage.Format_ARGB32);image.fill(0xffffffff)
-        option=QStyleOptionViewItem();option.rect=QRect(0,0,40,30)
+        model=QStandardItemModel()
+        model.appendRow(QStandardItem('5'))
+        image=QImage(40,30,QImage.Format_ARGB32)
+        image.fill(0xffffffff)
+        option=QStyleOptionViewItem()
+        option.rect=QRect(0,0,40,30)
         option.state=QStyle.State_Enabled|QStyle.State_Selected
         painter=QPainter(image)
         ColorDotDelegate().paint(painter,option,model.index(0,0))

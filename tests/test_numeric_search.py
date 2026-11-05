@@ -1,7 +1,7 @@
-import os
 import unittest
 from unittest.mock import patch
-from traktor_key_calculator.core.search_filters import matches_condition, parse_number, NUMERIC_COMPARISONS
+
+from traktor_key_calculator.core.search_filters import NUMERIC_COMPARISONS, matches_condition, parse_number
 
 
 class ComparisonTests(unittest.TestCase):
@@ -50,10 +50,11 @@ class NumericSearchGuiTests(unittest.TestCase):
         row.close()
 
     def test_dialog_accepts_decimals_and_rejects_invalid_numeric_input(self):
-        from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
-        from PyQt5.QtWidgets import QDialog
-        from PyQt5.QtTest import QTest
         from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from PyQt5.QtWidgets import QDialog
+
+        from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
         dialog=AdvancedSearchDialog(['Genre','Original BPM'])
         row=dialog.filter_rows[0]
         row.column_combo.setCurrentText('Original BPM')
@@ -71,9 +72,10 @@ class NumericSearchGuiTests(unittest.TestCase):
         dialog.close()
 
     def make_window(self):
+        import pandas as pd
+
         from traktor_key_calculator.config import init_settings
         from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        import pandas as pd
         init_settings()
         window=TraktorKeyCalculator()
         rows=[]
@@ -96,6 +98,7 @@ class NumericSearchGuiTests(unittest.TestCase):
 
     def test_actual_dialog_combines_genre_and_numeric_range_and_restores_settings(self):
         from PyQt5.QtCore import QTimer
+
         from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
         window=self.make_window()
         rules=[('Genre','contains','tribal'),('Original BPM','greater than','120'),
@@ -126,6 +129,7 @@ class NumericSearchGuiTests(unittest.TestCase):
 
     def test_none_column_keeps_the_row_but_leaves_it_out_of_the_search(self):
         from PyQt5.QtCore import QTimer
+
         from traktor_key_calculator.core.search_filters import NO_COLUMN
         window=self.make_window()
         rules=[('Genre','contains','tribal'),('Original BPM','greater than','abc'),

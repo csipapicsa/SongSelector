@@ -3,7 +3,8 @@ import ntpath
 import os
 from pathlib import Path
 from xml.etree import ElementTree as ET
-from traktor_key_calculator.core.key_formats import nml_key, parse_key, parse_bpm
+
+from traktor_key_calculator.core.key_formats import nml_key, parse_bpm, parse_key
 
 
 def canonical_path(path):

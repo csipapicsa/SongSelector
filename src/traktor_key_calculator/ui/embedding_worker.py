@@ -6,10 +6,10 @@ must not close the app. The process writes results to embeddings.sqlite itself.
 This object only hands it jobs and turns its events into Qt signals.
 """
 import multiprocessing
-from collections import deque
 import queue
 import sqlite3
 import time
+from collections import deque
 from pathlib import Path
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
