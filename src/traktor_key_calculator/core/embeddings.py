@@ -19,7 +19,7 @@ import queue
 import sqlite3
 import zlib
 from contextlib import closing, contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -315,7 +315,7 @@ class EmbeddingStore:
             connection.execute('INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                                (path_key, model, fingerprint[0], fingerprint[1], SAMPLE_RATE, CHUNK_SECONDS,
                                 frames, EMBEDDING_DIM, ENCODING, data, error,
-                                datetime.now(timezone.utc).isoformat(timespec='seconds')))
+                                datetime.now(UTC).isoformat(timespec='seconds')))
 
     def load(self, path_key, model=MODEL_ID):
         """(frames, 2048) float16 array, or None if missing or failed."""

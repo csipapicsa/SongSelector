@@ -6,9 +6,9 @@ import numpy as np
 import soundfile
 from PyQt5.QtCore import QCoreApplication, QMimeData, QPoint, QPointF, Qt, QUrl
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
-
 from test_imports import tagged_file
 from test_song_selector_fields import GuiTestBase
+
 from traktor_key_calculator.config import HEADER_INDEX
 from traktor_key_calculator.ui.tree_widgets import dropped_paths, find_audio_files
 

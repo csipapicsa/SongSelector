@@ -1,7 +1,8 @@
 """Shared complex-search comparison rules."""
 import math
 import operator
-from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN
+
+from traktor_key_calculator.config import SS_COLOR_COLUMN, SS_RATING_COLUMN
 from traktor_key_calculator.core.color_search import color_id, parse_color_values
 
 NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color', SS_RATING_COLUMN, SS_COLOR_COLUMN}

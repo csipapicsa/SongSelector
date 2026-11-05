@@ -1,7 +1,8 @@
 """Draw Traktor category dots while respecting row backgrounds and selection."""
-from PyQt5.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QStyle, QApplication
 from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen
+from PyQt5.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem
+
 from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
 
 

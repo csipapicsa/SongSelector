@@ -3,15 +3,30 @@ advanced_search_panel.py
 Advanced search panel
 """
 
-from PyQt5.QtWidgets import (
-    QWidget, QDialog, QVBoxLayout, QHBoxLayout, QComboBox,
-    QLineEdit, QPushButton, QCheckBox, QMessageBox, QCompleter
-)
 from PyQt5.QtCore import Qt
-from traktor_key_calculator.core.color_search import COLOR_NAMES, COLOR_HELP, parse_color_values
-from traktor_key_calculator.core.search_filters import (NUMERIC_COLUMNS, COLOR_COLUMNS, TEXT_CONDITIONS,
-                                                       NUMERIC_COMPARISONS, NO_COLUMN, parse_number,
-                                                       active_filters)
+from PyQt5.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QCompleter,
+    QDialog,
+    QHBoxLayout,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from traktor_key_calculator.core.color_search import COLOR_HELP, COLOR_NAMES, parse_color_values
+from traktor_key_calculator.core.search_filters import (
+    COLOR_COLUMNS,
+    NO_COLUMN,
+    NUMERIC_COLUMNS,
+    NUMERIC_COMPARISONS,
+    TEXT_CONDITIONS,
+    active_filters,
+    parse_number,
+)
 
 
 class AdvancedSearchRow(QWidget):

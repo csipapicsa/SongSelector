@@ -3,11 +3,7 @@ music_paths_dialog.py
 Dialog for managing music folder paths
 """
 
-from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QListWidget, QFileDialog, QMessageBox
-)
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QListWidget, QMessageBox, QPushButton, QVBoxLayout
 
 
 class MusicPathsDialog(QDialog):

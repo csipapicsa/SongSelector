@@ -4,58 +4,102 @@ Main window for the Traktor Key Calculator
 
 # ADD:
 # When song is selected and it is not available then RED
-import os
 import json
+import os
 import sqlite3
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                            QLabel, QPushButton, QFileDialog, QTreeWidgetItem,
-                            QLineEdit, QSlider, QSplitter, QStatusBar, QHeaderView, QDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QToolButton, QMenu, QAction, QTabWidget, QProgressDialog, QCheckBox
+from pathlib import Path
 
-from PyQt5.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter
+import pandas as pd
+from mutagen import MutagenError
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtWidgets import (
+    QAction,
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QProgressDialog,
+    QPushButton,
+    QSlider,
+    QSplitter,
+    QStatusBar,
+    QTabWidget,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from traktor_key_calculator import __version__
-from traktor_key_calculator.config import DEFAULT_BPM, WINDOW_SIZE, MIN_BPM, MAX_BPM, SETTINGS_FILE, HEADER_LABELS, COLOR_MAPPING_CATEGORY
-from traktor_key_calculator.config import COLOR_COLUMN_INDEX, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
-from traktor_key_calculator.config import SS_RATING_COLUMN, SS_COLOR_COLUMN, DEFAULT_EMBEDDING_MODEL
-from traktor_key_calculator.config import FIELD_LABELS, POSITION_COLUMN, GROUP_COLUMN
-from traktor_key_calculator.ui.delegates import ColorDotDelegate
-from traktor_key_calculator.ui.tree_widgets import PoolTreeWidget, PlaylistTreeWidget, TrackItem
+from traktor_key_calculator.config import (
+    COLOR_COLUMN_INDEX,
+    COLOR_MAPPING_CATEGORY,
+    DEFAULT_BPM,
+    DEFAULT_EMBEDDING_MODEL,
+    FIELD_LABELS,
+    GROUP_COLUMN,
+    HEADER_INDEX,
+    HEADER_LABELS,
+    MAX_BPM,
+    MIN_BPM,
+    OPEN_KEY_COLOR_MAPPING,
+    POSITION_COLUMN,
+    SETTINGS_FILE,
+    SS_COLOR_COLUMN,
+    SS_RATING_COLUMN,
+    WINDOW_SIZE,
+)
+from traktor_key_calculator.core.color_search import (
+    COLOR_NAMES,
+    SS_COLOR_TOKEN,
+    parse_color_search,
+    replace_color_filter,
+)
 from traktor_key_calculator.core.data_manager import DataManager
+from traktor_key_calculator.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, file_fingerprint
 from traktor_key_calculator.core.key_calculator import KeyCalculator
-
+from traktor_key_calculator.core.key_formats import parse_bpm, parse_key
+from traktor_key_calculator.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
+from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, discover_library
+from traktor_key_calculator.core.rekordbox_library import signature as rekordbox_signature
+from traktor_key_calculator.core.search_filters import active_filters, matches_condition
+from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
+from traktor_key_calculator.core.track_import import (
+    ImportedTrackStore,
+    TrackImporter,
+    drop_duplicate_paths,
+    enrich_ratings,
+    merge_tracks,
+)
+from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
+from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
+from traktor_key_calculator.ui.coloring_dialog import ColoringDialog
+from traktor_key_calculator.ui.delegates import ColorDotDelegate
+from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
+from traktor_key_calculator.ui.list_browser import ORDERED_KINDS, ListBrowser, node_label
+from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
 from traktor_key_calculator.ui.menu_bar import AppMenuBar
 from traktor_key_calculator.ui.music_paths_dialog import MusicPathsDialog
-from traktor_key_calculator.ui.coloring_dialog import ColoringDialog
-from pathlib import Path
-import pandas as pd
-from traktor_key_calculator.core.track_import import (TrackImporter, ImportedTrackStore, merge_tracks,
-                                                      enrich_ratings, drop_duplicate_paths)
-from traktor_key_calculator.core.library_store import LibraryStore, LIBRARY_LIST, PLAYLIST_LIST
-from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
-from traktor_key_calculator.core.embeddings import EmbeddingStore, MODEL_FILE_NAME, file_fingerprint
-from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
-from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
-from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
-from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
-from traktor_key_calculator.ui.theme import (DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha,
-                                             status_style)
-from mutagen import MutagenError
-from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, discover_library, signature as rekordbox_signature
-from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
-from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
-from traktor_key_calculator.core.search_filters import matches_condition, active_filters
-from traktor_key_calculator.core.color_search import (COLOR_NAMES, SS_COLOR_TOKEN, parse_color_search,
-                                                      replace_color_filter)
-from traktor_key_calculator.ui.tree_widgets import audio_paths, dropped_paths, find_audio_files
-from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
-from traktor_key_calculator.ui.list_browser import ListBrowser, ORDERED_KINDS, node_label
 from traktor_key_calculator.ui.saved_lists import SavedListsMixin
-from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
-
+from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
+from traktor_key_calculator.ui.theme import DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha, status_style
+from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
+from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
+from traktor_key_calculator.ui.tree_widgets import (
+    PlaylistTreeWidget,
+    PoolTreeWidget,
+    TrackItem,
+    audio_paths,
+    dropped_paths,
+    find_audio_files,
+)
 
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
@@ -74,7 +118,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         self.data_manager = DataManager(self.status_message)
 
                 # Load init
-        with open(SETTINGS_FILE, "r") as f:
+        with open(SETTINGS_FILE) as f:
             self.settings = json.load(f)
         
         # Sort state
@@ -90,7 +134,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         self.advanced_search_dialog = None
         self.advanced_filters = []
 
-        with open(SETTINGS_FILE, "r") as f:
+        with open(SETTINGS_FILE) as f:
             self.settings = json.load(f)
 
             # Load advanced search settings
@@ -1105,7 +1149,7 @@ class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
         result = table.copy()
         keys = result['File_Path'].map(canonical_path)
         for name in ('SS_Rating', 'SS_Color'):
-            result[name] = keys.map(lambda key: stored.get(key, {}).get(name)).astype(object)
+            result[name] = keys.map(lambda key, name=name: stored.get(key, {}).get(name)).astype(object)
         return result
 
     def open_track_info_dialog(self, path):

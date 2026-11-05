@@ -5,9 +5,34 @@ on:
   push:
     branches: [main]
 
+# Least privilege: the jobs only need to read the code.
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's older, now-outdated run. Runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  lint:
+    # Linting doesn't depend on the OS, and Linux runners start faster than Windows ones.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      # Install only ruff, at the version pinned in requirements-dev.txt (one source of truth).
+      - run: python -m pip install "$(grep -oE '^ruff==[^ ]+' requirements-dev.txt)"
+      # "github" format turns findings into annotations on the PR's changed lines.
+      - run: python -m ruff check --output-format=github src tests
+
   test:
+    # The app is Windows-only (DirectML, Windows paths, the exe build), so the tests run on Windows.
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

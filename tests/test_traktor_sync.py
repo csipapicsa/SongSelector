@@ -9,11 +9,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+from test_imports import make_collection, tagged_file
 
 from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
-from traktor_key_calculator.core.traktor_sync import (apply_changes, collection_changes, seen_values, summary,
-                                                      track_changes)
-from test_imports import make_collection, tagged_file
+from traktor_key_calculator.core.traktor_sync import (
+    apply_changes,
+    collection_changes,
+    seen_values,
+    summary,
+    track_changes,
+)
 
 ROW = {'File_Path': 'C:\\music\\a.mp3', 'Musical_Key_Base': 'A', 'BaseMinorOrMajor': 'minor', 'BPM': 128.0,
        'Color': 2, 'Rating': 4}

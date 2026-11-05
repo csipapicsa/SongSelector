@@ -3,11 +3,7 @@ coloring_dialog.py
 Dialog for coloring settings
 """
 
-from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QRadioButton, QButtonGroup, QLabel
-)
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QButtonGroup, QDialog, QHBoxLayout, QLabel, QPushButton, QRadioButton, QVBoxLayout
 
 
 class ColoringDialog(QDialog):

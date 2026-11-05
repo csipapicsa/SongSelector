@@ -3,8 +3,8 @@ menu_bar.py
 Menu bar for the application
 """
 
-from PyQt5.QtWidgets import QMenuBar, QAction, QMessageBox
 from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QAction, QMenuBar, QMessageBox
 
 
 class AppMenuBar(QMenuBar):

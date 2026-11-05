@@ -10,7 +10,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from traktor_key_calculator.core.library_store import LibraryStore, LIBRARY_LIST, PLAYLIST_LIST
+from traktor_key_calculator.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
 from traktor_key_calculator.core.track_import import drop_duplicate_paths
 from traktor_key_calculator.core.traktor_collection import canonical_path
 from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
@@ -139,6 +139,7 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
 
     def test_playlist_columns_can_be_resized_and_keep_their_width(self):
         from PyQt5.QtWidgets import QHeaderView
+
         from traktor_key_calculator.config import HEADER_INDEX
         window = self.window()
         header = window.playlist_tree.header()

@@ -7,7 +7,7 @@ data untouched. The Traktor collection is never written.
 from pathlib import Path
 
 from mutagen.flac import FLAC
-from mutagen.id3 import COMM, ID3, ID3NoHeaderError, TCON, TIT2, TPE1
+from mutagen.id3 import COMM, ID3, TCON, TIT2, TPE1, ID3NoHeaderError
 from mutagen.wave import WAVE
 
 EDITABLE_TAGS = ('Artist', 'Title', 'Genre', 'Comment')

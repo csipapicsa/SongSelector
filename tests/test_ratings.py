@@ -1,14 +1,16 @@
 import copy
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
 import pandas as pd
-from traktor_key_calculator.core.track_import import enrich_ratings, TrackImporter
-from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
-from test_imports import tagged_file, make_collection
+from test_imports import make_collection, tagged_file
+
+from traktor_key_calculator.core.track_import import enrich_ratings
+from traktor_key_calculator.core.traktor_collection import TraktorCollection
 
 
 class RatingEnrichmentTests(unittest.TestCase):
@@ -69,12 +71,15 @@ class RatingGuiTests(unittest.TestCase):
             settings['Column sizes '+side]={'Rating':0}
         self.settings_path.write_text(json.dumps(settings))
         self.patches=[patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE',str(self.settings_path))]
-        for p in self.patches: p.start()
+        for p in self.patches:
+            p.start()
         self.windows=[]
 
     def tearDown(self):
-        for window in self.windows: window.close()
-        for p in self.patches: p.stop()
+        for window in self.windows:
+            window.close()
+        for p in self.patches:
+            p.stop()
         self.temp.cleanup()
 
     def window(self):
@@ -114,7 +119,8 @@ class RatingGuiTests(unittest.TestCase):
         for tree in (window.candidate_tree, window.playlist_tree):  # shown as stars
             for column in ('Rating', 'Rating - Song Selector'):
                 self.assertEqual(tree.itemDelegateForColumn(HEADER_INDEX[column]).displayText('5', None), '★★★★★')
-        for name,action in window.search_column_actions.items(): action.setChecked(name=='Rating')
+        for name,action in window.search_column_actions.items():
+            action.setChecked(name=='Rating')
         window.search_bar.setText('5')
         window.filter_items()
         self.assertFalse(item.isHidden())

@@ -1,11 +1,13 @@
 import copy
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
 import pandas as pd
+
 from traktor_key_calculator.core.color_search import COLOR_NAMES, parse_color_search, replace_color_filter
 from traktor_key_calculator.core.search_filters import matches_condition
 
@@ -95,7 +97,8 @@ class ColorSearchGuiTests(unittest.TestCase):
         self.window.table=pd.DataFrame(rows)
         self.window.populate_tree()
         # Explicit color filters must work even when Color is disabled under Search Columns.
-        for name,action in self.window.search_column_actions.items(): action.setChecked(name=='Title')
+        for name,action in self.window.search_column_actions.items():
+            action.setChecked(name=='Title')
 
     def tearDown(self):
         self.window.close()

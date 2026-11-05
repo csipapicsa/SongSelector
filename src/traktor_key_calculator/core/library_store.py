@@ -17,7 +17,7 @@ import json
 import math
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from traktor_key_calculator.core.traktor_collection import canonical_path
@@ -131,7 +131,7 @@ def _plain(value):
 
 
 def _now():
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 class LibraryStore:

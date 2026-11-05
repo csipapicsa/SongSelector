@@ -28,7 +28,11 @@ Requirements: Windows, Python 3.11 (64-bit) available as `py -3.11`.
 .\.venv\Scripts\Activate.ps1
 python -m traktor_key_calculator     # run the app from source
 .\scripts\test.ps1                   # run the test suite (pytest)
+python -m ruff check src tests       # lint (rules in pyproject.toml); add --fix for the safe fixes
 ```
+
+Every pull request runs the same lint and tests in GitHub Actions ([ci.yml](.github/workflows/ci.yml));
+`main` only accepts changes through a pull request whose checks pass.
 
 When run from source, settings and imported tracks are stored in `.appdata\`
 in the repo (git-ignored), so development never touches your real app data.

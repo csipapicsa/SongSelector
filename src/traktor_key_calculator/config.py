@@ -1,11 +1,12 @@
-import os
-import json
-import sys
-from pathlib import Path
-
 """
 Configuration and constants for the Traktor Key Calculator
 """
+import json
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
 from PyQt5.QtGui import QColor
 
 # Color mapping - Map integer values to colors (similar to Traktor)
@@ -79,21 +80,19 @@ OPEN_KEY_TO_CAMELOT_KEY = {v: k for k, v in CAMELOT_KEY_TO_OPEN_KEY.items()}
 
 AUDIO_EXTENSIONS = ["mp3", "wav", "flac"]
 
-# config.py
-from dataclasses import dataclass
-from typing import Optional
+
 @dataclass
 class AudioMetadata:
-    title: Optional[str] = None
-    artist: Optional[str] = None
-    album: Optional[str] = None
-    genre: Optional[str] = None
-    comment: Optional[str] = None
-    bpm: Optional[str] = None
-    key: Optional[str] = None
-    rating: Optional[str] = None
-    error: Optional[str] = None
-    color: Optional[str] = None # color is not saved into the metadata at all
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    genre: str | None = None
+    comment: str | None = None
+    bpm: str | None = None
+    key: str | None = None
+    rating: str | None = None
+    error: str | None = None
+    color: str | None = None # color is not saved into the metadata at all
 
 # Default application settings
 DEFAULT_BPM = 128.0

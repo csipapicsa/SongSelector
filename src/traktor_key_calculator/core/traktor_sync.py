@@ -100,7 +100,7 @@ def collection_changes(table, by_path, seen):
 
 def _fits(dtype, value):
     """Whether a pandas column of this dtype takes the value without a type change."""
-    if dtype == object:
+    if dtype.kind == 'O':  # object column
         return True
     if dtype.kind == 'f':
         return value is None or (isinstance(value, (int, float)) and not isinstance(value, bool))

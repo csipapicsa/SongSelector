@@ -1,13 +1,15 @@
 """Turn dropped files into library rows; keep user imports in this app's own data."""
 import json
 import os
-from pathlib import Path
 import tempfile
 import warnings
+from pathlib import Path
+
 import pandas as pd
+
 from traktor_key_calculator.config import AUDIO_EXTENSIONS
 from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
-from traktor_key_calculator.core.key_formats import parse_key, parse_bpm
+from traktor_key_calculator.core.key_formats import parse_bpm, parse_key
 from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
 
 

@@ -155,7 +155,8 @@ def connection(from_fields, to_fields, criteria):
             display_color(from_fields) == display_color(to_fields):
         return EDGE_SAME_COLOR
     if EDGE_SAME_RATING in criteria:
-        rating = lambda fields: fields.get('Rating - Song Selector') or fields.get('Rating') or ''
+        def rating(fields):
+            return fields.get('Rating - Song Selector') or fields.get('Rating') or ''
         if rating(from_fields) and rating(from_fields) == rating(to_fields):
             return EDGE_SAME_RATING
     return None
