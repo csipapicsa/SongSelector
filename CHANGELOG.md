@@ -22,6 +22,8 @@ Development only; the app behaves the same.
   vulnerabilities. CI also runs weekly, so a newly published vulnerability is noticed without a code change.
 - Tests that need the developer's real library are marked `local_data` and deselected in CI, instead of
   skipping silently; `--strict-markers` turns a mistyped marker into an error. CI badge in the README.
+- **Documentation-only pull requests skip lint, audit and test** (the secret scan always runs). A new
+  `changes` job decides; anything outside `docs/`, `*.md` and `LICENSE` counts as code.
 
 ## [1.0.0] - 2026-11-05
 

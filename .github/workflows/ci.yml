@@ -20,7 +20,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    # Does this PR touch anything besides documentation? lint, audit and test only run if it does.
+    # Jobs skipped by an `if:` count as passed for required checks; skipping the whole workflow (paths-ignore)
+    # would leave the required checks waiting forever. This job is a required check itself: if it fails,
+    # the jobs after it are skipped, and without that requirement a skip would let the PR through.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2  # the PR's merge preview and its parents
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # Pushes to main, the weekly run and manual runs always run everything.
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # For a PR, HEAD is GitHub's merge preview; its first parent is the target branch.
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          echo "Changed files:"
+          echo "$changed"
+          # Fail-safe: only docs/, *.md and LICENSE count as documentation; anything else (or an empty diff) is code.
+          if printf '%s\n' "$changed" | grep -qvE '^docs/|\.md$|^LICENSE$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Documentation-only change: lint, audit and test are skipped."
+          fi
+
   lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Linting doesn't depend on the OS, and Linux runners start faster than Windows ones.
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -35,6 +71,7 @@ jobs:
       - run: python -m ruff check --output-format=github src tests
 
   secret-scan:
+    # Always runs: a secret pasted into a Markdown file is still a leak.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -55,6 +92,8 @@ jobs:
       - run: ./gitleaks git --redact --verbose .
 
   audit:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # pip-audit resolves the full dependency tree; onnxruntime-directml only has Windows wheels.
     runs-on: windows-latest
     timeout-minutes: 15
@@ -69,6 +108,8 @@ jobs:
       - run: python -m pip_audit -r requirements.txt -r requirements-dev.txt --progress-spinner off
 
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # The app is Windows-only (DirectML, Windows paths, the exe build), so the tests run on Windows.
     runs-on: windows-latest
     timeout-minutes: 20
