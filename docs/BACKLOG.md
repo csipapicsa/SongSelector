@@ -24,6 +24,12 @@ CHANGELOG when they ship.
 - [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
 - [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
       models and ideas in the DJ mix segmentation project). Plan only.
+- [ ] **On hold:** suggest missing Traktor ratings / colours from the sound. Research only, no app feature
+      (start: `docs/research/rating_color_prediction.md`, `rating_color_plan.md`). So far CNN14, MusiCNN,
+      Discogs-EffNet and OpenL3 are equally (un)able to predict them: probably the labels, not the model.
+      To continue: fill `docs/research/sheets/rerate_2026-11-03.csv` (blind re-rating, 60 tracks) and
+      `valid_cnn14_2026-11-03.csv` (yes/no), then run `taste_sheets.py rerate-score` / `valid-score`
+      (see `docs/research/sheets/README.md`). Larger models (MAEST, MERT, CLAP) not tried yet.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
 - [x] Map: "edges only to the N closest matches" (harmonic *and* similar): 4.16.0, with opacity by similarity.
