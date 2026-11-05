@@ -1,5 +1,22 @@
 # Changelog
 
+This project follows [Semantic Versioning](https://semver.org/).
+
+**About the version numbers.** SongSelector grew out of an earlier personal tool, the Traktor
+Key Calculator, whose builds were numbered v1–v4. Development continued on that numbering, so the
+builds below are called 4.5.0–4.26.0. With the first public release, SongSelector starts its own
+version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
+from that period still mention 4.x numbers.
+
+## [1.0.0] - 2026-11-05
+
+First public version. Functionally identical to internal build 4.26.0.
+
+- Version line restarted at 1.0.0 (see above).
+- `docs/private/` is ignored by git.
+
+# Pre-1.0 history (internal builds, old 4.x numbering)
+
 Versions before 4.5.0 were not tagged in git. They are reconstructed from the
 build history (see `docs/history/`). Earlier exe names are given so old copies
 can be identified.

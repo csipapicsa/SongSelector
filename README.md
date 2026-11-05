@@ -17,7 +17,7 @@ can pick harmonically compatible tracks at the tempo you are actually playing.
 - Dark grey theme (*View → Dark theme* toggles light)
 - **Similarity map**: tracks as dots, similar ones close together; closest matches, harmonic edges
 
-Current version: **4.7.0** (see [CHANGELOG.md](CHANGELOG.md)).
+Current version: **1.0.0** (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Quick start (development)
 

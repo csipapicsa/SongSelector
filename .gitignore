@@ -23,5 +23,8 @@ imported_tracks.json
 Thumbs.db
 desktop.ini
 
+# Private docs (CV, career planning) — never published
+docs/private/
+
 # Research scratch: downloaded models, data snapshots, extracted embeddings (large, local only)
 .research_cache/
