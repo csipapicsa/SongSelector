@@ -8,7 +8,7 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
-## [Unreleased]
+## [1.0.1] - 2026-11-05
 
 Development only; the app behaves the same.
 
