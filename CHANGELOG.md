@@ -17,6 +17,11 @@ Development only; the app behaves the same.
 - Existing findings fixed (139 → 0). Two were real: a test helper defined twice in the same class, so
   the stricter `wait_for_map` (which also waits for a pending reload) was never used; and the module
   docstring of `config.py` sat after the imports, so Python did not treat it as the docstring.
+- **Security checks in CI:** gitleaks scans the whole git history for secrets (checksum-verified download,
+  findings redacted in the public logs), and pip-audit checks every dependency against known
+  vulnerabilities. CI also runs weekly, so a newly published vulnerability is noticed without a code change.
+- Tests that need the developer's real library are marked `local_data` and deselected in CI, instead of
+  skipping silently; `--strict-markers` turns a mistyped marker into an error. CI badge in the README.
 
 ## [1.0.0] - 2026-11-05
 

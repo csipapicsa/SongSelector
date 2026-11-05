@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import pytest
 from mutagen.id3 import COMM, ID3, POPM, TALB, TBPM, TCON, TIT2, TKEY, TPE1, TXXX
 
 from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
@@ -269,6 +270,7 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(item_for(restored.candidate_tree, tagged).text(HEADER_INDEX['Original Key']), 'C major')
         restored.close()
 
+    @pytest.mark.local_data
     def test_real_mp3_tags_and_traktor_collection(self):
         path = Path(r'E:\DJ\BREAKBEAT\Afghan Headspin - The Calling.mp3')
         if not path.exists():
@@ -382,6 +384,7 @@ class ColorGuiTests(unittest.TestCase):
             self.assertEqual(item.text(HEADER_INDEX['Color']),'0')
             self.assertEqual(item.background(0).style(),Qt.NoBrush)
 
+    @pytest.mark.local_data
     def test_real_mp3_drop_uses_actual_traktor_color(self):
         from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
         file=Path(r'E:\DJ\BREAKBEAT\8-Bit Krush - robosapiens remix.mp3')
