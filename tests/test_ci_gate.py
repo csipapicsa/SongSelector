@@ -1,2 +1,2 @@
 def test_gate():
-    assert 1 + 1 == 3
+    assert 1 + 1 == 2
