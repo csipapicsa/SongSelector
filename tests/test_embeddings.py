@@ -151,7 +151,10 @@ class PipelineTests(unittest.TestCase):
                 'print(k.GetPriorityClass(k.GetCurrentProcess()), io.value)')
         env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1] / 'src'))
         result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
-        self.assertEqual(result.stdout.split(), [str(0x4000), '2'], result.stderr)  # below normal CPU, normal I/O
+        priority, io = result.stdout.split()
+        self.assertEqual(priority, str(0x4000), result.stderr)  # below normal CPU
+        # Not background mode, which sets very low I/O (0). Normal is 2; GitHub's runners report low (1) here.
+        self.assertNotEqual(io, '0')
 
     def test_store_results_errors_and_fingerprints(self):
         store = EmbeddingStore(self.root / 'embeddings.sqlite')
