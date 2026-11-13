@@ -706,6 +706,17 @@ class SimilarityMapWidget(QWidget):
     def stop(self):
         self._stop.set()
 
+    def set_store(self, store):
+        """Use another model's embeddings (Analysis -> Similarity model). Layout, closest matches and groups follow
+        it; each model's cache keeps its own layout. Call load() afterwards if the map or the groups are needed."""
+        if store is self.store:
+            return
+        self.store = store
+        self._fit_next = True
+        if self._loading:
+            self._again = True  # the running load is for the old model: load again when it ends
+            self._stop.set()
+
     def _loaded(self, result):
         self._loading = False
         self.rearrange_button.setEnabled(True)

@@ -103,3 +103,37 @@ Candidate: **LAION `clap-htsat-unfused`**. Cost is not the blocker. Next, in ord
 - **Extraction finished:** 990 of 998 tracks for LAION light and MS 2023; 8 files libsndfile cannot decode (the app
   falls back to FFmpeg for those, this script does not). GTX 1650 Ti, both models together: 2.2 s per track, about
   33 minutes for the set.
+
+## ONNX export and speed in the app (2026-11-13)
+
+`scripts/export_clap_onnx.py` exports both models (audio and text encoder each) and checks them against PyTorch
+before writing them. Unit-length vectors, largest difference / lowest cosine:
+
+| Check | LAION light | Microsoft 2023 |
+|---|---|---|
+| Spectrogram built into the graph vs transformers' feature extractor | 7.8e-08 / 1.000000 | (spectrogram is part of the model already) |
+| ONNX audio vs PyTorch (batch of 3) | 6.4e-07 / 1.000000 | 3.0e-07 / 1.000000 |
+| ONNX text via the app's tokenizer path vs PyTorch (3 prompts) | 4.7e-07 / 1.000000 | 1.2e-07 / 1.000000 |
+| App pipeline (soundfile + soxr + ONNX, DirectML and CPU) vs the research embeddings, one real track | cosine 1.000000 | cosine 1.000000 |
+
+Two problems the checks caught:
+- **msclap's HTSAT froze the batch size.** `window_reverse` computes it with `int(windows.shape[0] / ...)`, which
+  tracing turns into a constant: batch 1 was exact, batch 3 gave cosine 0.62. The export replaces it with the same
+  arithmetic using `view(-1, ...)`; LAION's HTSAT (transformers) did not have this problem.
+- **transformers 4.57 builds attention masks with `torch.vmap`** on PyTorch >= 2.6, which the ONNX tracer cannot
+  follow ("invalid unordered_map key"). Its implementation for older PyTorch builds the same mask without vmap; the
+  export switches to it. GPT-2's key/value cache was also switched off (`use_cache=False`).
+
+Files: LAION 122 MB audio + 501 MB text + 4 MB tokenizer; Microsoft 127 + 505 + 4 MB.
+
+Audio encoder speed with ONNX Runtime 1.24 (the app's runtime), GTX 1650 Ti / i5-10300H, ms per window:
+
+| | DirectML batch 1 | batch 4 | batch 8 | CPU (4 threads) |
+|---|---|---|---|---|
+| LAION (10 s windows) | 69 | **62** | 244 | 104-106 |
+| Microsoft (7 s windows) | 56 | **55** | 152 | 107-118 |
+
+Batch 8 runs out of room on the 4 GB card, so the app uses 4 on DirectML (CNN14 stays at 8). A 6-minute track on
+DirectML: LAION ~2.2 s, Microsoft ~2.8 s, CNN14 0.6 s, plus one 0.8 s decode for all of them. A first observation
+that DirectML was slower than the CPU came from a different-sized last batch: DirectML re-plans the model for every
+new input shape, which the app avoids by padding batches.

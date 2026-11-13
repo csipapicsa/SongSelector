@@ -21,3 +21,20 @@ packaging==26.3
 cffi==2.1.1
 pycparser==3.12
 typing-extensions==4.16.0
+
+# Free-text search (CLAP text encoders): tokenizers turns a typed description into token ids.
+tokenizers==0.23.3
+# Required by tokenizers for downloading from Hugging Face, which the app never does (Tokenizer.from_file only);
+# kept out of the exe (excludes in packaging/SongSelector.spec), pinned here so pip-audit checks them.
+huggingface_hub==2.4.0
+hf-xet==1.8.0
+fsspec==2026.9.0
+filelock==4.2.9
+PyYAML==6.0.3
+requests==2.34.2
+urllib3==2.8.0
+certifi==2026.10.23
+charset-normalizer==3.5.2
+idna==3.20
+tqdm==4.70.1
+colorama==0.4.6

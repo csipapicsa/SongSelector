@@ -35,6 +35,65 @@ def _check_embedding_process():
     return f'ok, {matrix.shape[0]}x{matrix.shape[1]} on {analyzer.device}'
 
 
+def _check_clap_models():
+    """With SONGSELECTOR_VERIFY_CLAP_MODELS set to the folder with the clap-*.onnx files: both CLAP models analyse a
+    tone in the analysis process (one decode, two rates) and answer a text query in the text search process, all
+    inside the frozen exe. 'skipped' without the folder."""
+    folder=os.environ.get('SONGSELECTOR_VERIFY_CLAP_MODELS')
+    if not folder:
+        return 'skipped (set SONGSELECTOR_VERIFY_CLAP_MODELS to the CLAP models folder)'
+    import time
+
+    import numpy as np
+    import soundfile
+    from PyQt5.QtWidgets import QApplication
+
+    from songselector.config import APP_DATA_DIR
+    from songselector.core.embedding_models import LAION_CLAP, MS_CLAP
+    from songselector.core.embeddings import EmbeddingStore, OnnxEmbedder
+    from songselector.core.text_search import clap_track_vector
+    from songselector.core.traktor_collection import canonical_path
+    from songselector.ui.embedding_worker import EmbeddingAnalyzer
+    from songselector.ui.text_search_worker import TextSearchWorker
+    folder=Path(folder)
+    tone=APP_DATA_DIR/'clap_check.wav'
+    seconds=np.arange(12*44100)/44100
+    soundfile.write(str(tone),(0.3*np.sin(2*np.pi*220*seconds)).astype(np.float32),44100)
+    stores=[EmbeddingStore(APP_DATA_DIR/f'clap_check_{spec.id}.sqlite',spec=spec) for spec in (LAION_CLAP,MS_CLAP)]
+    from functools import partial
+    analyzer=EmbeddingAnalyzer(stores[0],folder/LAION_CLAP.audio_file,partial(OnnxEmbedder,model_id=LAION_CLAP.id),
+                               extra_models=[(stores[1],folder/MS_CLAP.audio_file)])
+    analyzer.submit([(canonical_path(tone),str(tone))])
+    analyzer.start()
+    try:
+        assert analyzer.wait_idle(300),'CLAP analysis did not finish'
+    finally:
+        analyzer.stop()
+    summary=[]
+    worker=TextSearchWorker(folder)
+    try:
+        for store in stores:
+            spec=store.spec
+            windows=store.load(canonical_path(tone))
+            expected=-(-12//int(spec.chunk_seconds))
+            assert windows is not None and windows.shape==(expected,spec.dim),f'{spec.name}: {None if windows is None else windows.shape}'
+            answers={}
+            worker.vector_ready.connect(lambda request,vector,answers=answers:answers.update({request:vector}))
+            requests=[worker.query(spec.id,'a pure sine tone'),worker.query(spec.id,'a man giving a speech')]
+            deadline=time.monotonic()+180
+            while len(answers)<2 and time.monotonic()<deadline:
+                QApplication.processEvents()
+                time.sleep(0.02)
+            assert len(answers)==2,f'{spec.name}: no text vectors'
+            track=clap_track_vector(windows.astype(np.float32))
+            tone_score,speech_score=(float(track@answers[r]) for r in requests)
+            assert tone_score>speech_score,f'{spec.name}: tone {tone_score:.3f} <= speech {speech_score:.3f}'
+            summary.append(f'{spec.name} {windows.shape[0]}x{spec.dim}')
+    finally:
+        worker.stop()
+    return f'ok, {", ".join(summary)} on {analyzer.device}, text search ok'
+
+
 def _check_aac_decoding():
     """Writes a short AAC (.m4a) file with FFmpeg and decodes it with the app's loader: proves the
     FFmpeg libraries (PyAV) are in the exe and that the fallback after libsndfile works."""
@@ -57,6 +116,47 @@ def _check_aac_decoding():
     path.unlink()
     assert abs(len(audio)/SAMPLE_RATE-4)<0.2,f'Decoded {len(audio)/SAMPLE_RATE:.2f} s of a 4 s AAC file'
     assert abs(float(np.sqrt((audio**2).mean()))-0.3/2**0.5)<0.03,'AAC file decoded at the wrong level'
+    return 'ok'
+
+
+class SelfcheckTextEncoder:
+    """Stands in for a CLAP text encoder in the text search process: uses the real tokenizers library (a native
+    extension that must be bundled) on a tiny vocabulary, so no model file is needed."""
+
+    def __init__(self, spec, folder):
+        from tokenizers import Tokenizer, models, pre_tokenizers
+        self.tokenizer = Tokenizer(models.WordLevel({'[UNK]': 0, 'funky': 1, 'breakbeat': 2}, unk_token='[UNK]'))
+        self.tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+
+    def encode(self, text):
+        import numpy as np
+
+        from songselector.core.text_search import tokenize
+        ids, _mask = tokenize(self.tokenizer, text)
+        return np.asarray(ids[0], dtype=np.float32)
+
+
+def _check_text_search():
+    """The text search process starts from the exe and answers through the tokenizers library."""
+    import time
+
+    from PyQt5.QtWidgets import QApplication
+
+    from songselector.core.embedding_models import LAION_CLAP
+    from songselector.ui.text_search_worker import TextSearchWorker
+    worker = TextSearchWorker('.', SelfcheckTextEncoder)
+    answers, errors = [], []
+    worker.vector_ready.connect(lambda _request, vector: answers.append(vector.tolist()))
+    worker.failed.connect(lambda _request, message: errors.append(message))
+    try:
+        worker.query(LAION_CLAP.id, 'funky breakbeat')
+        deadline = time.monotonic() + 120
+        while not answers and not errors and time.monotonic() < deadline:
+            QApplication.processEvents()
+            time.sleep(0.02)
+    finally:
+        worker.stop()
+    assert answers == [[1.0, 2.0]], f'text search process: {answers or errors or "no answer"}'
     return 'ok'
 
 
@@ -288,6 +388,8 @@ def run():
         restored.close()
         rekordbox=_check_rekordbox_reader()
         splash=_check_splash()
+        text_search=_check_text_search()
+        clap=_check_clap_models()
         aac=_check_aac_decoding()
         embedding=_check_embedding_process()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
@@ -297,7 +399,7 @@ def run():
                 'ratings_visible_and_searchable':True,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding,'splash':splash}
+                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding,'splash':splash,'text_search':text_search,'clap_models':clap}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}

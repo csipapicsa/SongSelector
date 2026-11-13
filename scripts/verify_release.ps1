@@ -10,13 +10,17 @@
     not on the project's disk).
 .PARAMETER Exe
     Path to the exe. Defaults to the newest dist\SongSelector-*.exe.
+.PARAMETER ClapModels
+    Optional folder with the clap-*.onnx files (scripts/export_clap_onnx.py). When given, both CLAP
+    models analyse a tone in the exe's analysis process and answer a text query in its text search process.
 .PARAMETER Model
     Optional path to cnn14.onnx. When given (or SONGSELECTOR_VERIFY_MODEL is set), the
     self-check also runs a real embedding analysis inside the exe.
 .EXAMPLE
     .\scripts\verify_release.ps1
 #>
-param([string]$Exe, [string]$Model = $env:SONGSELECTOR_VERIFY_MODEL)
+param([string]$Exe, [string]$Model = $env:SONGSELECTOR_VERIFY_MODEL,
+      [string]$ClapModels = $env:SONGSELECTOR_VERIFY_CLAP_MODELS)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) {
@@ -39,7 +43,7 @@ $packagedDir = Join-Path $runDir 'packaged'
 New-Item -ItemType Directory -Path $packagedDir | Out-Null
 $packagedResult = Join-Path $runDir 'packaged-results.json'
 $savedEnv = @{}
-foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','SONGSELECTOR_APP_DATA_DIR','SONGSELECTOR_VERIFY_BUILD','SONGSELECTOR_VERIFY_RESULT','SONGSELECTOR_VERIFY_MODEL','SONGSELECTOR_EMBEDDING_MODEL') {
+foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','SONGSELECTOR_APP_DATA_DIR','SONGSELECTOR_VERIFY_BUILD','SONGSELECTOR_VERIFY_RESULT','SONGSELECTOR_VERIFY_MODEL','SONGSELECTOR_VERIFY_CLAP_MODELS','SONGSELECTOR_EMBEDDING_MODEL') {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 try {
@@ -54,6 +58,7 @@ try {
     $env:SONGSELECTOR_VERIFY_BUILD = '1'
     $env:SONGSELECTOR_VERIFY_RESULT = $packagedResult
     $env:SONGSELECTOR_VERIFY_MODEL = $Model
+    $env:SONGSELECTOR_VERIFY_CLAP_MODELS = $ClapModels
     # No default model: the app windows must not start analysing the bundled library.
     $env:SONGSELECTOR_EMBEDDING_MODEL = 'none'
     $process = Start-Process -FilePath $Exe -WorkingDirectory $packagedDir -WindowStyle Hidden -PassThru
@@ -72,6 +77,7 @@ try {
     $env:SONGSELECTOR_VERIFY_BUILD = ''
     $env:SONGSELECTOR_VERIFY_RESULT = ''
     $env:SONGSELECTOR_VERIFY_MODEL = ''
+    $env:SONGSELECTOR_VERIFY_CLAP_MODELS = ''
 
     Add-Type -TypeDefinition @"
 using System;
