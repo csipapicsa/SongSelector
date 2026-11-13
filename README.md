@@ -72,7 +72,9 @@ What is behind the features, and where to look:
 1. Download `SongSelector-<version>.exe` from the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest)
    and put it in its own folder. It is self-contained (no Python needed). Windows SmartScreen will
    warn because the exe is not code-signed; check it against `SHA256SUMS.txt` from the same release.
-2. For audio similarity, add the embedding model (next section). Everything else works without it.
+2. On the first start the app offers to download the embedding models (*Analysis → Download models…*,
+   1.6 GB in all, or just the ones you want). They are switched on and your tracks are analysed in the
+   background. Everything else works without them.
 
 The exe stores its data **next to itself**:
 
@@ -89,10 +91,15 @@ To upgrade, put the new exe in the same folder. Settings from versions before 1.
 
 ## Getting the embedding models
 
-The models are not in the repo or the exe. They are built from published weights, and every export
-is checked against the original PyTorch model. The exports need PyTorch, which the app does not, so
-use a separate environment. The files go to `.appdata\models\` (where the app looks when run from
-source); for the exe, copy them into a `models` folder next to it (*Analysis → Open models folder*).
+**The app downloads them:** *Analysis → Download models…* fetches the files from the project's
+[`models-v1` release](https://github.com/csipapicsa/SongSelector/releases/tag/models-v1) into the `models`
+folder next to the app's data, resumes an interrupted download, and checks each file's SHA-256 before using it.
+
+The files are ONNX exports of published weights; the release lists sources and licences. To rebuild them
+yourself (every export is checked against the original PyTorch model), use a separate environment, since
+the exports need PyTorch and the app does not. They go to `.appdata\models\`, where the app looks when run
+from source; `scripts\publish_models.ps1 -Folder <folder>` checks them against the app's checksums and
+publishes the release.
 
 | Model | Files | Weights | Export |
 |---|---|---|---|

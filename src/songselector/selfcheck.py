@@ -94,6 +94,46 @@ def _check_clap_models():
     return f'ok, {", ".join(summary)} on {analyzer.device}, text search ok'
 
 
+def _check_model_download():
+    """The downloader works inside the exe: a file from a local HTTP server, resumed and checksum-checked; HTTPS
+    support (ssl) is bundled. With SONGSELECTOR_VERIFY_DOWNLOAD=1 it also fetches the two small tokenizer files
+    from the real model release on GitHub."""
+    import hashlib
+    import ssl
+    import tempfile
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from songselector.core import model_download
+    ssl.create_default_context()  # fails if the exe lacks OpenSSL or certificates
+    data=bytes(range(256))*5000
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            start=int(self.headers.get('Range','bytes=0-').split('=')[1].rstrip('-'))
+            self.send_response(206 if start else 200)
+            self.send_header('Content-Length',str(len(data)-start))
+            self.end_headers()
+            self.wfile.write(data[start:])
+        def log_message(self,*args):
+            pass
+    server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    threading.Thread(target=server.serve_forever,daemon=True).start()
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder,'check.bin.part').write_bytes(data[:1000])
+            files={'check.bin':(len(data),hashlib.sha256(data).hexdigest())}
+            model_download.download('check.bin',folder,f'http://127.0.0.1:{server.server_port}/',files)
+            assert Path(folder,'check.bin').read_bytes()==data
+            if os.environ.get('SONGSELECTOR_VERIFY_DOWNLOAD')=='1':
+                for name in ('clap-laion-tokenizer.json','clap-ms-tokenizer.json'):
+                    model_download.download(name,folder)
+                return 'ok, local and GitHub (tokenizer files)'
+    finally:
+        server.shutdown()
+        server.server_close()
+    return 'ok (local; set SONGSELECTOR_VERIFY_DOWNLOAD=1 to fetch from GitHub too)'
+
+
 def _check_aac_decoding():
     """Writes a short AAC (.m4a) file with FFmpeg and decodes it with the app's loader: proves the
     FFmpeg libraries (PyAV) are in the exe and that the fallback after libsndfile works."""
@@ -390,6 +430,7 @@ def run():
         splash=_check_splash()
         text_search=_check_text_search()
         clap=_check_clap_models()
+        download=_check_model_download()
         aac=_check_aac_decoding()
         embedding=_check_embedding_process()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
@@ -399,7 +440,7 @@ def run():
                 'ratings_visible_and_searchable':True,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding,'splash':splash,'text_search':text_search,'clap_models':clap}
+                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding,'splash':splash,'text_search':text_search,'clap_models':clap,'model_download':download}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}
