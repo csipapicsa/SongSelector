@@ -11,8 +11,8 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from traktor_key_calculator.core.embeddings import EmbeddingStore
-from traktor_key_calculator.core.similarity import (
+from songselector.core.embeddings import EmbeddingStore
+from songselector.core.similarity import (
     EDGE_SAME_COLOR,
     EDGE_SAME_RATING,
     connection,
@@ -22,7 +22,7 @@ from traktor_key_calculator.core.similarity import (
     track_vectors,
     tsne_layout,
 )
-from traktor_key_calculator.core.traktor_collection import canonical_path
+from songselector.core.traktor_collection import canonical_path
 
 
 def two_styles(per_style=12, frames=6, seed=0):
@@ -90,7 +90,7 @@ class SimilarityTests(unittest.TestCase):
 
 class ClusteringTests(unittest.TestCase):
     def test_kmeans_and_communities_find_the_two_styles(self):
-        from traktor_key_calculator.core.clustering import group_tracks
+        from songselector.core.clustering import group_tracks
         vectors = track_vectors(two_styles(per_style=20))
         for method, parameter in (('kmeans', 2), ('communities', 1.0)):
             labels = group_tracks(method, vectors, np.zeros((40, 2)), parameter)
@@ -99,7 +99,7 @@ class ClusteringTests(unittest.TestCase):
             self.assertNotEqual(labels[0], labels[20], method)
 
     def test_density_groups_the_clumps_and_leaves_scattered_points_out(self):
-        from traktor_key_calculator.core.clustering import group_tracks
+        from songselector.core.clustering import group_tracks
         rng = np.random.default_rng(1)
         clumps = [rng.normal(centre, 0.3, (40, 2)) for centre in ((0, 0), (10, 0))]
         scattered = np.array([[5, 8], [-6, -7], [14, 9]])
@@ -110,13 +110,13 @@ class ClusteringTests(unittest.TestCase):
         self.assertEqual(list(labels[80:]), [-1, -1, -1])
 
     def test_groups_are_numbered_by_size(self):
-        from traktor_key_calculator.core.clustering import _by_size
+        from songselector.core.clustering import _by_size
         self.assertEqual(list(_by_size([5, 7, 7, -1, 7, 5, 2])), [1, 0, 0, -1, 0, 1, 2])
 
 
 class LayoutStoreTests(unittest.TestCase):
     def test_load_many_and_layout_round_trip(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR']) as folder:
+        with tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR']) as folder:
             store = EmbeddingStore(Path(folder) / 'embeddings.sqlite')
             store.save('a', (1, 1), np.ones((2, 2048)))
             store.save('b', (1, 1), np.zeros((3, 2048)))
@@ -138,8 +138,8 @@ class MapWindowTestBase(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import SETTINGS_DEFAULT
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         settings = copy.deepcopy(SETTINGS_DEFAULT)
         settings.update({'Traktor collection': '', 'Advanced search': {'enabled': False, 'filters': []}, 'Master Tempo': 128})
@@ -157,14 +157,14 @@ class MapWindowTestBase(unittest.TestCase):
         for index, matrix in enumerate(two_styles()):
             store.save(canonical_path(rows[index]['File_Path']), (1, 1), matrix)
         self.patches = [
-            patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE', str(self.root / 'settings.json')),
-            patch('traktor_key_calculator.ui.main_window.DataManager.load_default_data',
+            patch('songselector.ui.main_window.SETTINGS_FILE', str(self.root / 'settings.json')),
+            patch('songselector.ui.main_window.DataManager.load_default_data',
                   side_effect=lambda: self.library.copy()),
         ]
         for active in self.patches:
             active.start()
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        self.window = TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        self.window = MainWindow()
         self.map = self.window.similarity_map
         self.window.library_tabs.setCurrentWidget(self.map)
         deadline = time.monotonic() + 60
@@ -238,7 +238,7 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertTrue(dot.isVisible())  # playlist tracks stay in the library view (dimmed in the list)
 
     def test_hover_fields_dialog_returns_checked_columns_in_table_order(self):
-        from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
+        from songselector.ui.map_settings_dialog import HoverFieldsDialog
         dialog = HoverFieldsDialog(['Title', 'Artist'], ['Artist', 'Title', 'Genre'])
         dialog.boxes['Genre'].setChecked(True)
         self.assertEqual(dialog.selected(), ['Artist', 'Title', 'Genre'])
@@ -485,13 +485,13 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         urls = [url.toLocalFile() for url in self.map.suggestions.mimeData(items).urls()]
         self.assertEqual([Path(url) for url in urls], [Path(item.data(0, 0x0101)) for item in items])
         dragged = []
-        with patch('traktor_key_calculator.ui.similarity_map.QDrag.exec_',
+        with patch('songselector.ui.similarity_map.QDrag.exec_',
                    lambda drag, *args: dragged.append(drag.mimeData().urls()) or 1):
             self.map.drag_files([self.key(3)])
         self.assertEqual(Path(dragged[0][0].toLocalFile()), self.root / 'track3.mp3')
 
     def test_edge_cap_message_disappears_when_no_longer_true(self):
-        with patch('traktor_key_calculator.ui.similarity_map.MAX_EDGES', 5):
+        with patch('songselector.ui.similarity_map.MAX_EDGES', 5):
             self.map.all_edges.setChecked(True)
             self.assertIn('Showing the first 5 edges', self.map.status.text())
             self.map.all_edges.setChecked(False)
@@ -520,7 +520,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(self.window.settings['Map match count'], 5)
 
     def test_match_columns_can_be_chosen_ratings_as_stars_and_numbers_sort(self):
-        from traktor_key_calculator.ui.similarity_map import DEFAULT_MATCH_COLUMNS, MATCH_COLUMNS
+        from songselector.ui.similarity_map import DEFAULT_MATCH_COLUMNS, MATCH_COLUMNS
         tree = self.map.suggestions
         shown = [name for column, name in enumerate(MATCH_COLUMNS) if not tree.isColumnHidden(column)]
         self.assertEqual(shown, DEFAULT_MATCH_COLUMNS)
@@ -599,7 +599,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
 
 class ShownFieldsTests(unittest.TestCase):
     def test_empty_values_and_colour_zero_are_not_shown(self):
-        from traktor_key_calculator.ui.similarity_map import shown_fields
+        from songselector.ui.similarity_map import shown_fields
         fields = {'Artist': 'A', 'Genre': '', 'Color': '0', 'Color - Song Selector': '5', 'Rating': '0',
                   'Rating - Song Selector': '4'}
         names = ['Artist', 'Genre', 'Color', 'Color - Song Selector', 'Rating', 'Rating - Song Selector', 'Comment']
@@ -609,7 +609,7 @@ class ShownFieldsTests(unittest.TestCase):
 
 class FieldHtmlTests(unittest.TestCase):
     def test_colours_are_shown_as_a_coloured_dot_and_name(self):
-        from traktor_key_calculator.ui.similarity_map import field_html
+        from songselector.ui.similarity_map import field_html
         self.assertEqual(field_html('Color', '2'), '<span style="color:#ffa500">&#9679;</span> Orange')
         self.assertEqual(field_html('Color - Song Selector', '5'), '<span style="color:#0000ff">&#9679;</span> Blue')
         self.assertEqual(field_html('Color', 'x'), 'x')
@@ -679,12 +679,12 @@ class ListGroupTests(MapWindowTestBase):
 
     @property
     def header(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         return HEADER_INDEX
 
     def test_switch_colours_rows_by_map_group_and_group_column_sorts_them(self):
-        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, GROUP_COLUMN
-        from traktor_key_calculator.ui.similarity_map import group_colour
+        from songselector.config import COLOR_MAPPING_CATEGORY, GROUP_COLUMN
+        from songselector.ui.similarity_map import group_colour
         self.assertIsNone(self.map.grouping.currentData())  # grouping off
         column = self.header[GROUP_COLUMN]
         self.assertFalse(self.window.candidate_tree.isColumnHidden(column))
@@ -712,13 +712,13 @@ class ListGroupTests(MapWindowTestBase):
         self.assertNotEqual(traktor.text(column), '')
 
     def test_switch_on_at_start_groups_without_opening_the_map(self):
-        from traktor_key_calculator.config import GROUP_COLUMN
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
+        from songselector.config import GROUP_COLUMN
+        from songselector.ui.main_window import MainWindow
         self.window.library_tabs.setCurrentIndex(0)
         self.window.group_colours_switch.setChecked(True)
         self.window.close()  # saves the settings
         self.application.processEvents()
-        self.window = TraktorKeyCalculator()
+        self.window = MainWindow()
         self.map = self.window.similarity_map
         self.assertIsNot(self.window.library_tabs.currentWidget(), self.map)
         self.assertTrue(self.window.group_colours_switch.isChecked())

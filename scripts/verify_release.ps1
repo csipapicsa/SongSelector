@@ -1,26 +1,26 @@
 <#
 .SYNOPSIS
     Verifies a built exe in two stages:
-      1. Packaged self-check: runs the exe headless with TRAKTOR_VERIFY_BUILD=1, which
-         executes traktor_key_calculator.selfcheck inside the frozen app.
+      1. Packaged self-check: runs the exe headless with SONGSELECTOR_VERIFY_BUILD=1, which
+         executes songselector.selfcheck inside the frozen app.
       2. Native smoke test: starts the exe normally, waits for its real window,
          checks it responds, closes it and expects exit code 0.
-    Both stages use a throwaway data directory under %TEMP%\traktor-key-calculator-verify\,
+    Both stages use a throwaway data directory under %TEMP%\songselector-verify\,
     so your real settings and imported tracks are never touched (and the exe unpacks there,
     not on the project's disk).
 .PARAMETER Exe
-    Path to the exe. Defaults to the newest dist\TraktorKeyCalculator-*.exe.
+    Path to the exe. Defaults to the newest dist\SongSelector-*.exe.
 .PARAMETER Model
-    Optional path to cnn14.onnx. When given (or TRAKTOR_VERIFY_MODEL is set), the
+    Optional path to cnn14.onnx. When given (or SONGSELECTOR_VERIFY_MODEL is set), the
     self-check also runs a real embedding analysis inside the exe.
 .EXAMPLE
     .\scripts\verify_release.ps1
 #>
-param([string]$Exe, [string]$Model = $env:TRAKTOR_VERIFY_MODEL)
+param([string]$Exe, [string]$Model = $env:SONGSELECTOR_VERIFY_MODEL)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) {
-    $found = Get-ChildItem -LiteralPath (Join-Path $root 'dist') -Filter 'TraktorKeyCalculator-*.exe' -ErrorAction SilentlyContinue |
+    $found = Get-ChildItem -LiteralPath (Join-Path $root 'dist') -Filter 'SongSelector-*.exe' -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $found) { throw 'No exe in dist\. Run .\scripts\build.ps1 first.' }
     $Exe = $found.FullName
@@ -29,7 +29,7 @@ $Exe = (Resolve-Path -LiteralPath $Exe).Path
 # Long form of the temp folder: $env:TEMP can be an 8.3 short path (C:\Users\GERGOG~1\...),
 # which the app's path comparisons do not treat as the same folder.
 $tempRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'
-$runDir = Join-Path $tempRoot ('traktor-key-calculator-verify\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$runDir = Join-Path $tempRoot ('songselector-verify\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $runDir | Out-Null
 Write-Host "Verifying $Exe"
 Write-Host "Results in $runDir"
@@ -39,7 +39,7 @@ $packagedDir = Join-Path $runDir 'packaged'
 New-Item -ItemType Directory -Path $packagedDir | Out-Null
 $packagedResult = Join-Path $runDir 'packaged-results.json'
 $savedEnv = @{}
-foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','TRAKTOR_APP_DATA_DIR','TRAKTOR_VERIFY_BUILD','TRAKTOR_VERIFY_RESULT','TRAKTOR_VERIFY_MODEL','TRAKTOR_EMBEDDING_MODEL') {
+foreach ($name in 'TEMP','TMP','PATH','PYTHONPATH','PYTHONHOME','QT_QPA_PLATFORM','SONGSELECTOR_APP_DATA_DIR','SONGSELECTOR_VERIFY_BUILD','SONGSELECTOR_VERIFY_RESULT','SONGSELECTOR_VERIFY_MODEL','SONGSELECTOR_EMBEDDING_MODEL') {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 try {
@@ -50,12 +50,12 @@ try {
     $env:PYTHONPATH = ''
     $env:PYTHONHOME = ''
     $env:QT_QPA_PLATFORM = 'offscreen'
-    $env:TRAKTOR_APP_DATA_DIR = $packagedDir
-    $env:TRAKTOR_VERIFY_BUILD = '1'
-    $env:TRAKTOR_VERIFY_RESULT = $packagedResult
-    $env:TRAKTOR_VERIFY_MODEL = $Model
+    $env:SONGSELECTOR_APP_DATA_DIR = $packagedDir
+    $env:SONGSELECTOR_VERIFY_BUILD = '1'
+    $env:SONGSELECTOR_VERIFY_RESULT = $packagedResult
+    $env:SONGSELECTOR_VERIFY_MODEL = $Model
     # No default model: the app windows must not start analysing the bundled library.
-    $env:TRAKTOR_EMBEDDING_MODEL = 'none'
+    $env:SONGSELECTOR_EMBEDDING_MODEL = 'none'
     $process = Start-Process -FilePath $Exe -WorkingDirectory $packagedDir -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit(300000)) { $process.Kill(); throw 'Packaged self-check timed out.' }
     if (Test-Path -LiteralPath $packagedResult) { Get-Content -LiteralPath $packagedResult }
@@ -67,18 +67,18 @@ try {
     New-Item -ItemType Directory -Path $nativeDir | Out-Null
     $env:TEMP = $nativeDir
     $env:TMP = $nativeDir
-    $env:TRAKTOR_APP_DATA_DIR = $nativeDir
+    $env:SONGSELECTOR_APP_DATA_DIR = $nativeDir
     $env:QT_QPA_PLATFORM = ''
-    $env:TRAKTOR_VERIFY_BUILD = ''
-    $env:TRAKTOR_VERIFY_RESULT = ''
-    $env:TRAKTOR_VERIFY_MODEL = ''
+    $env:SONGSELECTOR_VERIFY_BUILD = ''
+    $env:SONGSELECTOR_VERIFY_RESULT = ''
+    $env:SONGSELECTOR_VERIFY_MODEL = ''
 
     Add-Type -TypeDefinition @"
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
-public static class TkcNativeWindow {
+public static class SongSelectorNativeWindow {
     public delegate bool EnumProc(IntPtr hwnd, IntPtr parameter);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
@@ -113,18 +113,18 @@ public static class TkcNativeWindow {
         do {
             $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" | ForEach-Object { [int]$_.ProcessId })
             $ownedIds = @($process.Id) + $children
-            $window = [TkcNativeWindow]::Find([int[]]$ownedIds)
+            $window = [SongSelectorNativeWindow]::Find([int[]]$ownedIds)
             if ($window -ne [IntPtr]::Zero) { break }
             if ($process.HasExited) { throw 'App exited before opening its window.' }
             Start-Sleep -Milliseconds 200
         } while ([DateTime]::UtcNow -lt $deadline)
         if ($window -eq [IntPtr]::Zero) { throw 'App window was not found.' }
         Start-Sleep -Seconds 2
-        if (-not [TkcNativeWindow]::Responsive($window)) { throw 'App window is not responding.' }
-        [TkcNativeWindow]::Close($window)
+        if (-not [SongSelectorNativeWindow]::Responsive($window)) { throw 'App window is not responding.' }
+        [SongSelectorNativeWindow]::Close($window)
         if (-not $process.WaitForExit(10000)) { throw 'App did not close cleanly.' }
         if ($process.ExitCode -ne 0) { throw "App exited with code $($process.ExitCode)." }
-        $settings = Get-Content -LiteralPath (Join-Path $nativeDir 'SpotNextTrack_settings.json') -Raw | ConvertFrom-Json
+        $settings = Get-Content -LiteralPath (Join-Path $nativeDir 'SongSelector_settings.json') -Raw | ConvertFrom-Json
         if ($settings.'Rating display version' -ne 1) { throw 'Settings were not saved on close.' }
         $nativeResult = [ordered]@{
             ok = $true; executable = $Exe; window_found = $true; responsive = $true

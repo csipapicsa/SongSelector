@@ -82,7 +82,7 @@ Do 1–2 first; they matter even without an installer.
 
 - [x] 1. Ship without the developer's library: done in 4.26.0, the bundled CSV is removed and a
       fresh install starts with an empty library.
-- [ ] 2. Store user data in `%LOCALAPPDATA%\TraktorKeyCalculator\` instead of next to the exe.
+- [ ] 2. Store user data in `%LOCALAPPDATA%\SongSelector\` instead of next to the exe.
       `C:\Program Files` is not writable for normal users, so today the app would fail with
       "Cannot start" there. Keep a "portable" mode (data next to the exe) when a marker file exists,
       and migrate existing data from the exe folder on first start.
@@ -92,11 +92,12 @@ Do 1–2 first; they matter even without an installer.
 - [ ] 4. Test on a clean Windows 10/11 VM (no Python, no Traktor).
 - [ ] 5. Installer: PyInstaller one-folder build (faster start, fewer antivirus false positives
       than one-file) + Inno Setup script `packaging/installer.iss`, giving
-      `TraktorKeyCalculator-Setup-<version>.exe` with Start menu entry and uninstaller.
+      `SongSelector-Setup-<version>.exe` with Start menu entry and uninstaller.
       MSI (WiX) or MSIX only if needed for corporate or Store distribution.
 - [ ] 6. Code signing, to avoid the SmartScreen "Windows protected your PC" warning.
 - [ ] 7. Large optional components (the 327 MB embedding model) as a separate download on demand,
-      never inside the installer.
+      never inside the installer. Today `scripts/export_cnn14_onnx.py` builds the model from the published
+      checkpoint (needs PyTorch); an in-app download would remove that step.
 - [ ] 8. Update check (later): compare with the latest GitHub release tag.
 
 ## Code health
@@ -105,20 +106,12 @@ Assessment 2026-10-27: new modules are small and documented, but `ui/main_window
 one class) and `core/key_tables.py` (850 lines, mostly thesis leftovers) are not yet
 human-friendly. Suggested next step, before more features: a behaviour-preserving cleanup pass.
 
-- [ ] **Rename everything to SongSelector** (user request, 2026-11-05). The app is SongSelector (window title, repo,
-      releases), but older names remain in about 60 files: *Traktor Key Calculator* (README title, docs),
-      `TraktorKeyCalculator` (exe name, main window class, PyInstaller spec), the package `traktor_key_calculator` /
-      `traktor-key-calculator`, the `TRAKTOR_*` environment variables (`TRAKTOR_APP_DATA_DIR`, `TRAKTOR_VERIFY_*`, ...),
-      `TKC_*` test variables, and the settings file `SpotNextTrack_settings.json`.
-      - **Keep** names that refer to Native Instruments' Traktor, the DJ software the app reads from
-        (`traktor_sync.py`, `traktor_collection.py`, "Traktor collection", "Traktor Playlists").
-      - **User data must survive:** read `SpotNextTrack_settings.json` when the new settings file is missing (one-time
-        migration, kept for a few releases), and the source-checkout fallback folder `~/.traktor_key_calculator`.
-        Old `TRAKTOR_*` variables can stay as fallbacks for one release.
-      - Exe becomes `SongSelector-<version>.exe`; the release workflow, `verify_release.ps1` and `build.ps1` look for
-        `TraktorKeyCalculator-*.exe` and change with it (the release dry run checks this in the PR).
-      - Separate PRs: (1) docs and user-visible names, (2) exe/spec/scripts/workflow, (3) package rename + settings
-        migration with a test. Behaviour-preserving; full test suite and release dry run must stay green.
+- [x] **Rename everything to SongSelector** (asked 2026-11-05, done 2026-11-13): package `songselector`,
+      exe `SongSelector-<version>.exe`, `MainWindow`, `SONGSELECTOR_*` environment variables (the old `TRAKTOR_*`
+      names are read as a fallback until 1.2), settings file `SongSelector_settings.json` (migrated once from
+      `SpotNextTrack_settings.json`). Names that mean Native Instruments' Traktor stay.
+      - [ ] In the release after 1.1: remove the `TRAKTOR_*` fallback in `env.py` and the `~/.traktor_key_calculator`
+        fallback in `config.py`. Keep the settings-file migration longer (it is cheap and protects old installs).
 
 - [ ] `config.py` mixes constants, the `AudioMetadata` dataclass and Qt colors; split it so
       `core/` does not depend on PyQt5.
@@ -127,8 +120,9 @@ human-friendly. Suggested next step, before more features: a behaviour-preservin
 - [ ] `core/key_tables.py` contains unused leftovers from the thesis project
       (`model_feature_cols`, `jamendo_instrument`, ...). Remove them and keep only the tables in use.
 - [ ] `core/key_calculator.py` and `core/key_formats.py` both model notes; consolidate on one.
-- [ ] Remove dead code (`test = 100` in `config.py`, duplicate imports in `ui/main_window.py`).
-- [ ] Add a formatter/linter (e.g. ruff) once the code above is cleaned up.
-- [ ] Tests that rely on real files under `E:\DJ\...` should use bundled fixtures instead.
+- [x] Remove dead code (`test = 100` in `config.py`; duplicate imports went with ruff in 1.0.1).
+- [x] Linter: ruff, pinned, required in CI since 1.0.1. A formatter (`ruff format`) is still open.
+- [x] Tests that rely on real files under `E:\DJ\...` are marked `local_data` and deselected in CI; the same
+      logic is covered by generated fixtures (1.0.1).
 - [ ] Consider dropping pandas (large dependency, used only for a simple table).
-- [ ] CI: run `pytest` on GitHub Actions (windows-latest, Python 3.11).
+- [x] CI: pytest on GitHub Actions (windows-latest, Python 3.11), plus lint, pip-audit and gitleaks (1.0.0–1.0.1).

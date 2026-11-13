@@ -11,8 +11,8 @@ from unittest.mock import patch
 import pandas as pd
 from test_imports import make_collection, tagged_file
 
-from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
-from traktor_key_calculator.core.traktor_sync import (
+from songselector.core.traktor_collection import TraktorCollection, canonical_path
+from songselector.core.traktor_sync import (
     apply_changes,
     collection_changes,
     seen_values,
@@ -65,7 +65,7 @@ class CollectionWatcherTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         self.track = tagged_file(self.root / 'a.mp3')
         self.nml = self.root / 'collection.nml'
@@ -82,8 +82,8 @@ class CollectionWatcherTests(unittest.TestCase):
         return condition()
 
     def test_reads_at_start_and_again_after_traktor_saves(self):
-        from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
-        with patch('traktor_key_calculator.ui.traktor_watcher.SETTLE_MS', 100):
+        from songselector.ui.traktor_watcher import CollectionWatcher
+        with patch('songselector.ui.traktor_watcher.SETTLE_MS', 100):
             loaded = []
             watcher = CollectionWatcher(self.nml, first_check_ms=0)
             watcher.loaded.connect(loaded.append)
@@ -108,8 +108,8 @@ class WindowSyncTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import SETTINGS_DEFAULT
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         self.track = tagged_file(self.root / 'a.mp3')
         self.nml = self.root / 'collection.nml'
@@ -120,14 +120,14 @@ class WindowSyncTests(unittest.TestCase):
         library = pd.DataFrame([{'Artist': 'A', 'Title': 'Track', 'BPM': 120, 'File_Path': str(self.track),
                                  'Musical_Key_Base': 'B', 'BaseMinorOrMajor': 'major', 'Color': 5, 'Rating': 5}])
         self.patches = [
-            patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE', str(self.root / 'settings.json')),
-            patch('traktor_key_calculator.ui.main_window.DataManager.load_default_data', side_effect=lambda: library.copy()),
-            patch('traktor_key_calculator.ui.traktor_watcher.FIRST_CHECK_MS', 600000),  # the test syncs itself
+            patch('songselector.ui.main_window.SETTINGS_FILE', str(self.root / 'settings.json')),
+            patch('songselector.ui.main_window.DataManager.load_default_data', side_effect=lambda: library.copy()),
+            patch('songselector.ui.traktor_watcher.FIRST_CHECK_MS', 600000),  # the test syncs itself
         ]
         for active in self.patches:
             active.start()
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        self.window = TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        self.window = MainWindow()
 
     def tearDown(self):
         self.window.close()
@@ -141,8 +141,8 @@ class WindowSyncTests(unittest.TestCase):
         self.window._collection_changed(collection)
 
     def test_changes_made_in_traktor_update_list_playlist_and_database(self):
-        from traktor_key_calculator.config import HEADER_INDEX
-        from traktor_key_calculator.core.library_store import LIBRARY_LIST
+        from songselector.config import HEADER_INDEX
+        from songselector.core.library_store import LIBRARY_LIST
         window = self.window
         window._add_to_playlist(window.table.iloc[0])
         self.sync()  # first sync: nothing differs (colour 5, rating 5, B major, 120 BPM)

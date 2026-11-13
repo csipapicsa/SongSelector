@@ -1,7 +1,7 @@
 """Times CNN14 on one backend over pre-decoded tracks; run by tests/test_inference_speed.py.
 
 Standalone on purpose: the PyTorch backends run under another project's Python
-(with torch + panns_inference), where traktor_key_calculator is not installed.
+(with torch + panns_inference), where songselector is not installed.
 
     python cnn14_backends.py BACKEND MODEL CHUNKS.npz OUT.npz THREADS
 

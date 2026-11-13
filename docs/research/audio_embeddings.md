@@ -13,7 +13,7 @@ Source project: `E:\GITHUB_E\MusicFindBoundaries` (not part of this repo).
 | Model | **CNN14** from PANNs (Kong et al., 2020, "PANNs: Large-Scale Pretrained Audio Neural Networks"), trained on AudioSet |
 | Python package | `panns-inference==0.1.1` |
 | Checkpoint | `Cnn14_mAP=0.431.pth` (327 MB), auto-downloaded to `%USERPROFILE%\panns_data\`. Already present on the development machine. |
-| ONNX export | `MusicFindBoundaries\cnn14.onnx` (327 MB), input shape `(1, 160000)`; created in `audio to embeddings.ipynb` for `onnxruntime` |
+| ONNX export | `MusicFindBoundaries\cnn14.onnx` (327 MB), input shape `(1, 160000)`; created in `audio to embeddings.ipynb` for `onnxruntime`. Reproducible with `scripts/export_cnn14_onnx.py` (same input/output names, embeddings identical on DirectML, checked 2026-11-13) |
 | Input | mono, **32 kHz**, **5-second** chunks (160,000 samples); the last chunk is zero-padded |
 | Output | one **2048-dimensional** embedding per chunk (the second return value of `AudioTagging.inference`) |
 | Storage | `np.savez_compressed(path, embeddings=array.astype(np.float16))`, shape `(n_chunks, 2048)` |

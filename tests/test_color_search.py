@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from traktor_key_calculator.core.color_search import COLOR_NAMES, parse_color_search, replace_color_filter
-from traktor_key_calculator.core.search_filters import matches_condition
+from songselector.core.color_search import COLOR_NAMES, parse_color_search, replace_color_filter
+from songselector.core.search_filters import matches_condition
 
 
 class ColorSearchTests(unittest.TestCase):
@@ -79,17 +79,17 @@ class ColorSearchGuiTests(unittest.TestCase):
         cls.application=QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        self.temp=tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import SETTINGS_DEFAULT
+        self.temp=tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root=Path(self.temp.name)
         self.settings_path=self.root/'settings.json'
         settings=copy.deepcopy(SETTINGS_DEFAULT)
         settings.update({'Traktor collection':'','Advanced search':{'enabled':False,'filters':[]},'Search columns':['Title']})
         self.settings_path.write_text(json.dumps(settings))
-        self.settings_patch=patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE',str(self.settings_path))
+        self.settings_patch=patch('songselector.ui.main_window.SETTINGS_FILE',str(self.settings_path))
         self.settings_patch.start()
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        self.window=TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        self.window=MainWindow()
         rows=[]
         for title,color,rating in [('tribal red',1,4),('tribal orange',2,2),('tribal blue',5,5),('Blue Monday',4,4),('tribal uncolored',0,None)]:
             rows.append({'Title':title,'Artist':'Test','Color':color,'Rating':rating,'BPM':125,
@@ -106,7 +106,7 @@ class ColorSearchGuiTests(unittest.TestCase):
         self.temp.cleanup()
 
     def visible(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         tree=self.window.candidate_tree
         return {tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount())
                 if not tree.topLevelItem(i).isHidden()}
@@ -169,7 +169,7 @@ class ColorSearchGuiTests(unittest.TestCase):
             row.condition_combo.setCurrentText('is')
             self.assertIsNotNone(row.value_edit.completer())
             row.value_edit.setText('bluu')
-            with patch('traktor_key_calculator.ui.advanced_search_dialog.QMessageBox.warning') as warning:
+            with patch('songselector.ui.advanced_search_dialog.QMessageBox.warning') as warning:
                 dialog.button_ok.click()
                 warning.assert_called_once()
             row.value_edit.setText('blue')

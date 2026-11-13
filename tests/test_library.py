@@ -10,10 +10,10 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from traktor_key_calculator.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
-from traktor_key_calculator.core.track_import import drop_duplicate_paths
-from traktor_key_calculator.core.traktor_collection import canonical_path
-from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
+from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
+from songselector.core.track_import import drop_duplicate_paths
+from songselector.core.traktor_collection import canonical_path
+from songselector.ui.main_window import IN_PLAYLIST_ROLE
 
 
 def track(path, title='Track', **fields):
@@ -25,7 +25,7 @@ def track(path, title='Track', **fields):
 
 class LibraryStoreTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.store = LibraryStore(Path(self.temp.name) / 'library.sqlite')
 
     def tearDown(self):
@@ -88,8 +88,8 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import SETTINGS_DEFAULT
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         self.settings_path = self.root / 'settings.json'
         settings = copy.deepcopy(SETTINGS_DEFAULT)
@@ -104,8 +104,8 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         self.default_library = pd.DataFrame([track(path, path.stem) for path in self.files] +
                                             [track(str(self.files[0]).upper(), 'one again')])
         self.patches = [
-            patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
-            patch('traktor_key_calculator.ui.main_window.DataManager.load_default_data',
+            patch('songselector.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
+            patch('songselector.ui.main_window.DataManager.load_default_data',
                   side_effect=lambda: self.default_library.copy()),
         ]
         for active in self.patches:
@@ -121,8 +121,8 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         self.temp.cleanup()
 
     def window(self):
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        window = TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        window = MainWindow()
         self.windows.append(window)
         return window
 
@@ -134,13 +134,13 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
 
     @staticmethod
     def titles(tree):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         return [tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount())]
 
     def test_playlist_columns_can_be_resized_and_keep_their_width(self):
         from PyQt5.QtWidgets import QHeaderView
 
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         window = self.window()
         header = window.playlist_tree.header()
         self.assertTrue(all(header.sectionResizeMode(i) == QHeaderView.Interactive for i in range(header.count())))
@@ -149,7 +149,7 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         self.assertEqual(window.playlist_tree.columnWidth(HEADER_INDEX['Title']), 333)
 
     def test_hidden_playlist_columns_leave_no_empty_gap(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         settings = json.loads(self.settings_path.read_text())
         settings['Visible column left'] = ['Artist', 'Title', 'Camelot Key New']
         self.settings_path.write_text(json.dumps(settings))
@@ -197,7 +197,7 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         self.assertEqual(len(self.window().table), 0)
 
     def test_library_and_playlist_are_restored_after_restart(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         window = self.window()
         self.assertEqual(len(window.table), 4)
         window.table = window.table[window.table['Title'] != 'two'].reset_index(drop=True)

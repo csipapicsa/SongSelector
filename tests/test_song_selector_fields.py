@@ -17,13 +17,13 @@ from mutagen.id3 import ID3
 from mutagen.wave import WAVE
 from test_imports import tagged_file
 
-from traktor_key_calculator.config import HEADER_INDEX, SS_COLOR_COLUMN, SS_RATING_COLUMN
-from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
-from traktor_key_calculator.core.color_search import SS_COLOR_TOKEN, parse_color_search
-from traktor_key_calculator.core.library_store import LIBRARY_LIST, LibraryStore
-from traktor_key_calculator.core.search_filters import matches_condition
-from traktor_key_calculator.core.tag_writer import write_tags
-from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
+from songselector.config import HEADER_INDEX, SS_COLOR_COLUMN, SS_RATING_COLUMN
+from songselector.core.audio_metadata import extract_audio_metadata
+from songselector.core.color_search import SS_COLOR_TOKEN, parse_color_search
+from songselector.core.library_store import LIBRARY_LIST, LibraryStore
+from songselector.core.search_filters import matches_condition
+from songselector.core.tag_writer import write_tags
+from songselector.ui.main_window import IN_PLAYLIST_ROLE
 
 
 def track(path, title='Track', **fields):
@@ -35,7 +35,7 @@ def track(path, title='Track', **fields):
 
 class TempDirTest(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
 
     def tearDown(self):
@@ -149,7 +149,7 @@ class GuiTestBase(TempDirTest):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
+        from songselector.config import SETTINGS_DEFAULT
         super().setUp()
         self.settings_path = self.root / 'settings.json'
         settings = copy.deepcopy(SETTINGS_DEFAULT)
@@ -158,8 +158,8 @@ class GuiTestBase(TempDirTest):
         self.song = tagged_file(self.root / 'song.mp3')
         self.other = tagged_file(self.root / 'other.mp3')
         self.library = pd.DataFrame([track(self.song, 'Song', Artist='CSV artist'), track(self.other, 'Other')])
-        self.patches = [patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
-                        patch('traktor_key_calculator.ui.main_window.DataManager.load_default_data',
+        self.patches = [patch('songselector.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
+                        patch('songselector.ui.main_window.DataManager.load_default_data',
                               side_effect=lambda: self.library.copy())]
         for active in self.patches:
             active.start()
@@ -174,8 +174,8 @@ class GuiTestBase(TempDirTest):
         super().tearDown()
 
     def window(self):
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        window = TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        window = MainWindow()
         self.windows.append(window)
         return window
 
@@ -258,14 +258,14 @@ class SongSelectorGuiTests(GuiTestBase):
         window = self.window()
         missing = self.root / 'gone.mp3'
         window.table = pd.concat([window.table, pd.DataFrame([track(missing, 'Gone')])], ignore_index=True)
-        with patch('traktor_key_calculator.ui.main_window.QMessageBox.warning') as warning:
+        with patch('songselector.ui.main_window.QMessageBox.warning') as warning:
             self.assertFalse(window.edit_track_tags(str(missing), Artist='x'))
         warning.assert_called_once()
         self.assertEqual(window.table.loc[window.table['Title'] == 'Gone', 'Artist'].iloc[0], 'Test')
 
     def test_tag_edit_keeps_existing_embedding_current(self):
-        from traktor_key_calculator.core.embeddings import file_fingerprint
-        from traktor_key_calculator.core.traktor_collection import canonical_path
+        from songselector.core.embeddings import file_fingerprint
+        from songselector.core.traktor_collection import canonical_path
         window = self.window()
         key = canonical_path(self.song)
         window.embedding_store.save(key, file_fingerprint(self.song), np.ones((1, 2048)))
@@ -324,10 +324,10 @@ class MultiSelectionGuiTests(GuiTestBase):
         from PyQt5.QtWidgets import QMessageBox
         window = self.window()
         self.select(window.candidate_tree, 'Song', 'Third')
-        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.No):
+        with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.No):
             QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
         self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Other', 'Song', 'Third'])
-        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
+        with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
             QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
         self.assertEqual(self.titles(window.candidate_tree), ['Other'])
         self.assertTrue(self.song.exists() and self.third.exists())
@@ -371,7 +371,7 @@ class MultiSelectionGuiTests(GuiTestBase):
         self.assertTrue(window.edit_track_tags(str(self.other), Comment='Big room'))
         self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Comment']), 'Big room')
         self.assertEqual(extract_audio_metadata(self.other).comment, 'Big room')
-        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
+        with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
             self.menu_action(window.library_context_menu(), 'Remove from library\tDel').trigger()
         self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Song', 'Third'])
 
@@ -380,8 +380,8 @@ class DefaultModelTests(GuiTestBase):
     def test_default_model_is_used_when_none_is_chosen(self):
         model = self.root / 'default-cnn14.onnx'
         model.write_bytes(b'x')
-        with patch('traktor_key_calculator.ui.main_window.DEFAULT_EMBEDDING_MODEL', str(model)), \
-                patch('traktor_key_calculator.ui.main_window.EmbeddingAnalyzer'):  # no real process
+        with patch('songselector.ui.main_window.DEFAULT_EMBEDDING_MODEL', str(model)), \
+                patch('songselector.ui.main_window.EmbeddingAnalyzer'):  # no real process
             window = self.window()
             self.assertEqual(window.embedding_model_path(), model)
             window.settings['Embedding model'] = str(self.root / 'missing.onnx')
@@ -406,7 +406,7 @@ class MissingFilesGuiTests(GuiTestBase):
         from PyQt5.QtWidgets import QMessageBox
         window = self.window()
         window.search_bar.setText('Song')  # 'Gone' is hidden by the search but still removed
-        with patch('traktor_key_calculator.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes) as ask:
+        with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes) as ask:
             self.menu_action(window.library_context_menu(), 'Remove missing files from the list').trigger()
         self.assertIn('1 missing file(s)', ask.call_args[0][2])
         self.assertEqual(self.titles(window.candidate_tree), ['Other', 'Song'])
@@ -428,7 +428,7 @@ class ThemeTests(GuiTestBase):
         from PyQt5.QtGui import QPalette
         from PyQt5.QtWidgets import QApplication
 
-        from traktor_key_calculator.ui.theme import status_style
+        from songselector.ui.theme import status_style
         window = self.window()
         palette = QApplication.instance().palette()
         self.assertLess(palette.color(QPalette.Window).lightness(), 80)  # dark grey

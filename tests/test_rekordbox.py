@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, database_key, discover_library, signature
+from songselector.core.rekordbox_library import RekordboxLibrary, database_key, discover_library, signature
 
 
 def write_library(path, playlists, contents, songs):
@@ -41,7 +41,7 @@ SONGS = [('p1', '11', 1, 0), ('p1', '12', 2, 0), ('p1', '10', 3, 0), ('p1', '13'
 
 class RekordboxLibraryTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.path = str(Path(self.temp.name) / 'master.db')
         write_library(self.path, PLAYLISTS, CONTENTS, SONGS)
 
@@ -87,9 +87,9 @@ class RekordboxLibraryTests(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.temp.name)), ['master.db'])
 
     def test_discovery_uses_the_override_the_settings_file_and_the_standard_place(self):
-        with patch.dict(os.environ, {'TRAKTOR_REKORDBOX_LIBRARY': 'none'}):
+        with patch.dict(os.environ, {'SONGSELECTOR_REKORDBOX_LIBRARY': 'none'}):
             self.assertEqual(discover_library(), '')
-        with patch.dict(os.environ, {'TRAKTOR_REKORDBOX_LIBRARY': r'D:\x\master.db'}):
+        with patch.dict(os.environ, {'SONGSELECTOR_REKORDBOX_LIBRARY': r'D:\x\master.db'}):
             self.assertEqual(discover_library(), r'D:\x\master.db')
         appdata = Path(self.temp.name) / 'Roaming'
         (appdata / 'Pioneer' / 'rekordbox6').mkdir(parents=True)
@@ -98,7 +98,7 @@ class RekordboxLibraryTests(unittest.TestCase):
         (library_folder / 'master.db').write_bytes(b'x')
         (appdata / 'Pioneer' / 'rekordbox6' / 'rekordbox3.settings').write_text(
             f'<ROOT><VALUE name="masterDbDirectory" val="{library_folder}"/></ROOT>', encoding='utf-8')
-        env = {key: value for key, value in os.environ.items() if key != 'TRAKTOR_REKORDBOX_LIBRARY'}
+        env = {key: value for key, value in os.environ.items() if key not in ('SONGSELECTOR_REKORDBOX_LIBRARY', 'TRAKTOR_REKORDBOX_LIBRARY')}
         env['APPDATA'] = str(appdata)
         with patch.dict(os.environ, env, clear=True):
             self.assertEqual(discover_library(), str(library_folder / 'master.db'))

@@ -12,13 +12,13 @@ own process with the same number of threads and one 5 s chunk per call:
 It checks that all four give the same embeddings and prints the times.
 
 Environment:
-  TKC_CNN14_ONNX       cnn14.onnx
-  TKC_TORCH_PYTHON     a python.exe with torch and panns_inference installed
-  TKC_BENCH_TRACKS     a music folder or a library.sqlite (opened read-only)
-  TKC_TORCH_CHECKPOINT optional, default %USERPROFILE%\\panns_data\\Cnn14_mAP=0.431.pth
-  TKC_BENCH_COUNT      optional, tracks to pick (default 10)
-  TKC_BENCH_THREADS    optional, default half the cores as in the app
-  TKC_BENCH_SEED       optional, to pick the same tracks again
+  SONGSELECTOR_CNN14_ONNX       cnn14.onnx
+  SONGSELECTOR_TORCH_PYTHON     a python.exe with torch and panns_inference installed
+  SONGSELECTOR_BENCH_TRACKS     a music folder or a library.sqlite (opened read-only)
+  SONGSELECTOR_TORCH_CHECKPOINT optional, default %USERPROFILE%\\panns_data\\Cnn14_mAP=0.431.pth
+  SONGSELECTOR_BENCH_COUNT      optional, tracks to pick (default 10)
+  SONGSELECTOR_BENCH_THREADS    optional, default half the cores as in the app
+  SONGSELECTOR_BENCH_SEED       optional, to pick the same tracks again
 
 Run (the report is printed, hence -s):
   .\\scripts\\test.ps1 tests\\test_inference_speed.py -s
@@ -36,11 +36,11 @@ from pathlib import Path
 
 import numpy as np
 
-from traktor_key_calculator.core.embeddings import CHUNK_SECONDS, SAMPLE_RATE, load_audio, split_chunks
+from songselector.core.embeddings import CHUNK_SECONDS, SAMPLE_RATE, load_audio, split_chunks
 
 WORKER = Path(__file__).with_name('benchmarks') / 'cnn14_backends.py'
 AUDIO_SUFFIXES = {'.mp3', '.flac', '.wav', '.aif', '.aiff', '.ogg'}
-REQUIRED = ('TKC_CNN14_ONNX', 'TKC_TORCH_PYTHON', 'TKC_BENCH_TRACKS')
+REQUIRED = ('SONGSELECTOR_CNN14_ONNX', 'SONGSELECTOR_TORCH_PYTHON', 'SONGSELECTOR_BENCH_TRACKS')
 
 
 def candidate_tracks(source):
@@ -56,11 +56,11 @@ def candidate_tracks(source):
 @unittest.skipUnless(all(os.environ.get(name) for name in REQUIRED), 'set ' + ', '.join(REQUIRED) + ' to run')
 class InferenceSpeedTests(unittest.TestCase):
     def test_cnn14_on_the_cpu_pytorch_vs_compiled_vs_onnxruntime(self):
-        count = int(os.environ.get('TKC_BENCH_COUNT', 10))
-        threads = int(os.environ.get('TKC_BENCH_THREADS') or max(1, (os.cpu_count() or 2) // 2))
-        seed = int(os.environ.get('TKC_BENCH_SEED') or random.randrange(10 ** 6))
-        checkpoint = os.environ.get('TKC_TORCH_CHECKPOINT') or str(Path.home() / 'panns_data' / 'Cnn14_mAP=0.431.pth')
-        candidates = candidate_tracks(os.environ['TKC_BENCH_TRACKS'])
+        count = int(os.environ.get('SONGSELECTOR_BENCH_COUNT', 10))
+        threads = int(os.environ.get('SONGSELECTOR_BENCH_THREADS') or max(1, (os.cpu_count() or 2) // 2))
+        seed = int(os.environ.get('SONGSELECTOR_BENCH_SEED') or random.randrange(10 ** 6))
+        checkpoint = os.environ.get('SONGSELECTOR_TORCH_CHECKPOINT') or str(Path.home() / 'panns_data' / 'Cnn14_mAP=0.431.pth')
+        candidates = candidate_tracks(os.environ['SONGSELECTOR_BENCH_TRACKS'])
         random.Random(seed).shuffle(candidates)
 
         with tempfile.TemporaryDirectory() as folder:
@@ -82,10 +82,10 @@ class InferenceSpeedTests(unittest.TestCase):
             np.savez(folder / 'chunks.npz', **{key: chunks for key, (_, chunks) in tracks.items()})
 
             results, outputs = {}, {}
-            for backend, python, model in (('torch', os.environ['TKC_TORCH_PYTHON'], checkpoint),
-                                           ('torchscript', os.environ['TKC_TORCH_PYTHON'], checkpoint),
-                                           ('onnx-noopt', sys.executable, os.environ['TKC_CNN14_ONNX']),
-                                           ('onnx', sys.executable, os.environ['TKC_CNN14_ONNX'])):
+            for backend, python, model in (('torch', os.environ['SONGSELECTOR_TORCH_PYTHON'], checkpoint),
+                                           ('torchscript', os.environ['SONGSELECTOR_TORCH_PYTHON'], checkpoint),
+                                           ('onnx-noopt', sys.executable, os.environ['SONGSELECTOR_CNN14_ONNX']),
+                                           ('onnx', sys.executable, os.environ['SONGSELECTOR_CNN14_ONNX'])):
                 out = folder / f'{backend}.npz'
                 run = subprocess.run([python, str(WORKER), backend, model, str(folder / 'chunks.npz'), str(out),
                                       str(threads)], capture_output=True, text=True, timeout=3600)

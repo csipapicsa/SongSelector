@@ -43,8 +43,8 @@ class Vectors:
 
 def cnn14_vectors(snapshot):
     """The app's own track vector: mean + std of the 5 s CNN14 embeddings, centred, unit length."""
-    from traktor_key_calculator.core.embeddings import EmbeddingStore
-    from traktor_key_calculator.core.similarity import track_vectors
+    from songselector.core.embeddings import EmbeddingStore
+    from songselector.core.similarity import track_vectors
     matrices = EmbeddingStore(snapshot / 'embeddings.sqlite').load_many()
     keys = sorted(matrices)
     return Vectors(keys, track_vectors([matrices[key] for key in keys]))

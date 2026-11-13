@@ -8,6 +8,25 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+The app behaves the same; names and the README change.
+
+- **Renamed to SongSelector everywhere:** the exe is now `SongSelector-<version>.exe`, the Python package
+  `songselector` (`python -m songselector`), the main window class `MainWindow`. Names that refer to
+  Native Instruments' Traktor (the Traktor collection, *Traktor Playlists*) stay.
+- **Settings file renamed** to `SongSelector_settings.json`. On the first start an existing
+  `SpotNextTrack_settings.json` is moved to the new name and kept as `SpotNextTrack_settings.json.bak`;
+  this happens once, so resetting the settings later does not bring the old ones back. Tested.
+- **Environment variables** are now `SONGSELECTOR_*` (`SONGSELECTOR_APP_DATA_DIR`, `_EMBEDDING_MODEL`,
+  `_REKORDBOX_LIBRARY`, `_CUDA_DLL_DIR`). The old `TRAKTOR_*` names are still read as a fallback until 1.2.
+- **New `scripts/export_cnn14_onnx.py`:** builds `cnn14.onnx` from the published PANNs checkpoint
+  (SHA-256 checked) and compares it with PyTorch. Until now the model could only come from the developer's
+  machine. Checked: on DirectML its embeddings are identical (difference 0.0) to the model the app used so far.
+- README rewritten for people new to the project: what the app does, how it is built and tested, how to
+  install it and get the model.
+- Backlog updated (rename, linter, CI and real-file tests were done); dead `test = 100` removed from `config.py`.
+
 ## [1.0.1] - 2026-11-05
 
 Development only; the app behaves the same.

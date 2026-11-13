@@ -8,8 +8,8 @@ from xml.etree import ElementTree as ET
 import pytest
 from mutagen.id3 import COMM, ID3, POPM, TALB, TBPM, TCON, TIT2, TKEY, TPE1, TXXX
 
-from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
-from traktor_key_calculator.core.key_formats import (
+from songselector.core.audio_metadata import extract_audio_metadata
+from songselector.core.key_formats import (
     CAMELOT_MAJOR,
     CAMELOT_MINOR,
     OPEN_MAJOR,
@@ -18,11 +18,11 @@ from traktor_key_calculator.core.key_formats import (
     parse_bpm,
     parse_key,
 )
-from traktor_key_calculator.core.library_store import LibraryStore
-from traktor_key_calculator.core.track_import import ImportedTrackStore, TrackImporter, merge_tracks
-from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
-from traktor_key_calculator.ui.main_window import IN_PLAYLIST_ROLE
-from traktor_key_calculator.ui.theme import row_tint_alpha
+from songselector.core.library_store import LibraryStore
+from songselector.core.track_import import ImportedTrackStore, TrackImporter, merge_tracks
+from songselector.core.traktor_collection import TraktorCollection, canonical_path
+from songselector.ui.main_window import IN_PLAYLIST_ROLE
+from songselector.ui.theme import row_tint_alpha
 
 
 def tagged_file(path, key='C', bpm='100'):
@@ -58,7 +58,7 @@ def make_collection(path, records):
 
 class MetadataTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
     def tearDown(self):
         self.temp.cleanup()
@@ -199,9 +199,9 @@ class GuiTests(unittest.TestCase):
         from PyQt5.QtCore import QCoreApplication, QMimeData, QPoint, QPointF, Qt, QUrl
         from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 
-        from traktor_key_calculator.config import HEADER_INDEX, init_settings
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        data = Path(os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import HEADER_INDEX, init_settings
+        from songselector.ui.main_window import MainWindow
+        data = Path(os.environ['SONGSELECTOR_APP_DATA_DIR'])
         fixture = data/'gui-fixtures'
         fixture.mkdir(exist_ok=True)
         tagged = tagged_file(fixture/'tagged.mp3')
@@ -211,7 +211,7 @@ class GuiTests(unittest.TestCase):
         nml = fixture/'collection.nml'
         make_collection(nml, [(fallback, 23, 125.23)])
         init_settings()
-        window = TraktorKeyCalculator()
+        window = MainWindow()
         self.assertEqual(len(window.table), 0)  # a fresh install starts with an empty library
         window.importer = TrackImporter(nml)
         window.table = pd.DataFrame()
@@ -265,7 +265,7 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(item_for(window.candidate_tree, tagged).isHidden())
         window.close()
         self.application.processEvents()
-        restored = TraktorKeyCalculator()
+        restored = MainWindow()
         self.assertEqual(len(restored.saved_imports), 3)
         self.assertEqual(item_for(restored.candidate_tree, tagged).text(HEADER_INDEX['Original Key']), 'C major')
         restored.close()
@@ -295,16 +295,16 @@ class ColorGuiTests(unittest.TestCase):
     def setUp(self):
         import pandas as pd
 
-        from traktor_key_calculator.config import init_settings
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        self.temp=tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import init_settings
+        from songselector.ui.main_window import MainWindow
+        self.temp=tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root=Path(self.temp.name)
         self.file=self.root/'color.mp3'
         self.file.write_bytes(b'')
         self.collection=self.root/'collection.nml'
         make_collection(self.collection, [(self.file, 0, 100)])
         init_settings()
-        self.window=TraktorKeyCalculator()
+        self.window=MainWindow()
         self.window.coloring_mode='song'
         self.window.importer=TrackImporter(self.collection)
         self.window.library_store=LibraryStore(self.root/'library.sqlite')
@@ -332,7 +332,7 @@ class ColorGuiTests(unittest.TestCase):
         self.application.processEvents()
 
     def test_category_color_and_all_collection_details_in_both_panels(self):
-        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
+        from songselector.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
         self.drop(self.window.candidate_tree,self.file)
         self.drop(self.window.playlist_tree,self.file)
         for tree in (self.window.candidate_tree,self.window.playlist_tree):
@@ -350,7 +350,7 @@ class ColorGuiTests(unittest.TestCase):
             self.assertIn('Color: Traktor collection',item.toolTip(HEADER_INDEX['Color']))
 
     def test_key_colors_change_with_tempo_in_both_panels(self):
-        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
+        from songselector.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX, OPEN_KEY_COLOR_MAPPING
         self.drop(self.window.candidate_tree,self.file)
         self.drop(self.window.playlist_tree,self.file)
         self.window.coloring_mode='key'
@@ -372,7 +372,7 @@ class ColorGuiTests(unittest.TestCase):
     def test_clearing_traktor_color_clears_old_background(self):
         from PyQt5.QtCore import Qt
 
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         self.drop(self.window.candidate_tree,self.file)
         self.drop(self.window.playlist_tree,self.file)
         tree=ET.parse(self.collection)
@@ -386,7 +386,7 @@ class ColorGuiTests(unittest.TestCase):
 
     @pytest.mark.local_data
     def test_real_mp3_drop_uses_actual_traktor_color(self):
-        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
+        from songselector.config import COLOR_MAPPING_CATEGORY, HEADER_INDEX
         file=Path(r'E:\DJ\BREAKBEAT\8-Bit Krush - robosapiens remix.mp3')
         if not file.exists():
             self.skipTest('Local real MP3 unavailable')
@@ -409,8 +409,8 @@ class ColorGuiTests(unittest.TestCase):
         from PyQt5.QtGui import QImage, QPainter, QStandardItem, QStandardItemModel
         from PyQt5.QtWidgets import QStyle, QStyleOptionViewItem
 
-        from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY
-        from traktor_key_calculator.ui.delegates import ColorDotDelegate
+        from songselector.config import COLOR_MAPPING_CATEGORY
+        from songselector.ui.delegates import ColorDotDelegate
         model=QStandardItemModel()
         model.appendRow(QStandardItem('5.0'))
         delegate=ColorDotDelegate()
