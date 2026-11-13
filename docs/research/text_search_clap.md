@@ -85,7 +85,7 @@ Candidate: **LAION `clap-htsat-unfused`**. Cost is not the blocker. Next, in ord
 2. ONNX export of the two encoders separately, check against PyTorch, measure ONNX Runtime on the CPU and DirectML.
 3. Only then the app: background analysis next to CNN14 (decode once), a search window with saved prompts.
 
-## Trying it on the library (2026-11-13, in progress)
+## Trying it on the library (2026-11-13)
 
 - **Test set:** the 998 tracks with a Traktor rating of 4-5 and a colour whose files exist.
   [experiments/clap/extract_embeddings.py](experiments/clap/extract_embeddings.py) stores every window's vector per model
@@ -100,3 +100,6 @@ Candidate: **LAION `clap-htsat-unfused`**. Cost is not the blocker. Next, in ord
   text and every track get nearly the same vector: mean cosine 0.999 between different texts and 0.98 between
   different tracks, against 0.29 and 0.82 for LAION light. Its scores are meaningless, so it is excluded for now.
   To check later: the original checkpoint `music_audioset_epoch_15_esc_90.14.pt` through the `laion_clap` package.
+- **Extraction finished:** 990 of 998 tracks for LAION light and MS 2023; 8 files libsndfile cannot decode (the app
+  falls back to FFmpeg for those, this script does not). GTX 1650 Ti, both models together: 2.2 s per track, about
+  33 minutes for the set.
