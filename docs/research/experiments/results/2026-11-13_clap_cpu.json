@@ -1,0 +1,486 @@
+{
+ "date": "2026-11-13",
+ "machine": {
+  "cpu": "Intel64 Family 6 Model 165 Stepping 2, GenuineIntel",
+  "logical_cpus": 8,
+  "python": "3.12.9",
+  "torch": "2.7.1+cpu"
+ },
+ "setup": {
+  "tracks": 8,
+  "seed": 1,
+  "batch": 8,
+  "device": "CPU (CUDA hidden)",
+  "decode": "soundfile + soxr HQ",
+  "prompts": [
+   "dark rolling drum and bass with a heavy reese bassline",
+   "uplifting breakbeat with piano chords",
+   "minimal techno, hypnotic and repetitive",
+   "female vocal house track",
+   "tribal percussion and deep sub bass",
+   "acid squelchy 303 line",
+   "jungle with chopped amen breaks",
+   "chilled downtempo with warm pads",
+   "aggressive distorted electro",
+   "soulful disco with strings"
+  ]
+ },
+ "runs": [
+  {
+   "model": "laion-unfused",
+   "threads": 4,
+   "rate": 48000,
+   "window_s": 10.0,
+   "embedding_dim": 512,
+   "audio_params_m": 28.190872,
+   "text_params_m": 125.302016,
+   "load_s": 6.270120999999563,
+   "rss_after_load_mb": 580.313088,
+   "prepare_ms_per_window": 18.888937499923486,
+   "window_ms_batch1": 131.31430000021282,
+   "window_ms_batch8": 105.16480000001138,
+   "text_ms_cold": 29.878199999984645,
+   "text_ms_median": 30.63129999964076,
+   "rank_3000_ms": 0.14585000008082716,
+   "tracks": [
+    {
+     "minutes": 4.542258333333334,
+     "windows": 28,
+     "decode_s": 0.6526605999997628,
+     "embed_s": 3.5291981999998825
+    },
+    {
+     "minutes": 4.050085763888889,
+     "windows": 25,
+     "decode_s": 0.584879600000022,
+     "embed_s": 3.157430199999908
+    },
+    {
+     "minutes": 6.514888888888889,
+     "windows": 40,
+     "decode_s": 0.8976291999997557,
+     "embed_s": 5.089173600000322
+    },
+    {
+     "minutes": 7.875821875,
+     "windows": 48,
+     "decode_s": 0.7471385999997437,
+     "embed_s": 6.542242000000442
+    },
+    {
+     "minutes": 5.575867708333333,
+     "windows": 34,
+     "decode_s": 0.7904851000002964,
+     "embed_s": 4.4549035
+    },
+    {
+     "minutes": 7.910222222222222,
+     "windows": 48,
+     "decode_s": 0.9926133999997546,
+     "embed_s": 6.027375600000596
+    },
+    {
+     "minutes": 3.803863888888889,
+     "windows": 23,
+     "decode_s": 0.5275209999999788,
+     "embed_s": 2.820475699999406
+    },
+    {
+     "minutes": 5.329414930555556,
+     "windows": 32,
+     "decode_s": 0.70895500000006,
+     "embed_s": 4.042566000000079
+    }
+   ],
+   "rss_peak_mb": 1645.912064,
+   "summary": {
+    "decode_s_per_audio_min": 0.12942036919637248,
+    "embed_s_per_audio_min": 0.7820497678836349,
+    "full_s_per_6min_track": 5.468820822480044,
+    "full_h_per_3000_tracks": 4.557350685400037,
+    "sampled6_s_per_6min_track": 1.5208446401778442,
+    "sampled6_h_per_3000_tracks": 1.2673705334815366
+   }
+  },
+  {
+   "model": "laion-unfused",
+   "threads": 8,
+   "rate": 48000,
+   "window_s": 10.0,
+   "embedding_dim": 512,
+   "audio_params_m": 28.190872,
+   "text_params_m": 125.302016,
+   "load_s": 6.173827099999471,
+   "rss_after_load_mb": 580.763648,
+   "prepare_ms_per_window": 18.99666249994425,
+   "window_ms_batch1": 127.25654999985636,
+   "window_ms_batch8": 93.95319999998719,
+   "text_ms_cold": 34.672499999942374,
+   "text_ms_median": 33.1458499999826,
+   "rank_3000_ms": 0.12504999995144317,
+   "tracks": [
+    {
+     "minutes": 4.542258333333334,
+     "windows": 28,
+     "decode_s": 0.6452022000003126,
+     "embed_s": 3.2911182999996527
+    },
+    {
+     "minutes": 4.050085763888889,
+     "windows": 25,
+     "decode_s": 0.6224854000001869,
+     "embed_s": 2.9205683000000136
+    },
+    {
+     "minutes": 6.514888888888889,
+     "windows": 40,
+     "decode_s": 0.9264323999996122,
+     "embed_s": 4.723741200000404
+    },
+    {
+     "minutes": 7.875821875,
+     "windows": 48,
+     "decode_s": 0.7953433000002406,
+     "embed_s": 6.022100600000158
+    },
+    {
+     "minutes": 5.575867708333333,
+     "windows": 34,
+     "decode_s": 0.8789517999994132,
+     "embed_s": 4.192409499999485
+    },
+    {
+     "minutes": 7.910222222222222,
+     "windows": 48,
+     "decode_s": 1.024541699999645,
+     "embed_s": 5.681772099999762
+    },
+    {
+     "minutes": 3.803863888888889,
+     "windows": 23,
+     "decode_s": 0.617645100000118,
+     "embed_s": 2.774182600000131
+    },
+    {
+     "minutes": 5.329414930555556,
+     "windows": 32,
+     "decode_s": 0.7962054999998145,
+     "embed_s": 3.6827714000000924
+    }
+   ],
+   "rss_peak_mb": 1657.004032,
+   "summary": {
+    "decode_s_per_audio_min": 0.1382998292762378,
+    "embed_s_per_audio_min": 0.7299757636541242,
+    "full_s_per_6min_track": 5.209653557582172,
+    "full_h_per_3000_tracks": 4.3413779646518105,
+    "sampled6_s_per_6min_track": 1.5074981506570153,
+    "sampled6_h_per_3000_tracks": 1.2562484588808462
+   }
+  },
+  {
+   "model": "laion-music",
+   "threads": 4,
+   "rate": 48000,
+   "window_s": 10.0,
+   "embedding_dim": 512,
+   "audio_params_m": 68.611864,
+   "text_params_m": 125.302016,
+   "load_s": 6.059584699999505,
+   "rss_after_load_mb": 586.87488,
+   "prepare_ms_per_window": 20.252649999974892,
+   "window_ms_batch1": 327.3466499999813,
+   "window_ms_batch8": 265.22927500002424,
+   "text_ms_cold": 34.24730000006093,
+   "text_ms_median": 34.53910000007454,
+   "rank_3000_ms": 0.15914999994492973,
+   "tracks": [
+    {
+     "minutes": 4.542258333333334,
+     "windows": 28,
+     "decode_s": 0.6718022999993991,
+     "embed_s": 8.198140800000147
+    },
+    {
+     "minutes": 4.050085763888889,
+     "windows": 25,
+     "decode_s": 0.6904997000001458,
+     "embed_s": 7.286374899999828
+    },
+    {
+     "minutes": 6.514888888888889,
+     "windows": 40,
+     "decode_s": 0.9501276000000871,
+     "embed_s": 10.840131799999654
+    },
+    {
+     "minutes": 7.875821875,
+     "windows": 48,
+     "decode_s": 0.7608287000002747,
+     "embed_s": 13.570525999999518
+    },
+    {
+     "minutes": 5.575867708333333,
+     "windows": 34,
+     "decode_s": 0.7604056000000128,
+     "embed_s": 9.533690499999466
+    },
+    {
+     "minutes": 7.910222222222222,
+     "windows": 48,
+     "decode_s": 1.0855074000000968,
+     "embed_s": 13.808375099999466
+    },
+    {
+     "minutes": 3.803863888888889,
+     "windows": 23,
+     "decode_s": 0.7099046999992424,
+     "embed_s": 6.735060299999532
+    },
+    {
+     "minutes": 5.329414930555556,
+     "windows": 32,
+     "decode_s": 0.7897782000000007,
+     "embed_s": 9.374796799999785
+    }
+   ],
+   "rss_peak_mb": 1889.185792,
+   "summary": {
+    "decode_s_per_audio_min": 0.14075686535299176,
+    "embed_s_per_audio_min": 1.7399754205314721,
+    "full_s_per_6min_track": 11.284393715306784,
+    "full_h_per_3000_tracks": 9.40366142942232,
+    "sampled6_s_per_6min_track": 2.5574327421179452,
+    "sampled6_h_per_3000_tracks": 2.1311939517649545
+   }
+  },
+  {
+   "model": "laion-music",
+   "threads": 8,
+   "rate": 48000,
+   "window_s": 10.0,
+   "embedding_dim": 512,
+   "audio_params_m": 68.611864,
+   "text_params_m": 125.302016,
+   "load_s": 6.252389700000094,
+   "rss_after_load_mb": 586.62912,
+   "prepare_ms_per_window": 20.131037500050297,
+   "window_ms_batch1": 330.4435000000012,
+   "window_ms_batch8": 247.31946249994508,
+   "text_ms_cold": 38.412899999457295,
+   "text_ms_median": 34.927349999634316,
+   "rank_3000_ms": 0.14024999973116792,
+   "tracks": [
+    {
+     "minutes": 4.542258333333334,
+     "windows": 28,
+     "decode_s": 0.7101287000004959,
+     "embed_s": 7.543373800000154
+    },
+    {
+     "minutes": 4.050085763888889,
+     "windows": 25,
+     "decode_s": 0.6323856999997588,
+     "embed_s": 7.021694699999898
+    },
+    {
+     "minutes": 6.514888888888889,
+     "windows": 40,
+     "decode_s": 1.0606327999994392,
+     "embed_s": 10.344934400000056
+    },
+    {
+     "minutes": 7.875821875,
+     "windows": 48,
+     "decode_s": 0.8815871999995579,
+     "embed_s": 11.493951999999808
+    },
+    {
+     "minutes": 5.575867708333333,
+     "windows": 34,
+     "decode_s": 0.8065498000005391,
+     "embed_s": 8.115201999999954
+    },
+    {
+     "minutes": 7.910222222222222,
+     "windows": 48,
+     "decode_s": 1.046252099999947,
+     "embed_s": 10.71911050000017
+    },
+    {
+     "minutes": 3.803863888888889,
+     "windows": 23,
+     "decode_s": 0.6004360999995697,
+     "embed_s": 5.663311000000249
+    },
+    {
+     "minutes": 5.329414930555556,
+     "windows": 32,
+     "decode_s": 0.7680413999996745,
+     "embed_s": 7.8451008999991245
+    }
+   ],
+   "rss_peak_mb": 1896.062976,
+   "summary": {
+    "decode_s_per_audio_min": 0.14266815850580758,
+    "embed_s_per_audio_min": 1.5075224923626462,
+    "full_s_per_6min_track": 9.901143905210724,
+    "full_h_per_3000_tracks": 8.250953254342269,
+    "sampled6_s_per_6min_track": 2.460711951034818,
+    "sampled6_h_per_3000_tracks": 2.050593292529015
+   }
+  },
+  {
+   "model": "ms-2023",
+   "threads": 4,
+   "rate": 44100,
+   "window_s": 7.0,
+   "embedding_dim": 1024,
+   "audio_params_m": 33.162199,
+   "text_params_m": 126.276864,
+   "load_s": 7.8409896000002846,
+   "rss_after_load_mb": 1924.726784,
+   "prepare_ms_per_window": 0.00043750003442255547,
+   "window_ms_batch1": 135.98799999999756,
+   "window_ms_batch8": 126.37266249998902,
+   "text_ms_cold": 125.48469999910594,
+   "text_ms_median": 121.48524999975052,
+   "rank_3000_ms": 0.4287000001568231,
+   "tracks": [
+    {
+     "minutes": 4.54225850340136,
+     "windows": 39,
+     "decode_s": 0.5120936999992409,
+     "embed_s": 4.904920300000413
+    },
+    {
+     "minutes": 4.050085789871504,
+     "windows": 35,
+     "decode_s": 0.4409343999996054,
+     "embed_s": 4.560489999999845
+    },
+    {
+     "minutes": 6.514888888888889,
+     "windows": 56,
+     "decode_s": 0.820143800000551,
+     "embed_s": 7.0499055999998745
+    },
+    {
+     "minutes": 7.875821995464852,
+     "windows": 68,
+     "decode_s": 1.1109525000001668,
+     "embed_s": 8.461998299999323
+    },
+    {
+     "minutes": 5.575867724867725,
+     "windows": 48,
+     "decode_s": 0.655157600000166,
+     "embed_s": 6.03958590000002
+    },
+    {
+     "minutes": 7.910222222222222,
+     "windows": 68,
+     "decode_s": 0.7871228000003612,
+     "embed_s": 8.851299099999778
+    },
+    {
+     "minutes": 3.803863945578231,
+     "windows": 33,
+     "decode_s": 0.40893750000032014,
+     "embed_s": 4.061099599999579
+    },
+    {
+     "minutes": 5.329414965986394,
+     "windows": 46,
+     "decode_s": 0.5538765999999669,
+     "embed_s": 5.875161699999808
+    }
+   ],
+   "rss_peak_mb": 2372.747264,
+   "summary": {
+    "decode_s_per_audio_min": 0.1159854769078128,
+    "embed_s_per_audio_min": 1.0921450241411363,
+    "full_s_per_6min_track": 7.248783006293695,
+    "full_h_per_3000_tracks": 6.040652505244745,
+    "sampled6_s_per_6min_track": 1.4541514614470175,
+    "sampled6_h_per_3000_tracks": 1.2117928845391812
+   }
+  },
+  {
+   "model": "ms-2023",
+   "threads": 8,
+   "rate": 44100,
+   "window_s": 7.0,
+   "embedding_dim": 1024,
+   "audio_params_m": 33.162199,
+   "text_params_m": 126.276864,
+   "load_s": 9.097930299999462,
+   "rss_after_load_mb": 1924.64896,
+   "prepare_ms_per_window": 0.0006125000027168426,
+   "window_ms_batch1": 190.5185499995241,
+   "window_ms_batch8": 124.45882500003336,
+   "text_ms_cold": 142.57480000014766,
+   "text_ms_median": 149.0059999996447,
+   "rank_3000_ms": 0.43314999993526726,
+   "tracks": [
+    {
+     "minutes": 4.54225850340136,
+     "windows": 39,
+     "decode_s": 0.6759775000000445,
+     "embed_s": 4.5659060999996655
+    },
+    {
+     "minutes": 4.050085789871504,
+     "windows": 35,
+     "decode_s": 0.5902109999997265,
+     "embed_s": 4.110523199999989
+    },
+    {
+     "minutes": 6.514888888888889,
+     "windows": 56,
+     "decode_s": 0.8333304999996471,
+     "embed_s": 6.461914199999228
+    },
+    {
+     "minutes": 7.875821995464852,
+     "windows": 68,
+     "decode_s": 1.4054899000002479,
+     "embed_s": 8.247189499999877
+    },
+    {
+     "minutes": 5.575867724867725,
+     "windows": 48,
+     "decode_s": 0.8154769000002489,
+     "embed_s": 5.827494600000136
+    },
+    {
+     "minutes": 7.910222222222222,
+     "windows": 68,
+     "decode_s": 0.9637995000002775,
+     "embed_s": 8.298933199999738
+    },
+    {
+     "minutes": 3.803863945578231,
+     "windows": 33,
+     "decode_s": 0.5091783999996551,
+     "embed_s": 3.904907000000094
+    },
+    {
+     "minutes": 5.329414965986394,
+     "windows": 46,
+     "decode_s": 0.6387642999998207,
+     "embed_s": 5.505846600000041
+    }
+   ],
+   "rss_peak_mb": 2382.47936,
+   "summary": {
+    "decode_s_per_audio_min": 0.14105013353856372,
+    "embed_s_per_audio_min": 1.028952196985563,
+    "full_s_per_6min_track": 7.020013983144761,
+    "full_h_per_3000_tracks": 5.850011652620634,
+    "sampled6_s_per_6min_track": 1.5930574262315988,
+    "sampled6_h_per_3000_tracks": 1.3275478551929991
+   }
+  }
+ ]
+}
