@@ -28,6 +28,9 @@ songselector = "songselector.app:main"
 [tool.setuptools.dynamic]
 version = { attr = "songselector.__version__" }
 
+[tool.setuptools.package-data]
+songselector = ["ui/splash.png"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

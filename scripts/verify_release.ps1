@@ -84,6 +84,7 @@ public static class SongSelectorNativeWindow {
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int count);
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
     public static IntPtr Find(int[] processIds) {
         var allowed = new HashSet<int>(processIds);
@@ -92,7 +93,8 @@ public static class SongSelectorNativeWindow {
             uint id; GetWindowThreadProcessId(hwnd, out id);
             if (!allowed.Contains((int)id)) return true;
             var title = new StringBuilder(512); GetWindowText(hwnd, title, title.Capacity);
-            if (!title.ToString().StartsWith("SongSelector")) return true;
+            // The main window, "SongSelector <version>": visible, and not the startup splash ("Starting SongSelector").
+            if (!IsWindowVisible(hwnd) || !title.ToString().StartsWith("SongSelector ")) return true;
             found = hwnd; return false;
         }, IntPtr.Zero);
         return found;

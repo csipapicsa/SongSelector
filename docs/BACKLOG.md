@@ -64,6 +64,21 @@ CHANGELOG when they ship.
 - [ ] Map: faster layout for very large libraries (Barnes-Hut t-SNE, or arrange a sample + place_new).
 - [ ] Map: lasso selection, labels for the selected track's neighbours, a legend for the edge colours.
 - [ ] Re-check the per-track vector (`similarity.track_vectors`) once more styles are analysed.
+- [ ] **Several embedding models, chosen by the user** (asked 2026-11-13). Today: CNN14 only. Add the CLAP models
+      that work in research (LAION `clap-htsat-unfused`, Microsoft CLAP 2023; `laion/larger_clap_music` collapsed in
+      transformers 4.57, see `docs/research/text_search_clap.md`). The user picks which models are kept up to date
+      (each is analysed in the background and follows new and changed files, as CNN14 does now) and which one the
+      similarity map, closest matches and groups use. Steps, one PR each:
+      1. ONNX exports of both CLAP encoders with verification against PyTorch, like `scripts/export_cnn14_onnx.py`;
+         LAION's mel features reimplemented in numpy (no transformers/torch in the exe); tokenizers for the text side.
+         Measure ONNX Runtime on CPU and DirectML. This is the risky step: prove it before the app work.
+      2. Embedding store and analysis per model (the store already has a `model` column); settings for "models to
+         analyse" and "model for the map"; map layouts per model; decode each file once for all models.
+      3. Free-text search window (top tracks for a typed description, saved prompts).
+- [ ] Research: do CLAP embeddings group tracks by *feel* better than CNN14 (asked 2026-11-13)? CLAP is trained to
+      match descriptions ("dark", "uplifting", "groovy"), CNN14 to label sound events, so its neighbourhoods may follow
+      mood and energy more. Compare on the same tracks: style purity of the 10 nearest (as for CNN14), plus a blind
+      listening check ("do these 10 feel alike?") with the DJ.
 - [x] Track similarity from the embeddings (`core/similarity.py`, 4.11.0).
 - [x] GPU in the exe: DirectML since 4.9.0 (CUDA stays optional from source, requirements-gpu.txt).
 - [ ] Download the embedding model on demand (first use) instead of choosing the file by hand.
@@ -73,6 +88,13 @@ CHANGELOG when they ship.
 - [ ] Edit track info for several rows at once (e.g. set the genre of 20 tracks).
 
 ## Performance (measured on 5,105 tracks, 2026-10-27)
+
+- [x] Startup feedback: splash screen from the first moment (2026-11-13). Measured then on 3,753 tracks: the window
+      takes ~3 s from Python's start (imports 0.7 s, window 2.3 s: tables ~1.2 s, `collection.nml` ~1.1 s), and the
+      one-file exe adds ~4-5 s of unpacking before that (7.6 s to the window in total). Embeddings are *not* read at
+      startup: analysis compares file fingerprints only, the map loads vectors when it is opened.
+- [ ] Faster start: a one-folder build removes the unpacking (see Distribution, item 5); parse `collection.nml`
+      after the window is shown.
 
 - [ ] Startup ~1.7 s: building the tree rows ~1.2 s (`populate_tree` / `_track_item`) and parsing
       `collection.nml` ~1.1 s (`TraktorCollection._load`); the two overlap in the profile. Loading the

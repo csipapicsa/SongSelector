@@ -282,6 +282,13 @@ fixed colours, so they stay readable on both backgrounds. Row tint opacity comes
 
 ## Packaging
 
+**Startup splash** (`ui/splash.py`). A double-click must give feedback at once, but the one-file exe first unpacks
+itself for several seconds before any Python runs. So there are two splash screens with the same image
+(`ui/splash.png`, drawn by `packaging/make_splash.py`): PyInstaller's own (`Splash` in the spec, needs Tcl/Tk at build
+time, so it is skipped with a warning on a Python without it) appears immediately; `app.main` then shows a Qt
+`QSplashScreen`, closes the first one and keeps showing until the main window is up. `launcher.py` closes the exe's
+splash at once in the embedding worker (the exe started again by multiprocessing) and in the self-check.
+
 `packaging/SongSelector.spec` builds a one-file, windowed exe from
 `packaging/launcher.py`. No data files are bundled (the former starting library CSV was removed in 4.26.0).
 Large unused libraries are excluded explicitly to keep the exe size down.

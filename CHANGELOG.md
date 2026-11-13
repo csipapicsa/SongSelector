@@ -10,8 +10,13 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
-The app behaves the same; names and the README change.
-
+- **Startup splash screen.** Double-clicking the exe shows the SongSelector image straight away, with a status line,
+  until the window is up. Before, nothing happened for several seconds. The exe's own splash (PyInstaller) covers the
+  unpacking of the one-file exe; the app then shows the same image while it loads the library, and closes it when
+  the window appears. The background analysis process never shows it. The exe's splash needs Tcl/Tk in the build
+  Python: release builds have it; a local build without it prints a warning and keeps only the app's splash.
+- Measured while doing this (3,753 tracks): about 3 s from Python's start to the window, plus 4-5 s of unpacking
+  in the one-file exe. Embeddings are not read at startup.
 - **Renamed to SongSelector everywhere:** the exe is now `SongSelector-<version>.exe`, the Python package
   `songselector` (`python -m songselector`), the main window class `MainWindow`. Names that refer to
   Native Instruments' Traktor (the Traktor collection, *Traktor Playlists*) stay.
