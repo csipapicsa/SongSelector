@@ -19,7 +19,7 @@ from html import escape
 
 import numpy as np
 from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, QVariantAnimation, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QDrag, QPainter, QPainterPath, QPen, QRadialGradient
+from PyQt5.QtGui import QBrush, QColor, QDrag, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -38,6 +38,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QShortcut,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -495,6 +496,8 @@ class SimilarityMapWidget(QWidget):
 
         self.scene = QGraphicsScene(self)
         self.view = MapView(self.scene)
+        # Esc anywhere in the map (view, matches list): nothing selected
+        QShortcut(QKeySequence(Qt.Key_Escape), self, self.deselect, context=Qt.WidgetWithChildrenShortcut)
         self.view.rotator = self
         self.view.dropped.connect(self.drop_paths)
         self.edge_items = []
@@ -1036,6 +1039,21 @@ class SimilarityMapWidget(QWidget):
         self._update_suggestions()
         self._show_selected_details()
         self.selected.emit(key)
+
+    def deselect(self):
+        """Esc: no track selected, nothing compared; rings, edges, closest matches and the card go away."""
+        if self.selected_key is None and self.preview_key is None and self.reference is None:
+            return
+        previous, self.selected_key = self.selected_key, None
+        self._clear_preview()
+        if self.reference is not None:
+            self.reference = None  # a dropped track that the list does not show goes away too
+            self._merge_reference()
+            self._refresh()
+        self._outline(previous)
+        self._draw_edges()
+        self._update_suggestions()
+        self._show_selected_details()
 
     def preview(self, key):
         """Highlight a track next to the selected one: magenta glow and ring, its edges pale, a

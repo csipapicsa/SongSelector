@@ -22,6 +22,8 @@ from that period still mention 4.x numbers.
   the List shows the closest tracks, best first in the # column (keys at master tempo, colours, drag to Traktor as
   usual). The star saves the prompt, the cross deletes it; Top N sets how many. "Show all tracks" goes back. The
   *Search by description* window is still in the Analysis menu.
+- **Esc on the similarity map** clears the selection: no selected or compared track, no rings, edges, closest
+  matches or card.
 
 ## [1.1.1] - 2026-11-13
 

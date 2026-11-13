@@ -298,6 +298,22 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertIsNone(self.map.preview_key)
         self.assertNotIn(85, alphas())
 
+    def test_escape_leaves_no_track_selected(self):
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        self.window.show()
+        self.map.select(self.key(0))
+        self.map.compare(self.key(3))
+        self.map.view.setFocus()
+        self.application.processEvents()
+        QTest.keyClick(self.map.view, Qt.Key_Escape)
+        self.application.processEvents()
+        self.assertIsNone(self.map.selected_key)
+        self.assertIsNone(self.map.preview_key)
+        self.assertEqual(self.map.suggestions.topLevelItemCount(), 0)
+        self.assertEqual(self.map.match_keys, [])
+        self.assertFalse(self.map.selected_glow.isVisible())
+
     def test_ctrl_click_compares_a_dot_with_the_selected_track(self):
         from PyQt5.QtCore import Qt
         from PyQt5.QtTest import QTest
