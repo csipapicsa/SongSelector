@@ -82,6 +82,7 @@ from songselector.core.track_import import (
 )
 from songselector.core.traktor_collection import canonical_path, discover_collection
 from songselector.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
+from songselector.env import getenv
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.coloring_dialog import ColoringDialog
 from songselector.ui.delegates import ColorDotDelegate
@@ -89,6 +90,7 @@ from songselector.ui.embedding_worker import EmbeddingAnalyzer
 from songselector.ui.list_browser import ORDERED_KINDS, ListBrowser, node_label
 from songselector.ui.map_settings_dialog import HoverFieldsDialog
 from songselector.ui.menu_bar import AppMenuBar
+from songselector.ui.model_download_dialog import ModelDownloadDialog
 from songselector.ui.music_paths_dialog import MusicPathsDialog
 from songselector.ui.saved_lists import SavedListsMixin
 from songselector.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
@@ -255,8 +257,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
                              for spec in MODELS.values()}
         self.embedding_analyzer = None
         self.text_search_dialog = None
+        self.model_download_dialog = None
         self._init_analysis_menu()
         self.start_embedding_analysis()
+        QTimer.singleShot(0, self._offer_model_download)  # after the window is shown
 
         # Similarity map: second tab of the library panel; uses the model chosen under Analysis -> Similarity model
         self.similarity_map = SimilarityMapWidget(self.model_stores[self.similarity_model_id()], self.settings, self)
@@ -1374,6 +1378,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.embedding_toggle.setCheckable(True)
         self.embedding_toggle.setChecked(self.settings.get('Embedding analysis', True))
         self.embedding_toggle.toggled.connect(self.set_embedding_analysis_enabled)
+        menu.addAction('Download models...').triggered.connect(self.open_model_download)
 
         # Which models are kept up to date, and which one the map, closest matches and groups use.
         self.model_menu = menu.addMenu('Embedding models')
@@ -1436,8 +1441,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             action.setText(spec.name if present else f'{spec.name} (model files missing)')
             tip = spec.description
             if not present:
-                tip += f' Missing in the models folder: {missing}. Create them with scripts/' + \
-                       ('export_cnn14_onnx.py' if spec is CNN14 else 'export_clap_onnx.py') + ' (see the README).'
+                tip += f' Missing in the models folder: {missing}. Get them with Analysis -> Download models...'
             action.setToolTip(tip)
             self.similarity_actions[spec.id].setChecked(spec.id == similarity)
             self.similarity_actions[spec.id].setToolTip(spec.description)
@@ -1477,9 +1481,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
             QMessageBox.information(
                 self, 'Search by description',
                 'Searching by description needs a CLAP model (LAION CLAP or Microsoft CLAP).\n\n'
-                f'Create its files with scripts/export_clap_onnx.py and put them in the models folder:\n'
-                f'{self.models_folder()}\n\nThen switch it on under Analysis -> Embedding models, so your tracks '
-                'get analysed with it.')
+                'Download it with Analysis -> Download models...; it is then switched on and your tracks get '
+                'analysed with it in the background.')
             return
         if self.text_search_dialog is None:
             self.text_search_dialog = TextSearchDialog(
@@ -1488,6 +1491,31 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.text_search_dialog.show()
         self.text_search_dialog.raise_()
         self.text_search_dialog.activateWindow()
+
+    def open_model_download(self):
+        if self.model_download_dialog is None:
+            self.model_download_dialog = ModelDownloadDialog(list(MODELS.values()), self.models_folder(), parent=self)
+            self.model_download_dialog.downloaded.connect(self._models_downloaded)
+        self.model_download_dialog.show()
+        self.model_download_dialog.raise_()
+        self.model_download_dialog.activateWindow()
+
+    def _models_downloaded(self, model_ids):
+        """Switch on what was just downloaded and analyse with it."""
+        enabled = self.enabled_model_ids()
+        self.settings['Embedding models'] = [m for m in MODELS if m in enabled or m in model_ids]
+        self._update_model_menu()
+        self.start_embedding_analysis()
+
+    def _offer_model_download(self):
+        """First start without any model: open the download window once (not in tests or verification, which set
+        SONGSELECTOR_EMBEDDING_MODEL=none)."""
+        if self.settings.get('Model download offered') or getenv('EMBEDDING_MODEL', '').lower() == 'none':
+            return
+        if any(self.model_file(spec) is not None for spec in MODELS.values()):
+            return
+        self.settings['Model download offered'] = True
+        self.open_model_download()
 
     def _add_keys_to_playlist(self, keys):
         for key in keys:
@@ -1509,7 +1537,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         models = [(MODELS[model_id], self.model_file(MODELS[model_id])) for model_id in self.enabled_model_ids()]
         models = [(spec, path) for spec, path in models if path is not None]
         if not models:
-            self.embedding_label.setText('Embeddings: no model (Analysis menu)')
+            self.embedding_label.setText('Embeddings: no model (Analysis -> Download models...)')
             return
         stores = [(self.model_stores[spec.id], path) for spec, path in models]
         configuration = tuple((store.spec.id, str(path)) for store, path in stores)
@@ -1693,6 +1721,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.embedding_analyzer.stop(timeout=2)
         if self.text_search_dialog is not None:
             self.text_search_dialog.worker.stop(timeout=1)
+        if self.model_download_dialog is not None:
+            self.model_download_dialog.close()
         if hasattr(self, 'similarity_map'):
             self.similarity_map.stop()
         self._save_playlist()

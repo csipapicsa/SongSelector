@@ -81,7 +81,8 @@ CHANGELOG when they ship.
       listening check ("do these 10 feel alike?") with the DJ.
 - [x] Track similarity from the embeddings (`core/similarity.py`, 4.11.0).
 - [x] GPU in the exe: DirectML since 4.9.0 (CUDA stays optional from source, requirements-gpu.txt).
-- [ ] **Download the models from inside the app** (asked 2026-11-13; next after 1.1.0). Today every model has to be
+- [x] **Download the models from inside the app** (asked 2026-11-13, done in 1.1.0; the release `models-v1` is
+      published with `scripts/publish_models.ps1`; the manual CI workflow below is still open). Today every model has to be
       built with an export script that needs PyTorch, so for anyone but the developer the app has no embeddings
       (CNN14's default path only exists on the development machine; the CLAP entries show "model files missing").
       Design:

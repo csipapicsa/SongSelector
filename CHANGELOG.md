@@ -25,6 +25,11 @@ from that period still mention 4.x numbers.
   audio model, so every model takes raw audio. Two exporter problems found and fixed on the way: msclap's audio
   encoder froze the batch size into the graph (cosine 0.62 at batch 3), and transformers' attention masks could
   not be traced.
+- **Download models from the app** (*Analysis → Download models...*; offered once at the first start without any
+  model): the files come from the project's `models-v1` GitHub release, resume after an interruption and are
+  only used once their SHA-256 matches the app's list. Downloaded models are switched on and analysing starts.
+  `scripts/publish_models.ps1` checks exported files against that list and publishes the release (with the
+  sources and the licence texts: CC BY 4.0, Apache 2.0, MS-PL).
 - Batch sizes per model: CLAP on DirectML is fastest at 4 windows per call (55-62 ms per window on a GTX 1650 Ti).
 - New dependency: `tokenizers` (Hugging Face's tokenizer library); its download-only dependencies are kept out of
   the exe. The exe's self-check now also starts the text search process.

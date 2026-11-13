@@ -228,6 +228,17 @@ use) are set in the *Analysis* menu.
 - `launcher.py` calls `multiprocessing.freeze_support()` first and `__main__.py`
   has a `__name__` guard, because the spawned process re-imports the entry module.
 
+### Model download
+
+`core/model_download.py` fetches model files from the GitHub release `models-v1` (`BASE_URL`); `FILES` holds each
+file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
+the server ignores the range), and renames it only when the hash matches; a mismatch deletes the part file, so bad
+data is never resumed. `ui/model_download_dialog.py` runs it in a thread (one checkbox per model, progress, Stop)
+and reports the complete models; the main window switches them on and restarts the analysis. The window is offered
+once at the first start without any model, except when `SONGSELECTOR_EMBEDDING_MODEL=none` (tests, verification).
+`scripts/publish_models.ps1` checks exported files against `FILES` before publishing, so the app can never download
+a file it would reject.
+
 ### Free-text search
 
 *Analysis → Search by description* (`ui/text_search_dialog.py`). The prompt goes to a separate **text search
