@@ -138,7 +138,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(StubSession.shapes, [(8, CHUNK_SAMPLES), (8, CHUNK_SAMPLES)])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows priority classes')
-    def test_analysis_process_has_below_normal_cpu_and_very_low_io_priority(self):
+    def test_analysis_process_has_below_normal_cpu_priority_but_no_background_mode(self):
+        # Background mode (very low I/O and GPU priority) made CLAP on DirectML 15x slower; below-normal CPU is enough.
         import subprocess
         import sys
         code = ('import ctypes; from ctypes import wintypes; '
@@ -150,7 +151,7 @@ class PipelineTests(unittest.TestCase):
                 'print(k.GetPriorityClass(k.GetCurrentProcess()), io.value)')
         env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1] / 'src'))
         result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
-        self.assertEqual(result.stdout.split(), [str(0x4000), '0'], result.stderr)  # below normal, very low I/O
+        self.assertEqual(result.stdout.split(), [str(0x4000), '2'], result.stderr)  # below normal CPU, normal I/O
 
     def test_store_results_errors_and_fingerprints(self):
         store = EmbeddingStore(self.root / 'embeddings.sqlite')

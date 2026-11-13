@@ -258,6 +258,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.embedding_analyzer = None
         self.text_search_dialog = None
         self.model_download_dialog = None
+        self._groups_waiting = False  # before the analysis starts: its progress reads it
         self._init_analysis_menu()
         self.start_embedding_analysis()
         QTimer.singleShot(0, self._offer_model_download)  # after the window is shown
@@ -273,10 +274,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
         self._map_stale = True
         self.similarity_map.groups_changed.connect(self._apply_groups)
-        # Groups for the List (colours or the Group column) without opening the map first
-        if self.group_colours_switch.isChecked() or (
-                not self.candidate_tree.isColumnHidden(HEADER_INDEX[GROUP_COLUMN]) and self.settings.get('Map grouping')):
-            self._ensure_groups()
+        # Groups for the List (colours or the Group column) without opening the map first; but only once the
+        # similarity model has analysed the library: groups of a few tracks are meaningless, and computing them
+        # competes with the analysis for nothing.
+        if self._groups_wanted():
+            self._groups_when_ready()
 
     def apply_row_shading_from_color(self, item):
         color = None
@@ -1458,13 +1460,41 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.settings['Similarity model'] = model_id
         self.similarity_map.set_store(self.model_stores[model_id])
         self._map_stale = True
-        if self.map_visible() or self.similarity_map.groups:
+        if self.map_visible():
             self._map_stale = False
             self.similarity_map.load()
+        elif self._groups_wanted():
+            self._groups_when_ready()
         self._refresh_map()
         if model_id not in self.enabled_model_ids():
             self.status_bar.showMessage(f'{MODELS[model_id].name} is not analysing tracks: switch it on under '
                                         'Analysis -> Embedding models.', 8000)
+
+    def _groups_wanted(self):
+        return self.group_colours_switch.isChecked() or (
+            not self.candidate_tree.isColumnHidden(HEADER_INDEX[GROUP_COLUMN]) and bool(self.settings.get('Map grouping')))
+
+    def analysis_coverage(self, store=None):
+        """(tracks the model has finished, analysed or failed; tracks in the library)."""
+        store = store or self.similarity_map.store
+        try:
+            analysed, failed = store.counts()
+        except sqlite3.Error:
+            analysed = failed = 0
+        return analysed + failed, (len(self.table) if self.table is not None else 0)
+
+    def _groups_when_ready(self):
+        """Group the List's tracks now if the similarity model has analysed (nearly) all of them, else wait: the
+        analysis progress calls this again, and opening the map groups what is there on request."""
+        done, total = self.analysis_coverage()
+        if total and done < 0.95 * total:
+            self._groups_waiting = True
+            self.status_label.setStyleSheet(status_style('info'))
+            self.status_label.setText(f'Groups wait for {self.similarity_map.store.spec.name}: {done:,} of {total:,} '
+                                      'tracks analysed so far (open the map to group those now).')
+            return
+        self._groups_waiting = False
+        self._ensure_groups()
 
     def open_models_folder(self):
         folder = self.models_folder()
@@ -1573,6 +1603,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
             text += f' ({missing} files missing)'
         text += f' - {current}' if current else (' - up to date' if done == total else '')
         self.embedding_label.setText(text)
+        if self._groups_waiting and done == total:
+            self._groups_when_ready()
 
     def set_embedding_analysis_enabled(self, enabled):
         self.settings['Embedding analysis'] = enabled
