@@ -60,6 +60,17 @@ def _check_aac_decoding():
     return 'ok'
 
 
+def _check_splash():
+    """The startup splash image is bundled and the splash can be drawn (a missing data file only shows in the exe)."""
+    from songselector.ui.splash import IMAGE, StartupSplash
+    assert IMAGE.is_file(), f'splash image missing: {IMAGE}'
+    splash = StartupSplash('0')
+    assert not splash.pixmap().isNull() and splash.pixmap().width() == 520
+    splash.show_status('Loading your library...')
+    splash.close()
+    return 'ok'
+
+
 def _check_rekordbox_reader():
     """Writes a small encrypted library like Rekordbox's master.db and reads its playlists with
     the app's own reader: proves the SQLCipher module and the key work inside the frozen exe."""
@@ -276,6 +287,7 @@ def run():
         assert restored.delete_duplicate_tracks()==0
         restored.close()
         rekordbox=_check_rekordbox_reader()
+        splash=_check_splash()
         aac=_check_aac_decoding()
         embedding=_check_embedding_process()
         result={'ok':True,'frozen':bool(getattr(sys,'frozen',False)),'baseline_tracks':baseline,
@@ -285,7 +297,7 @@ def run():
                 'ratings_visible_and_searchable':True,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding}
+                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding,'splash':splash}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}
