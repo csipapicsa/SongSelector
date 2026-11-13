@@ -273,7 +273,9 @@ class SearchWindowTests(unittest.TestCase):
             dialog.close()
 
 
-class MainWindowModelTests(unittest.TestCase):
+class WindowCase(unittest.TestCase):
+    """A main window on a one-track library with grouping on."""
+
     @classmethod
     def setUpClass(cls):
         cls.application = QApplication.instance() or QApplication([])
@@ -307,6 +309,8 @@ class MainWindowModelTests(unittest.TestCase):
             active.stop()
         self.temp.cleanup()
 
+
+class MainWindowModelTests(WindowCase):
     def test_groups_wait_until_the_similarity_model_has_analysed_the_library(self):
         # Grouping is on and the Group column is shown, but no track is analysed yet: nothing to group.
         self.assertTrue(self.window._groups_waiting)
@@ -361,3 +365,137 @@ class RealClapModelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class StubSession:
+    """A GPU session whose cost per call is 4 ms plus 1 ms per window, and that runs out of memory at 8 windows."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def run(self, outputs, feeds):
+        self.calls += 1
+        batch = next(iter(feeds.values()))
+        if len(batch) >= 8:
+            raise RuntimeError('out of GPU memory')
+        time.sleep(0.004 + 0.001 * len(batch))
+        return [np.zeros((len(batch), 512), dtype=np.float32)]
+
+
+def stub_embedder():
+    from songselector.core.embeddings import OnnxEmbedder
+    embedder = OnnxEmbedder.__new__(OnnxEmbedder)
+    embedder.spec, embedder.session, embedder.input_name = LAION_CLAP, StubSession(), 'audio'
+    embedder.provider, embedder.batch_size, embedder._runtime_version = 'DmlExecutionProvider', 4, 'test'
+    return embedder
+
+
+class GpuUseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.application = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
+        self.root = Path(self.temp.name)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_batch_size_is_measured_once_and_remembered(self):
+        cache = self.root / 'batch_sizes.json'
+        first = stub_embedder()
+        self.assertEqual(first.tune(cache), 4)  # 5, 3, 2 ms per window at 1, 2, 4; 8 runs out of memory
+        stored = json.loads(cache.read_text())
+        self.assertEqual(list(stored.values()), [4])
+        self.assertIn(LAION_CLAP.id, next(iter(stored)))
+        second = stub_embedder()
+        self.assertEqual(second.tune(cache), 4)
+        self.assertEqual(second.session.calls, 0)  # read from the cache, nothing measured
+
+    def test_the_cpu_is_not_tuned(self):
+        embedder = stub_embedder()
+        embedder.provider, embedder.batch_size = 'CPUExecutionProvider', 1
+        self.assertEqual(embedder.tune(self.root / 'batch_sizes.json'), 1)
+        self.assertFalse((self.root / 'batch_sizes.json').exists())
+
+    def test_two_streams_share_the_work_and_analyse_each_track_once(self):
+        cnn14 = EmbeddingStore(self.root / 'embeddings.sqlite')
+        tracks = [(canonical_path(str(path)), str(path)) for path in
+                  (write_wav(self.root / f'{n}.wav', 2) for n in range(8))]
+        analyzer = EmbeddingAnalyzer(cnn14, self.root / 'cnn14.onnx', FakeCnn14)
+        analyzer.workers = 2
+        analyzer.submit(tracks)
+        analyzer.start()
+        try:
+            self.assertTrue(analyzer.wait_idle(90))
+            self.assertEqual(len(analyzer._processes), 2)
+        finally:
+            analyzer.stop()
+        self.assertEqual(cnn14.counts(), (8, 0))
+        self.assertFalse(analyzer.running)
+
+    def test_automatic_means_two_streams_on_a_gpu_and_one_on_the_cpu(self):
+        analyzer = EmbeddingAnalyzer(EmbeddingStore(self.root / 'e.sqlite'), self.root / 'm.onnx', FakeCnn14)
+        analyzer.workers = 'auto'
+        self.assertEqual(analyzer._wanted_workers('DmlExecutionProvider'), 2)
+        self.assertEqual(analyzer._wanted_workers('CPUExecutionProvider'), 1)
+        analyzer.workers = 3
+        self.assertEqual(analyzer._wanted_workers('CPUExecutionProvider'), 3)
+
+
+class DescriptionBarTests(WindowCase):
+    """The 'Sounds like' bar: results in the List (best first), saved prompts."""
+
+    def test_results_show_in_the_list_in_rank_order_and_prompts_can_be_saved(self):
+        from songselector.config import HEADER_INDEX, POSITION_COLUMN
+        from songselector.ui.list_browser import DESCRIPTION
+        window = self.window
+        key = canonical_path(str(self.root / 'a.mp3'))
+        window._description_model_id = LAION_CLAP.id
+        window.show_description_results('warm pads', [('not-in-library', 0.9), (key, 0.5)], 0.02)
+        self.assertEqual(window.list_source, {'kind': DESCRIPTION, 'name': 'warm pads'})
+        self.assertEqual(window.description_positions, {key: 1})  # the missing track is skipped
+        item = window.candidate_tree.topLevelItem(0)
+        self.assertEqual(item.text(HEADER_INDEX[POSITION_COLUMN]), '1')
+        self.assertIn('warm pads', window.source_label.text())
+        self.assertIn('top 1', window.status_label.text())
+
+        window.description_box.setEditText('warm pads')
+        window.save_description_prompt()
+        self.assertEqual(window.settings['Saved prompts'], ['warm pads'])
+        self.assertEqual(window.description_box.findText('warm pads'), 0)
+        window.delete_description_prompt()
+        self.assertEqual(window.settings['Saved prompts'], [])
+        self.assertEqual(window.description_box.count(), 0)
+
+    def test_without_a_clap_model_the_bar_says_how_to_get_one(self):
+        self.assertFalse(self.window.description_box.isEnabled())
+        self.assertIn('Download models', self.window.description_box.lineEdit().placeholderText())
+
+
+class SearchEngineTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_engine_ranks_the_analysed_tracks_for_a_prompt(self):
+        from songselector.ui.text_search_engine import TextSearchEngine
+        with tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR']) as folder:
+            store = EmbeddingStore(Path(folder) / 'laion.sqlite', spec=LAION_CLAP)
+            for index in range(4):
+                windows = np.zeros((2, 512), dtype=np.float32)
+                windows[:, 0 if index < 2 else 1] = 1
+                store.save(f'k{index}', (1, 1), windows)
+            engine = TextSearchEngine({LAION_CLAP.id: store}, folder, worker=FakeWorker())
+            answers = []
+            engine.results.connect(lambda prompt, ranked, seconds: answers.append((prompt, ranked)))
+            engine.search(LAION_CLAP.id, 'deep dnb')
+            deadline = time.monotonic() + 20
+            while not answers and time.monotonic() < deadline:
+                self.application.processEvents()
+                time.sleep(0.01)
+            prompt, ranked = answers[0]
+            self.assertEqual(prompt, 'deep dnb')
+            self.assertEqual({key for key, _ in ranked[:2]}, {'k0', 'k1'})
+            self.assertEqual(len(ranked), 4)

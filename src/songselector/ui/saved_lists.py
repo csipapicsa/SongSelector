@@ -19,6 +19,7 @@ from songselector.core.traktor_collection import canonical_path
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.list_browser import (
     COLLECTION_GROUPS,
+    DESCRIPTION,
     FOREIGN_KINDS,
     ORDERED_KINDS,
     REKORDBOX,
@@ -85,6 +86,9 @@ class SavedListsMixin:
             return
         if node['kind'] in COLLECTION_GROUPS:
             self._source_column = HEADER_INDEX[COLLECTION_GROUPS[node['kind']][1]]
+            return
+        if node['kind'] == DESCRIPTION:  # ranks set by the search bar (MainWindow.show_description_results)
+            self._source_positions = dict(self.description_positions)
             return
         if node['kind'] in FOREIGN_KINDS:
             keys = self._foreign_keys(node)
