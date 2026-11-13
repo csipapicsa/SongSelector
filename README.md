@@ -1,208 +1,194 @@
-# Traktor Key Calculator
+# SongSelector
 
 [![CI](https://github.com/csipapicsa/SongSelector/actions/workflows/ci.yml/badge.svg)](https://github.com/csipapicsa/SongSelector/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/csipapicsa/SongSelector)](https://github.com/csipapicsa/SongSelector/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
+![Windows](https://img.shields.io/badge/platform-Windows-lightgrey)
 
-A Windows desktop tool for DJs. Given a track's original BPM and key, it shows the
-key the track will play in at another tempo, assuming **Key Lock is off**, so you
-can pick harmonically compatible tracks at the tempo you are actually playing.
+A Windows desktop app that helps DJs pick the next track. It sits next to Traktor or Rekordbox, reads
+their libraries automatically, and answers two questions:
 
-- Library and playlist panels with Musical, Camelot and Open Key notation
-- Master-tempo slider that recalculates every row live
-- Drag and drop MP3/WAV/FLAC files or whole folders (with subfolders), reading BPM, key, rating, etc. from file tags
-- Missing metadata filled in from Traktor's `collection.nml` (read-only)
-- Traktor category colors, key colors, text, numeric, rating and color search
-- Library and playlist are restored on restart; Shift/Ctrl multi-selection; *Delete* removes rows from a list
-  (never files); *right-click → Delete duplicates from the list*
-- Your own *Rating - Song Selector* and *Color - Song Selector*, independent of Traktor (right-click to set)
-- Edit Artist / Title / Genre / Comment; the change is written into the audio file's tags
-- Background audio embeddings (CNN14, one vector per 5 s) for every library track, on the GPU (DirectML) or CPU
-- Dark grey theme (*View → Dark theme* toggles light)
-- **Similarity map**: tracks as dots, similar ones close together; closest matches, harmonic edges
+- **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
+  pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
+  Open Key notation, and recalculates the whole library as you move the tempo slider.
+- **What sounds like this track?** A neural audio model (PANNs CNN14, run through ONNX Runtime on
+  the GPU) turns every track into embeddings in the background. A similarity map and a
+  closest-matches list then show tracks that *sound* alike, whatever their tags say.
 
-Current version: **1.0.0** (see [CHANGELOG.md](CHANGELOG.md)).
+## Features
 
-## Quick start (development)
+**Harmonic mixing**
+- Tempo-adjusted key for every track: `semitones = round(12 · log2(target / original BPM))`
+- Harmonic partners on the Camelot wheel (perfect, ±1, scale change, energy boost and four more mix
+  types) as edges on the map and as a filter for the closest matches
+
+**Audio similarity**
+- CNN14 embeddings (2048 values per 5 s of audio) for the whole library, in a low-priority background
+  process; on the GPU through DirectML (any DirectX 12 card), otherwise on the CPU
+- Similarity map (t-SNE, 2D or 3D, implemented in numpy to keep scikit-learn out of the exe) with
+  closest matches, drag and drop into Traktor's decks
+- Unsupervised groups (k-means, neighbour communities, map density) as a sortable List column
+- On the developer's library the map separated breakbeat and drum & bass with about 93 % purity,
+  from audio alone
+
+**Library integration, without export steps**
+- Traktor: reads `collection.nml` (key, BPM, colour, rating, playlists) and re-reads it when
+  Traktor saves; never writes to it
+- Rekordbox: reads playlists directly from its encrypted `master.db` (from a temporary copy);
+  nothing to export, Rekordbox does not have to be closed
+- Drag and drop MP3, WAV and FLAC files or whole folders; reads their tags, writes edited
+  Artist / Title / Genre / Comment back to the file
+
+**Organising**
+- Playlist panel for building a set in order; saved playlists and smartlists (stored search rules)
+- Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons
+- Own *Rating* and *Color* per track, independent of Traktor
+- Dark and light theme
+
+## Engineering
+
+What is behind the features, and where to look:
+
+| Area | What | Where |
+|---|---|---|
+| Architecture | Logic in `core/` (no widgets, unit-tested), PyQt5 UI in `ui/`. Embedding analysis in a separate process at low CPU and I/O priority, with crash recovery, so the UI and Traktor stay responsive | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| ML inference | PANNs CNN14 exported to ONNX; DirectML / CUDA / CPU chosen at runtime, with CPU fallback. Audio decoding (soundfile + soxr) is bit-identical to `librosa.load`; ONNX output matches PyTorch within 1.1e-5 | [core/embeddings.py](src/songselector/core/embeddings.py), [research note](docs/research/audio_embeddings.md) |
+| Model reproducibility | The model is not in the repo; [scripts/export_cnn14_onnx.py](scripts/export_cnn14_onnx.py) rebuilds it from the published checkpoint (SHA-256 pinned) and checks it against PyTorch | [Getting the model](#getting-the-embedding-model) |
+| Testing | About 190 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
+| Release verification | Every exe runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real GPU inference) and a native-window smoke test before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1) |
+| CI/CD | GitHub Actions: ruff, pytest on Windows, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe with a SHA-256 checksum | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
+| Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
+
+## Install
+
+1. Download `SongSelector-<version>.exe` from the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest)
+   and put it in its own folder. It is self-contained (no Python needed). Windows SmartScreen will
+   warn because the exe is not code-signed; check it against `SHA256SUMS.txt` from the same release.
+2. For audio similarity, add the embedding model (next section). Everything else works without it.
+
+The exe stores its data **next to itself**:
+
+| File | Content |
+|---|---|
+| `SongSelector_settings.json` | Columns, search settings, tempo, colouring |
+| `library.sqlite` | Every track loaded, your own ratings and colours, playlists and smartlists |
+| `embeddings.sqlite` | Audio embeddings: a cache, safe to delete, rebuilt in the background |
+| `models\cnn14.onnx` | The embedding model, if you keep it here |
+
+To upgrade, put the new exe in the same folder. Settings from versions before 1.1
+(`SpotNextTrack_settings.json`) are taken over on the first start.
+
+## Getting the embedding model
+
+`cnn14.onnx` (327 MB) is built from the published PANNs checkpoint (Kong et al., 2020, weights
+[CC BY 4.0](https://zenodo.org/records/3987831)). The export needs PyTorch, which the app does
+not, so use a separate environment:
+
+```powershell
+py -3.11 -m venv .export-venv
+.\.export-venv\Scripts\python -m pip install torch panns-inference==0.1.1 onnx onnxruntime
+.\.export-venv\Scripts\python scripts\export_cnn14_onnx.py       # -> .appdata\models\cnn14.onnx
+```
+
+When running from source the app finds it there. For the exe, copy it to `models\cnn14.onnx` next
+to the exe, or pick it with *Analysis → Choose embedding model…*.
+
+Speed for a 6-minute track: about 1.4 s on a GTX 1650 Ti (0.6 s model, 0.8 s decoding), about 6.4 s
+on the CPU. A first pass over 3,000 tracks takes 1–1.5 hours on that GPU; after that only new or
+changed files are analysed. *Analysis → Analyse embeddings in background* pauses it.
+
+## Using it
+
+### Similarity map
+
+The *Similarity map* tab (Ctrl+2; Ctrl+1 for the List) shows the analysed tracks of the List as it is
+filtered now, so narrow the List first to explore one style.
+
+| Action | Result |
+|---|---|
+| Hover / click a dot | Details; a click also lists its 15 most similar tracks (cyan rings) |
+| Double-click in the matches list | Select that track and show its own matches |
+| Drag a dot or a match | The files, e.g. onto a Traktor deck or playlist |
+| Drop a track on the map | Select it and show its closest matches |
+| Double-click a dot | Add to the playlist |
+| Scroll / drag | Zoom / move |
+| *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour or same rating, optionally only to the N most similar |
+| *Groups* | Colour dots by unsupervised groups |
+| *Closest matches: harmonic only* | Only harmonic partners, plus tracks without a key |
+| *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
+
+Distances on a 2D map are approximate; the closest-matches list uses the full embeddings.
+
+### Playlists and smartlists
+
+- **Playlist** tab: the set being built, in order. Drag rows to reorder; *Save as Playlist...* keeps a copy.
+- **Browser** tab: *Track Collection* (All Tracks, Artists, Albums, Genres), your playlists, and
+  **Traktor Playlists** / **Rekordbox Playlists** (read-only, kept up to date). Click an entry to
+  filter the List, double-click to load it into the Playlist tab.
+- A **smartlist** stores search rules, not tracks; it always shows what matches now.
+
+### Search syntax
+
+| Search bar | Matches |
+|---|---|
+| `tribal` | Text in the columns ticked under *Search Columns* |
+| `color:blue`, `color:red,orange`, `-color:blue`, `color:none` | Traktor colour |
+| `sscolor:blue`, `-sscolor:none` | Your own colour |
+
+*Advanced Search* adds numeric comparisons (e.g. own rating at least 4). Setting a row's column to
+*None* switches that row off without losing it.
+
+### Configuration
+
+| Setting | How |
+|---|---|
+| Traktor collection | Auto-detected under `Documents\Native Instruments\Traktor*\`. Change via *Import → Link Traktor collection…* |
+| Rekordbox library | Auto-detected from Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`. Change via *Import → Link Rekordbox library…* |
+| Data folder | `SONGSELECTOR_APP_DATA_DIR` environment variable |
+
+## Development
 
 Requirements: Windows, Python 3.11 (64-bit) available as `py -3.11`.
 
 ```powershell
-.\scripts\setup.ps1                  # create .venv and install pinned dependencies
+.\scripts\setup.ps1                  # create .venv, install pinned dependencies
 .\.venv\Scripts\Activate.ps1
-python -m traktor_key_calculator     # run the app from source
-.\scripts\test.ps1                   # run the test suite (pytest)
-python -m ruff check src tests       # lint (rules in pyproject.toml); add --fix for the safe fixes
+python -m songselector               # run from source; data goes to .appdata\ (git-ignored)
+.\scripts\test.ps1                   # pytest; pass options through, e.g. -k color
+python -m ruff check src tests       # lint
+.\scripts\build.ps1                  # -> dist\SongSelector-<version>.exe
+.\scripts\verify_release.ps1         # self-check inside the exe + native window test
+                                     # add -Model <path>\cnn14.onnx to include GPU inference
 ```
 
-Every pull request runs the same lint and tests in GitHub Actions ([ci.yml](.github/workflows/ci.yml));
-`main` only accepts changes through a pull request whose checks pass.
+Set `SONGSELECTOR_CNN14_ONNX` to the model path to also run the real-model test.
 
-When run from source, settings and imported tracks are stored in `.appdata\`
-in the repo (git-ignored), so development never touches your real app data.
-
-## Build and release
-
-```powershell
-.\scripts\build.ps1                  # -> dist\TraktorKeyCalculator-<version>.exe
-.\scripts\verify_release.ps1         # headless self-check + real-window smoke test
-                                     # add -Model <path>\cnn14.onnx to also test embeddings in the exe
-```
-
-The exe is self-contained (no Python needed). It stores its data **next to
-itself**:
-
-| File | Content |
-|---|---|
-| `SpotNextTrack_settings.json` | Column visibility, search settings, tempo, coloring |
-| `library.sqlite` | Every track ever loaded, your Song Selector ratings/colors, the last saved Library and Playlist lists |
-| `embeddings.sqlite` | Audio embeddings (a cache: safe to delete, it is rebuilt) |
-| `models\cnn14.onnx` | The embedding model, if you keep it here (optional, see below) |
-| `imported_tracks.json` | Imports from versions ≤ 4.5.0; read once on the first 4.6 start, then kept as a backup |
-
-To upgrade an existing installation, put the new exe in the same folder as these
-files (or copy them next to it). The Traktor collection is only ever read. Audio
-files are written only when you edit Artist / Title / Genre / Comment, and then only those tags.
-
-## Embedding analysis
-
-The app computes PANNs CNN14 embeddings (one 2048-value vector per 5 seconds) for
-every track in the library panel, in a background process at low priority. The
-status bar shows progress, and *Analysis → Analyse embeddings in background* pauses it.
-
-- **Model:** `cnn14.onnx` (327 MB, not in the repo or the exe). Default:
-  `E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx` (the DJ mix segmentation project's model).
-  A `models\cnn14.onnx` next to the data, or *Analysis → Choose embedding model…*, takes precedence.
-- **Device:** the GPU through DirectML (any DirectX 12 graphics card, no CUDA needed),
-  otherwise the CPU. The status bar shows which one is used.
-- **Speed (6-minute track):** about 1.4 s on a GTX 1650 Ti (0.6 s model + 0.8 s decoding),
-  about 6.4 s on the CPU. A first pass over ~3,000 tracks takes about 1–1.5 h on the GPU;
-  later only new or changed files are analysed.
-- **Impact on other programs:** the analysis runs as a Windows background process (low CPU
-  and disk priority), so Traktor or a media player reading the same disk go first.
-- **CUDA (optional, from source):** see `requirements-gpu.txt`. Not needed for speed.
-
-Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)):
-
-1. In a pull request: bump `__version__` in `src/traktor_key_calculator/__init__.py` and rename the
-   changelog's `## [Unreleased]` section to `## [X.Y.Z] - <date>`. Merge it.
-2. Tag the merged commit and push the tag:
-   ```powershell
-   git switch main; git pull
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-3. The workflow checks that the tag matches `__version__` and is on `main`, runs the tests, builds the
-   exe, runs `verify_release` on it, and publishes a GitHub Release with the exe, its SHA-256 checksum
-   and the changelog section as release notes. Exes are never committed.
-
-Pull requests that change the packaging run the same build and verification as a dry run.
-Every earlier release stays downloadable: rolling back means installing the previous release's exe.
-
-## Project layout
+**Releases** are built by GitHub Actions: bump `__version__` in
+[src/songselector/\_\_init\_\_.py](src/songselector/__init__.py) and rename the changelog's
+`[Unreleased]` section in a pull request, merge it, then tag the merge commit (`git tag vX.Y.Z`,
+`git push origin vX.Y.Z`). The workflow checks that the tag matches the code and is on `main`, runs
+the tests, builds and verifies the exe and publishes it with its checksum and the changelog section
+as notes. Pull requests that change the packaging run the same build as a dry run.
 
 ```text
-src/traktor_key_calculator/
-    app.py              Entry point: QApplication + main window
-    config.py           Constants, column layout, color tables, app-data location
-    selfcheck.py        End-to-end check that runs inside the packaged exe
-    core/               Logic without UI widgets (keys, tags, Traktor NML, search)
-    ui/                 PyQt5 main window, tree widgets, dialogs, delegates
-tests/                  pytest suite (unittest-style test classes)
-packaging/              PyInstaller spec and launcher script
-scripts/                setup / test / build / verify PowerShell scripts
-docs/                   Architecture notes, backlog, project history
+src/songselector/
+    app.py         Entry point
+    config.py      Constants, column layout, app-data location
+    env.py         Environment variables
+    selfcheck.py   End-to-end check that runs inside the packaged exe
+    core/          Logic without widgets: keys, tags, Traktor/Rekordbox readers, embeddings, similarity
+    ui/            PyQt5 main window, similarity map, dialogs
+tests/             pytest suite
+packaging/         PyInstaller spec and launcher
+scripts/           setup / test / build / verify / model export
+docs/              Architecture, backlog, research notes, daily worklogs
 ```
 
-How the parts fit together is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Known issues and planned work are in [docs/BACKLOG.md](docs/BACKLOG.md).
+More: [CHANGELOG.md](CHANGELOG.md), [docs/BACKLOG.md](docs/BACKLOG.md) (known issues and plans),
+[docs/worklogs/](docs/worklogs/) (what was done each day, and why).
 
-## Similarity map
+## License
 
-*Similarity map* tab next to *List* (Ctrl+2 / Ctrl+1). It shows the analysed tracks of the list as
-it is filtered now (search, colours, Advanced Search), so narrow the list first to explore a style.
-
-| Action | Result |
-|---|---|
-| Hover a dot | Details; choose which in *View → Map hover details…* |
-| Click | Label and details of the track; its 15 most similar tracks: cyan rings, list on the right |
-| Click in the matches list | That track glows (magenta) and its edges show pale; the selection stays |
-| Double-click in the matches list | Select that track (its own matches) |
-| Drag a dot or matches | The files, e.g. into Traktor's deck or playlist |
-| Drop a track on the map (e.g. from the playlist) | Selects it there and shows its closest matches |
-| Column headers of the matches | Sort (click again to reverse) |
-| Double-click a dot | Add to playlist |
-| Right-click | The usual track menu (rating, colour, edit, remove) |
-| Scroll / drag | Zoom / move |
-| *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour, same rating |
-| *to the N most similar* | Edges only to the N partners that sound most similar; more similar = more opaque |
-| *Groups* | Colour dots by unsupervised groups: k-means, neighbour communities or map density |
-| *Closest matches: harmonic only* | Only harmonic partners, plus tracks without a key in Traktor (*no key*) |
-| Italic match | Already on the playlist |
-| *Re-arrange map* | Recompute the layout from all analysed tracks (a few minutes for 3,000) |
-
-Distances on any 2D map are approximate; the closest-matches list uses the full embeddings and
-is exact. On the developer's library the map separated breakbeat and DnB with about 93 % purity,
-from audio alone.
-
-## Playlists and smartlists
-
-The left pane has two tabs:
-
-- **Playlist**: the set being built, in order (**#** column). Drag rows to reorder them; rows
-  dragged in from the List are inserted where they are dropped. *Save as Playlist...* keeps a
-  copy under *Playlists* in the Browser.
-- **Browser**, as in Traktor: *Track Collection* (All Tracks, Artists, Albums, Genres) and
-  *Playlists*. Click an entry, or drag it onto the List, to show only its tracks there (a
-  playlist in its order, by **#**); *Show all tracks* above the List goes back. Double-click a
-  playlist or smartlist, or drag it onto the Playlist tab, to load it there (replace or add).
-  Drag tracks onto a playlist to add them. Right-click for new, rename, duplicate, delete.
-- A **smartlist** stores Complex Search rows, not tracks: it always lists the tracks that match
-  them now. Create one with *Save as Smartlist...* in the Complex Search dialog or *New
-  smartlist...* in the Browser; *Edit rules...* changes it.
-
-Saved playlists and smartlists live in `library.sqlite`. While the List shows one of your
-playlists, tracks dropped onto it (from Traktor, Explorer or the Playlist tab) are added to it.
-
-**Traktor Playlists** in the Browser lists Traktor's playlists and folders from `collection.nml`
-(read-only, updated when Traktor saves). They show and load like your own playlists;
-right-click to import their missing tracks or copy one to your playlists. Traktor's smartlists
-are listed but not evaluated yet.
-
-**Rekordbox Playlists** works the same way, read directly from Rekordbox's own library
-(`master.db`); nothing has to be exported and Rekordbox does not have to be closed or opened.
-The entry appears once a Rekordbox library is found.
-
-## Groups in the List
-
-The **Group** column shows each track's group on the similarity map (the map's *Groups*
-setting; 1 = largest group). Sort by it to keep similar-sounding tracks together. **Group
-colours** above the List colours the rows like the map's dots instead of by Traktor colour; if
-the map's grouping is off, it turns on *Neighbour communities*. Group numbers change when the
-tracks are grouped again (another method or setting, newly analysed tracks).
-
-## Search syntax
-
-| Search bar | Matches |
-|---|---|
-| `tribal` | text in the columns ticked under *Search Columns* |
-| `color:blue`, `color:red,orange`, `-color:blue`, `color:none` | Traktor category color |
-| `sscolor:blue`, `-sscolor:none`, ... | *Color - Song Selector* (same names) |
-
-*Advanced Search* can also compare *Rating - Song Selector* numerically (e.g. at least 4)
-and *Color - Song Selector* by color name. Setting a row's column to *None* switches that row off:
-its condition and value stay (and are saved) but do not filter.
-
-## Configuration
-
-| Setting | How |
-|---|---|
-| Traktor collection | Auto-detected (`E:\DJ\TRAKTOR\collection.nml`, then `Documents\Native Instruments\Traktor*\`). Change via *Import → Link Traktor collection…* |
-| Rekordbox library | Auto-detected (Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`). Change via *Import → Link Rekordbox library…* |
-| Data directory | Set the `TRAKTOR_APP_DATA_DIR` environment variable to override |
-
-## Tests
-
-`.\scripts\test.ps1` runs 75 tests, plus one with the real model when
-`$env:TKC_CNN14_ONNX = '<path>\cnn14.onnx'` is set, including headless Qt GUI tests. Two tests
-also use real files on the original developer machine (`E:\DJ\...`) and are
-skipped automatically when those files are absent. Pass pytest options through,
-e.g. `.\scripts\test.ps1 -k color`.
+GPL-3.0 (PyQt5 and other bundled libraries are GPL, so the exe is too). The CNN14 weights are by
+Kong et al., [PANNs](https://github.com/qiuqiangkong/audioset_tagging_cnn), CC BY 4.0.
