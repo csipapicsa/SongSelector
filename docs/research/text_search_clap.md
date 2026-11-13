@@ -84,3 +84,19 @@ Candidate: **LAION `clap-htsat-unfused`**. Cost is not the blocker. Next, in ord
    sampling 6 windows rank as well as all windows?
 2. ONNX export of the two encoders separately, check against PyTorch, measure ONNX Runtime on the CPU and DirectML.
 3. Only then the app: background analysis next to CNN14 (decode once), a search window with saved prompts.
+
+## Trying it on the library (2026-11-13, in progress)
+
+- **Test set:** the 998 tracks with a Traktor rating of 4-5 and a colour whose files exist.
+  [experiments/clap/extract_embeddings.py](experiments/clap/extract_embeddings.py) stores every window's vector per model
+  in `.research_cache/clap/` (git-ignored). For this offline run it uses the GPU (CUDA). Each track is decoded once for
+  all models, with parallel decoding threads. GPU and CPU embeddings agree to 3e-7.
+- **Notebook:** [experiments/clap/text_search.ipynb](experiments/clap/text_search.ipynb): write a prompt, see the top 10.
+- **First look (75 tracks):** with LAION light, *"dark rolling drum and bass with a heavy reese bassline"* put 8 DnB
+  tracks (around 174 BPM) in the top 10. On DnB tracks, *"This audio is a drum and bass song."* scored 0.44–0.47 against
+  0.20–0.30 for plain *"drum and bass"*, so the wording of a prompt matters. Microsoft CLAP 2023 also separates
+  sensibly ("drum and bass" 0.27, "a dog barking" 0.02).
+- **`laion/larger_clap_music` is broken in this setup** (transformers 4.57.6, torch 2.7.1). All weights load, but every
+  text and every track get nearly the same vector: mean cosine 0.999 between different texts and 0.98 between
+  different tracks, against 0.29 and 0.82 for LAION light. Its scores are meaningless, so it is excluded for now.
+  To check later: the original checkpoint `music_audioset_epoch_15_esc_90.14.pt` through the `laion_clap` package.

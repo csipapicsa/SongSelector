@@ -76,10 +76,19 @@ class LaionClap:
         """Mel features (numpy, outside the network). Timed separately: it is part of the cost."""
         return self.processor.feature_extractor(list(windows), sampling_rate=self.rate, return_tensors='pt')
 
+    device = 'cpu'
+
+    def audio_to(self, device):
+        """Only the audio half on `device` (the text half is not needed for analysis)."""
+        for part in self.audio_parts:
+            part.to(device)
+        self.device = device
+
     def embed_prepared(self, features):
         import torch
         with torch.inference_mode():
-            return self.model.get_audio_features(**features).numpy()
+            features = {name: value.to(self.device) for name, value in features.items()}
+            return self.model.get_audio_features(**features).cpu().numpy()
 
     def embed_text(self, texts):
         import torch
@@ -101,10 +110,16 @@ class MsClap:
         import torch
         return torch.from_numpy(np.ascontiguousarray(windows, dtype=np.float32))  # the mel is inside the network
 
+    device = 'cpu'
+
+    def audio_to(self, device):
+        self.clap.clap.audio_encoder.to(device)
+        self.device = device
+
     def embed_prepared(self, audio):
         import torch
         with torch.inference_mode():
-            return self.clap.clap.audio_encoder(audio)[0].numpy()
+            return self.clap.clap.audio_encoder(audio.to(self.device))[0].cpu().numpy()
 
     def embed_text(self, texts):
         return self.clap.get_text_embeddings(texts).numpy()
