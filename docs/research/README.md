@@ -11,6 +11,7 @@ checked or repeated later. Decisions made from them go into `docs/ARCHITECTURE.m
 | [rating_color_plan.md](rating_color_plan.md) | The research plan for that question: validation rules, steps, stop rules |
 | [model_candidates.md](model_candidates.md) | Other embedding models: licence, size, input, cost to integrate |
 | [landscape_dj_tools.md](landscape_dj_tools.md) | Other free / open-source / commercial DJ library and next-track tools, research papers (web search 2026-11) |
+| [text_search_clap.md](text_search_clap.md) | Free-text track search with CLAP: CPU cost of LAION vs Microsoft CLAP (analysis time, query latency, memory) (2026-11) |
 | [rekordbox_import.md](rekordbox_import.md) | Can Rekordbox playlists be imported? What is on this machine, XML export vs reading master.db |
 | [experiments/](experiments/) | Runnable code (`# %%` scripts that open as notebooks in VS Code) and one small JSON of results per run |
 

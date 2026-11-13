@@ -24,6 +24,13 @@ CHANGELOG when they ship.
 - [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
 - [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
       models and ideas in the DJ mix segmentation project). Plan only.
+- [ ] **Free-text search** (idea 2026-11-13): type a description ("dark rolling DnB, reese bass") and get the
+      closest tracks (top 10) in their own window; prompts can be saved and re-run. Needs a text-audio model
+      (CLAP): one audio vector per track, computed in the background like CNN14, and one text vector per query,
+      ranked by cosine similarity. Candidates: the light versions of LAION CLAP (`laion/clap-htsat-unfused`) and
+      Microsoft CLAP (2023). **Step 1, measure first:** CPU-only cost (no CUDA assumed): library analysis time,
+      query latency, memory. See `docs/research/text_search_clap.md`. Then: does it find the right tracks on
+      this library; ONNX export; the window.
 - [ ] **On hold:** suggest missing Traktor ratings / colours from the sound. Research only, no app feature
       (start: `docs/research/rating_color_prediction.md`, `rating_color_plan.md`). So far CNN14, MusiCNN,
       Discogs-EffNet and OpenL3 are equally (un)able to predict them: probably the labels, not the model.
