@@ -49,7 +49,9 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
-| `embeddings.py` | CNN14 embeddings: `load_audio`, `Cnn14Embedder` (onnxruntime, GPU if available), `EmbeddingStore` (`embeddings.sqlite`), `run_analysis` (entry point of the analysis process). Must not import Qt |
+| `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
+| `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
+| `text_search.py` | Free-text search: `tokenize`, `TextEncoder` (CLAP text side, onnxruntime), `rank`, `run_text_encoder` (entry point of the text search process). Must not import Qt |
 | `data_manager.py` | Loads a library CSV picked by the user (*Load CSV*) into a pandas DataFrame; `load_default_data` is the empty starting library |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
@@ -71,6 +73,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
 | `map_settings_dialog.py` | Choose the map's hover details |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
+| `text_search_worker.py`, `text_search_dialog.py` | The text search process (started on the first query) and the *Search by description* window |
 
 ### Playlist tracks in the library list
 
@@ -130,7 +133,8 @@ It holds:
 |---|---|---|
 | `SongSelector_settings.json` | UI settings. Before 1.1 it was `SpotNextTrack_settings.json`; `config.init_settings()` moves that one to the new name once and keeps it as `SpotNextTrack_settings.json.bak` | on close |
 | `library.sqlite` | Collection, Song Selector rating/color, saved lists (see below) | on every change |
-| `embeddings.sqlite` | Audio embeddings, a cache that can be deleted and recomputed (see below) | by the analysis process |
+| `embeddings.sqlite` | CNN14 embeddings, a cache that can be deleted and recomputed (see below) | by the analysis process |
+| `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite` | The CLAP models' caches, same layout | by the analysis process |
 | `models/cnn14.onnx` | Optional location of the embedding model. Order: model chosen in *Analysis*, this file, then `config.DEFAULT_EMBEDDING_MODEL` (`SONGSELECTOR_EMBEDDING_MODEL=none` disables the default; tests and verification do). `scripts/export_cnn14_onnx.py` creates the file from the published PANNs checkpoint | never |
 | `imported_tracks.json` | Imports saved by versions ≤ 4.5.0 | never; read once, kept as a backup |
 
@@ -165,10 +169,26 @@ SQLite was chosen after measuring on the real 5,100-track library: loading it
 takes 10 ms in SQLite vs 18 ms in JSON, and updating one track 0.1 ms vs
 22 ms, because JSON rewrites the whole file. Writes are transactional.
 
-### embeddings.sqlite and the analysis process
+### Embedding caches and the analysis process
 
-Every track in the library panel gets PANNs CNN14 embeddings: one 2048-value
-vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
+Every track in the library panel gets embeddings from each enabled model (`core/embedding_models.py`):
+CNN14, one 2048-value vector per 5 s (background in `docs/research/audio_embeddings.md`); LAION CLAP, 512
+values per 10 s; Microsoft CLAP, 1024 values per 7 s (`docs/research/text_search_clap.md`). The settings
+`Embedding models` (which are analysed) and `Similarity model` (which one the map, closest matches and groups
+use) are set in the *Analysis* menu.
+
+- **One cache file per model** (`EmbeddingStore(path, spec=...)`). The embeddings table has one row per track,
+  so models cannot share it without a migration; separate files also mean the CNN14 cache of earlier versions
+  (`embeddings.sqlite`) is untouched and each model's cache can be deleted on its own. Map layouts live in the
+  same file as their model's embeddings.
+- **One process for all models.** `run_analysis(models, ...)` gets one entry per enabled model. For each job it
+  checks which models lack the track (fingerprints per cache), decodes the file once (`load_audio_rates`) and
+  resamples it to each of those models' rates. A model that cannot be loaded is skipped with a `warning` event;
+  only when none loads is it `fatal`.
+- **Every model takes raw audio.** LAION CLAP normally gets a log-mel spectrogram computed in Python
+  (transformers); `scripts/export_clap_onnx.py` builds that spectrogram into the ONNX graph (DFT as two
+  convolutions), checked against transformers' feature extractor to 8e-08. So `OnnxEmbedder` treats all models
+  alike: windows of `chunk_samples`, padded batches of the model's batch size for the device.
 
 - **Separate process.** `EmbeddingAnalyzer` (UI side) starts
   `core.embeddings.run_analysis` with `multiprocessing` (spawn). The process loads
@@ -195,9 +215,9 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   of the values are exactly 0. A 6-minute track takes ~50 KB. WAL mode lets the
   UI read while the process writes.
 - **Device:** CUDA, then DirectML, then CPU, whichever the installed onnxruntime
-  supports. The default package is `onnxruntime-directml`. Batch sizes are per device
-  (`BATCH_SIZES`), and batches are padded to a fixed shape, because GPU providers re-plan
-  the model for every new input shape.
+  supports. The default package is `onnxruntime-directml`. Batch sizes are per model and device
+  (`EmbeddingModel.batch_sizes`; CLAP on DirectML is fastest at 4, 8 overflows a 4 GB card), and batches are
+  padded to a fixed shape, because GPU providers re-plan the model for every new input shape.
 - **Background process:** `_lower_process_priority` uses `PROCESS_MODE_BACKGROUND_BEGIN`
   (very low I/O priority) and then `BELOW_NORMAL_PRIORITY_CLASS`, in that order (background
   mode resets the class). The ctypes argument types must be declared, or the 64-bit
@@ -207,6 +227,18 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   connection per call, so no file stays locked.
 - `launcher.py` calls `multiprocessing.freeze_support()` first and `__main__.py`
   has a `__name__` guard, because the spawned process re-imports the entry module.
+
+### Free-text search
+
+*Analysis → Search by description* (`ui/text_search_dialog.py`). The prompt goes to a separate **text search
+process** (`ui/text_search_worker.py` → `core.text_search.run_text_encoder`), started on the first query and
+stopped when the window closes: onnxruntime must not load next to PyQt5 (see below), and each text encoder is
+~500 MB, which the app only holds while searching. There, the `tokenizers` library (no transformers, no
+PyTorch) turns the text into ids the way the model was trained (Microsoft: `' <|endoftext|>'` appended, padded to
+77 with id 0; LAION: the text's own length), and the ONNX text encoder returns a unit vector. The window ranks
+the chosen model's tracks by cosine similarity to it; a track's vector for this is the mean of its unit-length
+window vectors (`clap_track_vector`). Track vectors are loaded in a thread and reloaded after new tracks are
+analysed. `huggingface_hub` (a dependency of tokenizers, used only for downloads) is excluded from the exe.
 
 ### Similarity map
 

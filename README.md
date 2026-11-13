@@ -7,14 +7,16 @@
 ![Windows](https://img.shields.io/badge/platform-Windows-lightgrey)
 
 A Windows desktop app that helps DJs pick the next track. It sits next to Traktor or Rekordbox, reads
-their libraries automatically, and answers two questions:
+their libraries automatically, and answers three questions:
 
 - **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
   pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
   Open Key notation, and recalculates the whole library as you move the tempo slider.
-- **What sounds like this track?** A neural audio model (PANNs CNN14, run through ONNX Runtime on
-  the GPU) turns every track into embeddings in the background. A similarity map and a
-  closest-matches list then show tracks that *sound* alike, whatever their tags say.
+- **What sounds like this track?** Neural audio models (PANNs CNN14, LAION CLAP, Microsoft CLAP, run
+  through ONNX Runtime on the GPU) turn every track into embeddings in the background. A similarity map
+  and a closest-matches list then show tracks that *sound* alike, whatever their tags say.
+- **Which of my tracks sound like *this*?** Type a description, *"funky breakbeat with a groovy bassline"*,
+  and the CLAP models find the closest tracks in your library.
 
 ## Features
 
@@ -23,9 +25,13 @@ their libraries automatically, and answers two questions:
 - Harmonic partners on the Camelot wheel (perfect, ±1, scale change, energy boost and four more mix
   types) as edges on the map and as a filter for the closest matches
 
-**Audio similarity**
-- CNN14 embeddings (2048 values per 5 s of audio) for the whole library, in a low-priority background
-  process; on the GPU through DirectML (any DirectX 12 card), otherwise on the CPU
+**Audio similarity and free-text search**
+- Three embedding models to choose from: CNN14 (sound similarity, 5 s windows), LAION CLAP and Microsoft
+  CLAP (sound *and* text in one space, 10 s / 7 s windows). You pick which ones are analysed and which one
+  the map uses; each track is decoded once for all of them, in a low-priority background process, on the
+  GPU through DirectML (any DirectX 12 card) or on the CPU
+- **Search by description:** a typed prompt is turned into a CLAP text vector and the closest tracks are
+  listed; prompts can be saved, results dragged onto Traktor
 - Similarity map (t-SNE, 2D or 3D, implemented in numpy to keep scikit-learn out of the exe) with
   closest matches, drag and drop into Traktor's decks
 - Unsupervised groups (k-means, neighbour communities, map density) as a sortable List column
@@ -53,9 +59,10 @@ What is behind the features, and where to look:
 | Area | What | Where |
 |---|---|---|
 | Architecture | Logic in `core/` (no widgets, unit-tested), PyQt5 UI in `ui/`. Embedding analysis in a separate process at low CPU and I/O priority, with crash recovery, so the UI and Traktor stay responsive | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| ML inference | PANNs CNN14 exported to ONNX; DirectML / CUDA / CPU chosen at runtime, with CPU fallback. Audio decoding (soundfile + soxr) is bit-identical to `librosa.load`; ONNX output matches PyTorch within 1.1e-5 | [core/embeddings.py](src/songselector/core/embeddings.py), [research note](docs/research/audio_embeddings.md) |
-| Model reproducibility | The model is not in the repo; [scripts/export_cnn14_onnx.py](scripts/export_cnn14_onnx.py) rebuilds it from the published checkpoint (SHA-256 pinned) and checks it against PyTorch | [Getting the model](#getting-the-embedding-model) |
-| Testing | About 190 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
+| ML inference | Three models exported to ONNX, every one taking raw audio (LAION's spectrogram built into the graph); DirectML / CUDA / CPU chosen at runtime, batch sizes measured per model. Text encoders run in their own process with the `tokenizers` library, no PyTorch in the app | [core/embeddings.py](src/songselector/core/embeddings.py), [core/text_search.py](src/songselector/core/text_search.py), [research note](docs/research/text_search_clap.md) |
+| Model choice by measurement | CPU and GPU cost of LAION vs Microsoft CLAP measured before any app work; a broken model (collapsed embeddings) caught and excluded | [docs/research/text_search_clap.md](docs/research/text_search_clap.md) |
+| Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
+| Testing | About 200 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
 | Release verification | Every exe runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real GPU inference) and a native-window smoke test before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1) |
 | CI/CD | GitHub Actions: ruff, pytest on Windows, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe with a SHA-256 checksum | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
 | Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
@@ -73,30 +80,37 @@ The exe stores its data **next to itself**:
 |---|---|
 | `SongSelector_settings.json` | Columns, search settings, tempo, colouring |
 | `library.sqlite` | Every track loaded, your own ratings and colours, playlists and smartlists |
-| `embeddings.sqlite` | Audio embeddings: a cache, safe to delete, rebuilt in the background |
-| `models\cnn14.onnx` | The embedding model, if you keep it here |
+| `embeddings.sqlite` | CNN14 embeddings: a cache, safe to delete, rebuilt in the background |
+| `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite` | The same for the CLAP models |
+| `models\` | The model files (next section) |
 
 To upgrade, put the new exe in the same folder. Settings from versions before 1.1
 (`SpotNextTrack_settings.json`) are taken over on the first start.
 
-## Getting the embedding model
+## Getting the embedding models
 
-`cnn14.onnx` (327 MB) is built from the published PANNs checkpoint (Kong et al., 2020, weights
-[CC BY 4.0](https://zenodo.org/records/3987831)). The export needs PyTorch, which the app does
-not, so use a separate environment:
+The models are not in the repo or the exe. They are built from published weights, and every export
+is checked against the original PyTorch model. The exports need PyTorch, which the app does not, so
+use a separate environment. The files go to `.appdata\models\` (where the app looks when run from
+source); for the exe, copy them into a `models` folder next to it (*Analysis → Open models folder*).
+
+| Model | Files | Weights | Export |
+|---|---|---|---|
+| CNN14 | `cnn14.onnx` (327 MB) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
+| LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
+| Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
 
 ```powershell
-py -3.11 -m venv .export-venv
-.\.export-venv\Scripts\python -m pip install torch panns-inference==0.1.1 onnx onnxruntime
-.\.export-venv\Scripts\python scripts\export_cnn14_onnx.py       # -> .appdata\models\cnn14.onnx
+py -3.12 -m venv .export-venv
+.\.export-venv\Scripts\python -m pip install "torch>=2.6" panns-inference==0.1.1 msclap==1.3.4 onnx onnxruntime
+.\.export-venv\Scripts\python scripts\export_cnn14_onnx.py
+.\.export-venv\Scripts\python scripts\export_clap_onnx.py
 ```
 
-When running from source the app finds it there. For the exe, copy it to `models\cnn14.onnx` next
-to the exe, or pick it with *Analysis → Choose embedding model…*.
-
-Speed for a 6-minute track: about 1.4 s on a GTX 1650 Ti (0.6 s model, 0.8 s decoding), about 6.4 s
-on the CPU. A first pass over 3,000 tracks takes 1–1.5 hours on that GPU; after that only new or
-changed files are analysed. *Analysis → Analyse embeddings in background* pauses it.
+Then switch the models on under *Analysis → Embedding models*. Each track is decoded once for all of
+them. Speed for a 6-minute track on a GTX 1650 Ti (DirectML): CNN14 0.6 s, LAION CLAP about 2.2 s,
+Microsoft CLAP about 2.8 s, plus 0.8 s decoding; on the CPU several times that. After the first pass
+only new or changed files are analysed. *Analysis → Analyse embeddings in background* pauses it.
 
 ## Using it
 
@@ -119,6 +133,18 @@ filtered now, so narrow the List first to explore one style.
 | *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
 
 Distances on a 2D map are approximate; the closest-matches list uses the full embeddings.
+
+### Search by description and choosing models
+
+*Analysis → Search by description…* (Ctrl+Shift+F) opens the text search. Type what a track should sound
+like and press Enter: the closest tracks of the chosen CLAP model are listed with their score.
+Describe the sound (instruments, textures, energy, mood: *"warm pads, slow and dreamy"*, *"distorted
+acid line, hypnotic"*); *"This audio is a drum and bass song."* style sentences also work well. Save
+prompts you want to repeat, double-click a result to select it in the List, drag results onto Traktor.
+Only tracks already analysed with that model can be found.
+
+*Analysis → Embedding models* sets which models are kept up to date; *Similarity model* sets which one the
+map, the closest matches and the groups use. Each model keeps its own map layout.
 
 ### Playlists and smartlists
 
@@ -162,7 +188,8 @@ python -m ruff check src tests       # lint
                                      # add -Model <path>\cnn14.onnx to include GPU inference
 ```
 
-Set `SONGSELECTOR_CNN14_ONNX` to the model path to also run the real-model test.
+Set `SONGSELECTOR_CNN14_ONNX` to `cnn14.onnx`, and `SONGSELECTOR_CLAP_MODELS` to the folder with the CLAP
+files, to also run the real-model tests.
 
 **Releases** are built by GitHub Actions: bump `__version__` in
 [src/songselector/\_\_init\_\_.py](src/songselector/__init__.py) and rename the changelog's

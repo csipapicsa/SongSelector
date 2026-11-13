@@ -24,7 +24,7 @@ CHANGELOG when they ship.
 - [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
 - [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
       models and ideas in the DJ mix segmentation project). Plan only.
-- [ ] **Free-text search** (idea 2026-11-13): type a description ("dark rolling DnB, reese bass") and get the
+- [x] **Free-text search** (idea 2026-11-13, done in 1.1.0): type a description ("dark rolling DnB, reese bass") and get the
       closest tracks (top 10) in their own window; prompts can be saved and re-run. Needs a text-audio model
       (CLAP): one audio vector per track, computed in the background like CNN14, and one text vector per query,
       ranked by cosine similarity. Candidates: the light versions of LAION CLAP (`laion/clap-htsat-unfused`) and
@@ -64,7 +64,7 @@ CHANGELOG when they ship.
 - [ ] Map: faster layout for very large libraries (Barnes-Hut t-SNE, or arrange a sample + place_new).
 - [ ] Map: lasso selection, labels for the selected track's neighbours, a legend for the edge colours.
 - [ ] Re-check the per-track vector (`similarity.track_vectors`) once more styles are analysed.
-- [ ] **Several embedding models, chosen by the user** (asked 2026-11-13). Today: CNN14 only. Add the CLAP models
+- [x] **Several embedding models, chosen by the user** (asked 2026-11-13, done in 1.1.0). Today: CNN14 only. Add the CLAP models
       that work in research (LAION `clap-htsat-unfused`, Microsoft CLAP 2023; `laion/larger_clap_music` collapsed in
       transformers 4.57, see `docs/research/text_search_clap.md`). The user picks which models are kept up to date
       (each is analysed in the background and follows new and changed files, as CNN14 does now) and which one the
@@ -81,7 +81,20 @@ CHANGELOG when they ship.
       listening check ("do these 10 feel alike?") with the DJ.
 - [x] Track similarity from the embeddings (`core/similarity.py`, 4.11.0).
 - [x] GPU in the exe: DirectML since 4.9.0 (CUDA stays optional from source, requirements-gpu.txt).
-- [ ] Download the embedding model on demand (first use) instead of choosing the file by hand.
+- [ ] **Download the models from inside the app** (asked 2026-11-13; next after 1.1.0). Today every model has to be
+      built with an export script that needs PyTorch, so for anyone but the developer the app has no embeddings
+      (CNN14's default path only exists on the development machine; the CLAP entries show "model files missing").
+      Design:
+      - **Hosting:** the exported files (7 files, 1.6 GB in all, the largest 505 MB) as assets of a separate GitHub
+        release, e.g. tag `models-v1` (not tied to app versions), with `SHA256SUMS.txt` and the three licences
+        (CNN14 CC BY 4.0: attribution; LAION Apache 2.0; Microsoft CLAP MS-PL: licence text must go along).
+        Uploaded once from a local export (`gh release upload`); GitHub allows up to 2 GB per asset.
+      - **App:** *Analysis -> Download models...*: one row per model with size, licence and status; downloads in a
+        thread into the models folder next to the app (`.part` files, resumable, SHA-256 checked before the file
+        gets its real name), then the model can be switched on. The first start without any model offers it.
+      - **CI:** not in the normal pipeline (1.6 GB per run). A manual workflow (`workflow_dispatch`) downloads the
+        assets, checks the hashes and runs `verify_release -Model ... -ClapModels ...` on the exe, run before a
+        release that changes models. Unit tests use a small local HTTP server and a fake file.
 - [ ] Row shading by *Color - Song Selector* as a third coloring mode.
 - [x] Rating / color for several selected rows at once (4.8.0).
 - [ ] Undo for "Remove from library" (today: Refresh rebuilds the full list).
@@ -124,9 +137,8 @@ Do 1–2 first; they matter even without an installer.
       `SongSelector-Setup-<version>.exe` with Start menu entry and uninstaller.
       MSI (WiX) or MSIX only if needed for corporate or Store distribution.
 - [ ] 6. Code signing, to avoid the SmartScreen "Windows protected your PC" warning.
-- [ ] 7. Large optional components (the 327 MB embedding model) as a separate download on demand,
-      never inside the installer. Today `scripts/export_cnn14_onnx.py` builds the model from the published
-      checkpoint (needs PyTorch); an in-app download would remove that step.
+- [ ] 7. Large optional components (the models, 1.6 GB) as a separate download on demand, never inside the
+      installer: see "Download the models from inside the app" above.
 - [ ] 8. Update check (later): compare with the latest GitHub release tag.
 
 ## Code health

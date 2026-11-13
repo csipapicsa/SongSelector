@@ -8,8 +8,26 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
-## [Unreleased]
+## [1.1.0] - 2026-11-13
 
+- **Two more embedding models: LAION CLAP and Microsoft CLAP**, next to CNN14. CLAP models put sound and text in
+  one space. *Analysis → Embedding models* chooses which ones are kept up to date; *Analysis → Similarity model*
+  chooses which one the map, the closest matches and the groups use (each keeps its own map layout). One
+  background process analyses all of them, decoding each file once and resampling it per model; each model has
+  its own cache file (`embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite`), and the CNN14 cache of
+  earlier versions is untouched.
+- **Search by description** (*Analysis → Search by description...*, Ctrl+Shift+F): type what a track should sound
+  like ("funky breakbeat with a groovy bassline") and get the closest tracks of a CLAP model, with saved prompts,
+  double-click to select a result in the List, and drag results onto Traktor. The text encoder runs in its own
+  process, started on the first search and stopped when the window closes.
+- **`scripts/export_clap_onnx.py`** builds the CLAP model files from the published weights and checks each one
+  against PyTorch before writing it (largest difference 1e-6 or less). LAION's spectrogram is built into the
+  audio model, so every model takes raw audio. Two exporter problems found and fixed on the way: msclap's audio
+  encoder froze the batch size into the graph (cosine 0.62 at batch 3), and transformers' attention masks could
+  not be traced.
+- Batch sizes per model: CLAP on DirectML is fastest at 4 windows per call (55-62 ms per window on a GTX 1650 Ti).
+- New dependency: `tokenizers` (Hugging Face's tokenizer library); its download-only dependencies are kept out of
+  the exe. The exe's self-check now also starts the text search process.
 - **Startup splash screen.** Double-clicking the exe shows the SongSelector image straight away, with a status line,
   until the window is up. Before, nothing happened for several seconds. The exe's own splash (PyInstaller) covers the
   unpacking of the one-file exe; the app then shows the same image while it loads the library, and closes it when

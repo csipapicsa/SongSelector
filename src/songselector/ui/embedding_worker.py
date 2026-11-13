@@ -10,11 +10,12 @@ import queue
 import sqlite3
 import time
 from collections import deque
+from functools import partial
 from pathlib import Path
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 
-from songselector.core.embeddings import Cnn14Embedder, file_fingerprint, run_analysis
+from songselector.core.embeddings import Cnn14Embedder, OnnxEmbedder, file_fingerprint, run_analysis
 
 MAX_CRASHES = 3          # consecutive crashes before giving up (e.g. a broken model or runtime)
 POLL_INTERVAL_MS = 200
@@ -28,12 +29,19 @@ class EmbeddingAnalyzer(QObject):
     progress = pyqtSignal(int, int, int, str)
     track_analyzed = pyqtSignal(str)   # path_key
     failed = pyqtSignal(str)           # analysis stopped and will not continue by itself
+    warning = pyqtSignal(str)          # e.g. one of several models could not be loaded
 
-    def __init__(self, store, model_path, embedder_factory=Cnn14Embedder, parent=None):
+    def __init__(self, store, model_path, embedder_factory=Cnn14Embedder, parent=None, extra_models=()):
+        """store / model_path: the first model (its EmbeddingStore knows which model it is).
+        extra_models: [(store, model_path)] of further models, analysed in the same process from the same decode;
+        (store, model_path, factory) to give a model its own embedder factory (tests)."""
         super().__init__(parent)
         self.store = store
         self.model_path = Path(model_path)
         self.embedder_factory = embedder_factory  # must be picklable (a module-level class)
+        self.extra_models = [(entry[0], Path(entry[1]),
+                              entry[2] if len(entry) > 2 else partial(OnnxEmbedder, model_id=entry[0].spec.id))
+                             for entry in extra_models]
         self._context = multiprocessing.get_context('spawn')
         self._process = None
         self._jobs = self._events = self._stop = None
@@ -70,12 +78,20 @@ class EmbeddingAnalyzer(QObject):
                                                 self._context.Event())
         self._process = self._context.Process(
             target=run_analysis, name='embedding-analysis', daemon=True,
-            args=(str(self.model_path), str(self.store.path), self._jobs, self._events, self._stop,
-                  self.embedder_factory))
+            args=(self._models(), self._jobs, self._events, self._stop))
         self._process.start()
         self._top_up()
         self._timer.start(POLL_INTERVAL_MS)
         self._report('starting')
+
+    @property
+    def configuration(self):
+        """Which models with which files: a different one needs a new analyzer."""
+        return tuple((store.spec.id, str(path)) for store, path, *_ in [(self.store, self.model_path)] + self.extra_models)
+
+    def _models(self):
+        first = (self.store.spec.id, str(self.model_path), str(self.store.path), self.embedder_factory)
+        return [first] + [(store.spec.id, str(path), str(store.path), factory) for store, path, factory in self.extra_models]
 
     def stop(self, timeout=3.0):
         """Stop the process; unfinished tracks are analysed after the next start()."""
@@ -156,6 +172,8 @@ class EmbeddingAnalyzer(QObject):
                 self.track_analyzed.emit(key)
             self._top_up()
             self._report()
+        elif kind == 'warning':
+            self.warning.emit(event[1])
         elif kind == 'fatal':
             self._give_up(f'Embedding analysis stopped: {event[1]}')
 
@@ -169,10 +187,11 @@ class EmbeddingAnalyzer(QObject):
         self._crashes += 1
         if self._current is not None:
             key = self._current[0]
-            try:  # remember the file so it is not retried until it changes
-                self.store.save_error(key, file_fingerprint(self._submitted[key]), 'analysis process crashed on this file')
-            except (OSError, sqlite3.Error):
-                pass
+            for store in [self.store] + [extra[0] for extra in self.extra_models]:
+                try:  # remember the file so it is not retried until it changes
+                    store.save_error(key, file_fingerprint(self._submitted[key]), 'analysis process crashed on this file')
+                except (OSError, sqlite3.Error):
+                    pass
             self._finished.add(key)
         self._end_process()
         if self._crashes >= MAX_CRASHES:

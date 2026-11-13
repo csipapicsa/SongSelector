@@ -17,6 +17,7 @@ dependencies = [
     "onnxruntime-directml>=1.22",
     "soundfile>=0.13",
     "soxr>=0.5",
+    "tokenizers>=0.21",
 ]
 
 [project.optional-dependencies]

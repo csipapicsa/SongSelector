@@ -1,6 +1,10 @@
-"""Audio embeddings: PANNs CNN14, one 2048-value vector per 5 seconds of audio.
+"""Audio embeddings: one vector per window of audio, for every model in core/embedding_models.py.
 
-Same model and preprocessing as the DJ mix segmentation project
+CNN14 (PANNs) gives one 2048-value vector per 5 seconds; the CLAP models one per 10 s (LAION) or 7 s (Microsoft).
+Every model is an ONNX file taking raw mono audio at its own sample rate. The analysis process decodes each file
+once and resamples it for every model that still needs the track; each model has its own cache file.
+
+CNN14 uses the same model and preprocessing as the DJ mix segmentation project
 (see docs/research/audio_embeddings.md): mono, 32 kHz, 5 s chunks, the last
 chunk zero-padded. Decoding uses soundfile + soxr instead of librosa, and the
 model runs through onnxruntime instead of PyTorch; both give identical
@@ -24,14 +28,17 @@ from pathlib import Path
 
 import numpy as np
 
+from songselector.core.embedding_models import CNN14
+from songselector.core.embedding_models import model as model_spec
 from songselector.env import getenv
 
-MODEL_ID = 'panns-cnn14-mAP0.431'
-MODEL_FILE_NAME = 'cnn14.onnx'
-SAMPLE_RATE = 32000
-CHUNK_SECONDS = 5
-CHUNK_SAMPLES = SAMPLE_RATE * CHUNK_SECONDS
-EMBEDDING_DIM = 2048
+# CNN14, the default model (names kept from before there were several models).
+MODEL_ID = CNN14.id
+MODEL_FILE_NAME = CNN14.audio_file
+SAMPLE_RATE = CNN14.sample_rate
+CHUNK_SECONDS = CNN14.chunk_seconds
+CHUNK_SAMPLES = CNN14.chunk_samples
+EMBEDDING_DIM = CNN14.dim
 # float16 like the segmentation project; zlib is lossless and shrinks the data to
 # about 21% because ~87% of CNN14 embedding values are exactly zero (ReLU output).
 ENCODING = 'float16-zlib'
@@ -60,10 +67,9 @@ def _enough(decoded_seconds, expected_seconds):
 
 
 def _read_soundfile(path, should_stop):
-    """(mono float32 at 32 kHz, problem): problem is None, or the error that stopped libsndfile
-    after enough was decoded. Raises if the file cannot be opened or too little was decoded."""
+    """(mono float32 at the file's own rate, that rate, problem): problem is None, or the error that stopped
+    libsndfile after enough was decoded. Raises if the file cannot be opened or too little was decoded."""
     import soundfile
-    import soxr
     blocks, decoded, problem = [], 0, None
     with soundfile.SoundFile(str(path)) as audio_file:
         sample_rate = audio_file.samplerate
@@ -84,18 +90,24 @@ def _read_soundfile(path, should_stop):
                 raise
             problem = error
     mono = np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
-    if sample_rate != SAMPLE_RATE and len(mono):
-        mono = soxr.resample(mono, sample_rate, SAMPLE_RATE, quality='HQ')
-    return mono.astype(np.float32, copy=False), problem
+    return mono.astype(np.float32, copy=False), sample_rate, problem
 
 
-def _read_av(path, should_stop):
-    """Mono float32 at 32 kHz decoded with FFmpeg (PyAV). It reads what libsndfile cannot: AAC
+def _resample(audio, source_rate, rate):
+    """soxr, high quality: at 32 kHz identical to librosa.load(sr=32000) (docs/research/audio_embeddings.md)."""
+    import soxr
+    if source_rate != rate and len(audio):
+        audio = soxr.resample(audio, source_rate, rate, quality='HQ')
+    return audio.astype(np.float32, copy=False)
+
+
+def _read_av(path, should_stop, rate=SAMPLE_RATE):
+    """Mono float32 at `rate` decoded with FFmpeg (PyAV). It reads what libsndfile cannot: AAC
     (.m4a, .mp4) and MP3s with damaged frames, which FFmpeg skips and reads on past, as its own
     command line does. A file read without any damage is returned whatever its length; after damage
     it must pass _enough. Raises (ImportError if PyAV is missing) when too little could be decoded."""
     import av
-    resampler = av.AudioResampler(format='fltp', rate=SAMPLE_RATE)  # keeps the channels; averaged below
+    resampler = av.AudioResampler(format='fltp', rate=rate)  # keeps the channels; averaged below
     pieces, damaged = [], False
     with av.open(str(path)) as container:
         stream = container.streams.audio[0]
@@ -115,44 +127,53 @@ def _read_av(path, should_stop):
         except av.error.FFmpegError:  # the file cannot be read on from here
             damaged = True
     audio = np.concatenate(pieces).astype(np.float32, copy=False) if pieces else np.zeros(0, dtype=np.float32)
-    if not len(audio) or (damaged and not _enough(len(audio) / SAMPLE_RATE, expected)):
-        raise ValueError(f'FFmpeg decoded only {len(audio) / SAMPLE_RATE:.0f} s of {expected:.0f} s')
+    if not len(audio) or (damaged and not _enough(len(audio) / rate, expected)):
+        raise ValueError(f'FFmpeg decoded only {len(audio) / rate:.0f} s of {expected:.0f} s')
     return audio
 
 
-def load_audio(path, should_stop=lambda: False):
-    """Decode to mono float32 at 32 kHz, matching librosa.load(path, sr=32000, mono=True).
+def load_audio_rates(path, rates, should_stop=lambda: False):
+    """{rate: mono float32 audio} for each sample rate; at 32 kHz it matches librosa.load(path, sr=32000, mono=True).
 
-    libsndfile decodes first (MP3, FLAC, WAV). If it cannot open the file (AAC) or stops at a
-    damaged frame, FFmpeg is tried as well and the longer result is used; see _enough for how
-    little may be missing. If neither decodes enough, libsndfile's error is raised.
+    libsndfile decodes the file once (MP3, FLAC, WAV) and that is resampled to every rate. If it cannot open the
+    file (AAC) or stops at a damaged frame, FFmpeg is tried as well and the longer result is used; see _enough for
+    how little may be missing. If neither decodes enough, libsndfile's error is raised.
     """
-    candidates, problem = [], None
+    native, problem = None, None
     try:
-        audio, problem = _read_soundfile(path, should_stop)
-        candidates.append(audio)
+        mono, native_rate, problem = _read_soundfile(path, should_stop)
+        native = (mono, native_rate)
     except Cancelled:
         raise
     except Exception as error:
         problem = error
-    if problem is not None:
-        try:
-            candidates.append(_read_av(path, should_stop))
-        except Cancelled:
-            raise
-        except Exception:  # PyAV not installed, or FFmpeg cannot read the file either
-            pass
-    if not candidates:
-        raise problem
-    return max(candidates, key=len)
+    result = {}
+    for rate in sorted(set(rates)):
+        candidates = [] if native is None else [_resample(native[0], native[1], rate)]
+        if problem is not None:
+            try:
+                candidates.append(_read_av(path, should_stop, rate))
+            except Cancelled:
+                raise
+            except Exception:  # PyAV not installed, or FFmpeg cannot read the file either
+                pass
+        if not candidates:
+            raise problem
+        result[rate] = max(candidates, key=len)
+    return result
 
 
-def split_chunks(audio):
-    """(n_chunks, CHUNK_SAMPLES) array; the last chunk is zero-padded."""
-    count = max(1, -(-len(audio) // CHUNK_SAMPLES))
-    padded = np.zeros(count * CHUNK_SAMPLES, dtype=np.float32)
+def load_audio(path, should_stop=lambda: False):
+    """Mono float32 at 32 kHz (CNN14's rate); see load_audio_rates."""
+    return load_audio_rates(path, [SAMPLE_RATE], should_stop)[SAMPLE_RATE]
+
+
+def split_chunks(audio, size=CHUNK_SAMPLES):
+    """(n_windows, size) array; the last window is zero-padded."""
+    count = max(1, -(-len(audio) // size))
+    padded = np.zeros(count * size, dtype=np.float32)
     padded[:len(audio)] = audio
-    return padded.reshape(count, CHUNK_SAMPLES)
+    return padded.reshape(count, size)
 
 
 def encode(matrix):
@@ -167,19 +188,19 @@ def decode(blob, frames, dim=EMBEDDING_DIM):
 # (default; any DirectX 12 GPU, plus CPU), onnxruntime-gpu (CUDA, needs CUDA 12 + cuDNN 9 DLLs)
 # or onnxruntime (CPU only).
 PREFERRED_PROVIDERS = ('CUDAExecutionProvider', 'DmlExecutionProvider', 'CPUExecutionProvider')
-# 5 s chunks per model call, measured on a GTX 1650 Ti (4 GB), 6-minute track:
-# CUDA batch 16: 0.58 s; DirectML batch 8: 0.58 s (batch 16: 4.2 s); CPU: 5.5 s at any batch
-# size, so 1 there, which also lets a pause take effect sooner.
-BATCH_SIZES = {'CUDAExecutionProvider': 16, 'DmlExecutionProvider': 8, 'CPUExecutionProvider': 1}
+BATCH_SIZES = CNN14.batch_sizes  # windows per model call; each model has its own (core/embedding_models.py)
 # Folder with CUDA 12 / cuDNN 9 DLLs to use, e.g. ...\site-packages\torch\lib of a CUDA PyTorch.
 CUDA_DLL_DIR_VARIABLE = 'CUDA_DLL_DIR'  # read as SONGSELECTOR_CUDA_DLL_DIR (see env.py)
 
 
-class Cnn14Embedder:
-    """CNN14 through onnxruntime, on the GPU when available. Loading the model takes a few seconds."""
+class OnnxEmbedder:
+    """An embedding model through onnxruntime, on the GPU when available. Loading takes a few seconds."""
 
-    def __init__(self, model_path, threads=None):
+    spec = CNN14
+
+    def __init__(self, model_path, threads=None, model_id=MODEL_ID):
         import onnxruntime
+        self.spec = model_spec(model_id)
         if 'CUDAExecutionProvider' in onnxruntime.get_available_providers() and hasattr(onnxruntime, 'preload_dlls'):
             try:  # CUDA 12 / cuDNN 9 DLLs: from SONGSELECTOR_CUDA_DLL_DIR, else the nvidia-* pip packages
                 onnxruntime.preload_dlls(directory=getenv(CUDA_DLL_DIR_VARIABLE) or None)
@@ -198,7 +219,7 @@ class Cnn14Embedder:
                                                         providers=['CPUExecutionProvider'])
         self.provider = self.session.get_providers()[0]
         self.input_name = self.session.get_inputs()[0].name
-        self.batch_size = BATCH_SIZES.get(self.provider, 1)
+        self.batch_size = self.spec.batch_sizes.get(self.provider, 1)
 
     @staticmethod
     def _options(onnxruntime, threads):
@@ -212,13 +233,13 @@ class Cnn14Embedder:
         return options
 
     def embed(self, audio, should_stop=lambda: False):
-        """(n_chunks, 2048) float32 embeddings of mono 32 kHz audio."""
-        chunks = split_chunks(audio)
+        """(n_windows, dim) float32 embeddings of mono audio at the model's sample rate."""
+        chunks = split_chunks(audio, self.spec.chunk_samples)
         count, size = len(chunks), self.batch_size
         if size > 1 and count % size:
             # Every call gets the same shape: GPU providers re-plan the model for each new
             # input shape. The zero padding is cut off again below.
-            chunks = np.concatenate([chunks, np.zeros((size - count % size, CHUNK_SAMPLES), dtype=np.float32)])
+            chunks = np.concatenate([chunks, np.zeros((size - count % size, chunks.shape[1]), dtype=np.float32)])
         batches = []
         for start in range(0, len(chunks), size):
             if should_stop():
@@ -227,8 +248,11 @@ class Cnn14Embedder:
         return np.concatenate(batches)[:count]
 
 
+Cnn14Embedder = OnnxEmbedder  # the name from before there were several models
+
+
 class EmbeddingStore:
-    """embeddings.sqlite: one row per track (path_key as in library.sqlite)."""
+    """One model's cache (embeddings.sqlite for CNN14): one row per track, path_key as in library.sqlite."""
 
     _SCHEMA = """
     CREATE TABLE IF NOT EXISTS embeddings (
@@ -262,10 +286,12 @@ class EmbeddingStore:
     );
     """
 
-    def __init__(self, path, keep_open=False):
+    def __init__(self, path, keep_open=False, spec=CNN14):
         """keep_open: hold one connection for the store's lifetime (the analysis process).
-        Otherwise every call opens and closes its own, so no file stays locked."""
+        Otherwise every call opens and closes its own, so no file stays locked.
+        spec: the model whose embeddings this file holds (core/embedding_models.py)."""
         self.path = Path(path)
+        self.spec = spec
         self._keep_open = keep_open
         self._connection = None
 
@@ -299,35 +325,40 @@ class EmbeddingStore:
             self._connection.close()
             self._connection = None
 
-    def fingerprints(self, model=MODEL_ID):
+    def fingerprints(self, model=None):
         """{path_key: (size, mtime_ns)} of stored results (embeddings and errors) for a model."""
+        model = model or self.spec.id
         with self._open() as connection:
             rows = connection.execute('SELECT path_key, file_size, file_mtime_ns FROM embeddings WHERE model = ?',
                                       (model,)).fetchall()
         return {key: (size, mtime) for key, size, mtime in rows}
 
-    def save(self, path_key, fingerprint, matrix, model=MODEL_ID):
+    def save(self, path_key, fingerprint, matrix, model=None):
+        model = model or self.spec.id
         self._write(path_key, fingerprint, model, len(matrix), encode(matrix), None)
 
-    def save_error(self, path_key, fingerprint, error, model=MODEL_ID):
+    def save_error(self, path_key, fingerprint, error, model=None):
+        model = model or self.spec.id
         self._write(path_key, fingerprint, model, 0, None, str(error)[:500])
 
     def _write(self, path_key, fingerprint, model, frames, data, error):
         with self._open() as connection, connection:
             connection.execute('INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                               (path_key, model, fingerprint[0], fingerprint[1], SAMPLE_RATE, CHUNK_SECONDS,
-                                frames, EMBEDDING_DIM, ENCODING, data, error,
+                               (path_key, model, fingerprint[0], fingerprint[1], self.spec.sample_rate,
+                                self.spec.chunk_seconds, frames, self.spec.dim, ENCODING, data, error,
                                 datetime.now(UTC).isoformat(timespec='seconds')))
 
-    def load(self, path_key, model=MODEL_ID):
+    def load(self, path_key, model=None):
         """(frames, 2048) float16 array, or None if missing or failed."""
+        model = model or self.spec.id
         with self._open() as connection:
             row = connection.execute('SELECT frames, dim, data FROM embeddings WHERE path_key = ? AND model = ? '
                                      'AND data IS NOT NULL', (path_key, model)).fetchone()
         return decode(row[2], row[0], row[1]) if row else None
 
-    def failure(self, path_key, model=MODEL_ID):
+    def failure(self, path_key, model=None):
         """Why a track could not be analysed (text), or None if it was analysed or not tried."""
+        model = model or self.spec.id
         with self._open() as connection:
             row = connection.execute('SELECT error FROM embeddings WHERE path_key = ? AND model = ? '
                                      'AND error IS NOT NULL', (path_key, model)).fetchone()
@@ -339,8 +370,9 @@ class EmbeddingStore:
             connection.execute('UPDATE embeddings SET file_size = ?, file_mtime_ns = ? WHERE path_key = ?',
                                (fingerprint[0], fingerprint[1], path_key))
 
-    def load_many(self, path_keys=None, model=MODEL_ID):
+    def load_many(self, path_keys=None, model=None):
         """{path_key: (frames, 2048) float16 array} of analysed tracks (all, or these keys)."""
+        model = model or self.spec.id
         with self._open() as connection:
             rows = connection.execute('SELECT path_key, frames, dim, data FROM embeddings WHERE model = ? '
                                       'AND data IS NOT NULL', (model,)).fetchall()
@@ -350,32 +382,37 @@ class EmbeddingStore:
 
     # -- map layout: 2D positions of the similarity map (a cache, like the embeddings) --
 
-    def save_layout(self, positions, model=MODEL_ID):
+    def save_layout(self, positions, model=None):
         """Replace the stored map with {path_key: (x, y)}."""
+        model = model or self.spec.id
         with self._open() as connection, connection:
             connection.execute('DELETE FROM map_layout WHERE model = ?', (model,))
             connection.executemany('INSERT INTO map_layout VALUES (?, ?, ?, ?)',
                                    [(key, model, float(x), float(y)) for key, (x, y) in positions.items()])
 
-    def load_layout(self, model=MODEL_ID):
+    def load_layout(self, model=None):
+        model = model or self.spec.id
         with self._open() as connection:
             rows = connection.execute('SELECT path_key, x, y FROM map_layout WHERE model = ?', (model,)).fetchall()
         return {key: (x, y) for key, x, y in rows}
 
-    def save_layout_3d(self, positions, model=MODEL_ID):
+    def save_layout_3d(self, positions, model=None):
         """Replace the stored 3D view with {path_key: (x, y, z)}."""
+        model = model or self.spec.id
         with self._open() as connection, connection:
             connection.execute('DELETE FROM map_layout_3d WHERE model = ?', (model,))
             connection.executemany('INSERT INTO map_layout_3d VALUES (?, ?, ?, ?, ?)',
                                    [(key, model, float(x), float(y), float(z)) for key, (x, y, z) in positions.items()])
 
-    def load_layout_3d(self, model=MODEL_ID):
+    def load_layout_3d(self, model=None):
+        model = model or self.spec.id
         with self._open() as connection:
             rows = connection.execute('SELECT path_key, x, y, z FROM map_layout_3d WHERE model = ?', (model,)).fetchall()
         return {key: (x, y, z) for key, x, y, z in rows}
 
-    def counts(self, model=MODEL_ID):
+    def counts(self, model=None):
         """(analysed, failed) number of tracks."""
+        model = model or self.spec.id
         with self._open() as connection:
             return connection.execute('SELECT COUNT(data), COUNT(error) FROM embeddings WHERE model = ?',
                                       (model,)).fetchone()
@@ -405,25 +442,36 @@ def _lower_process_priority():
     kernel32.SetPriorityClass(process, BELOW_NORMAL_PRIORITY_CLASS)
 
 
-def run_analysis(model_path, store_path, jobs, events, stop, embedder_factory=Cnn14Embedder):
+def run_analysis(models, jobs, events, stop):
     """Entry point of the analysis process.
 
-    Reads (path_key, file_path) jobs from the `jobs` queue until `stop` is set and
-    reports on `events`:
-      ('ready', provider)        model loaded; provider e.g. CUDAExecutionProvider
+    models: [(model_id, model_path, store_path, factory)], one per enabled model; factory(model_path) builds the
+    embedder (picklable: a module-level class, or functools.partial of one). Each track is decoded once and
+    resampled for every model whose cache does not have it yet.
+
+    Reads (path_key, file_path) jobs from the `jobs` queue until `stop` is set and reports on `events`:
+      ('ready', provider)        models loaded; provider of the first, e.g. CUDAExecutionProvider
+      ('warning', message)       a model could not be loaded; the others go on
       ('start', key, file name)  analysing a file (if the process dies now, this file caused it)
       ('done', key, status)      status: analysed | current | missing | failed | cancelled
-      ('fatal', message)         cannot continue (e.g. broken model file)
+      ('fatal', message)         cannot continue (e.g. no model file could be loaded)
     """
     _lower_process_priority()
-    try:
-        embedder = embedder_factory(model_path)
-        store = EmbeddingStore(store_path, keep_open=True)
-        known = store.fingerprints()
-    except Exception as error:
-        events.put(('fatal', f'{type(error).__name__}: {error}'))
+    workers, problem = [], 'no embedding model'
+    for model_id, model_path, store_path, factory in models:
+        spec = model_spec(model_id)
+        try:
+            embedder = factory(model_path)
+            store = EmbeddingStore(store_path, keep_open=True, spec=spec)
+            workers.append((spec, embedder, store, store.fingerprints()))
+        except Exception as error:
+            problem = f'{type(error).__name__}: {error}'
+            if len(models) > 1:
+                events.put(('warning', f'{spec.name} could not be loaded ({problem})'))
+    if not workers:
+        events.put(('fatal', problem))
         return
-    events.put(('ready', getattr(embedder, 'provider', 'CPUExecutionProvider')))
+    events.put(('ready', getattr(workers[0][1], 'provider', 'CPUExecutionProvider')))
     while not stop.is_set():
         try:
             key, path = jobs.get(timeout=0.2)
@@ -434,20 +482,36 @@ def run_analysis(model_path, store_path, jobs, events, stop, embedder_factory=Cn
         except OSError:
             events.put(('done', key, 'missing'))
             continue
-        if known.get(key) == fingerprint:
+        todo = [worker for worker in workers if worker[3].get(key) != fingerprint]
+        if not todo:
             events.put(('done', key, 'current'))
             continue
         events.put(('start', key, Path(path).name))
         try:
-            matrix = embedder.embed(load_audio(path, stop.is_set), stop.is_set)
-            store.save(key, fingerprint, matrix)
-            status = 'analysed'
+            audio = load_audio_rates(path, [spec.sample_rate for spec, *_ in todo], stop.is_set)
         except Cancelled:
             events.put(('done', key, 'cancelled'))
             break
         except Exception as error:  # undecodable file: remember it, retry only if the file changes
-            store.save_error(key, fingerprint, f'{type(error).__name__}: {error}')
-            status = 'failed'
-        known[key] = fingerprint
+            for _spec, _embedder, store, known in todo:
+                store.save_error(key, fingerprint, f'{type(error).__name__}: {error}')
+                known[key] = fingerprint
+            events.put(('done', key, 'failed'))
+            continue
+        status, cancelled = 'failed', False
+        for spec, embedder, store, known in todo:
+            try:
+                store.save(key, fingerprint, embedder.embed(audio[spec.sample_rate], stop.is_set))
+                status = 'analysed'
+            except Cancelled:
+                cancelled = True
+                break
+            except Exception as error:
+                store.save_error(key, fingerprint, f'{type(error).__name__}: {error}')
+            known[key] = fingerprint
+        if cancelled:
+            events.put(('done', key, 'cancelled'))
+            break
         events.put(('done', key, status))
-    store.close()  # checkpoints the WAL file back into embeddings.sqlite
+    for _spec, _embedder, store, _known in workers:
+        store.close()  # checkpoints the WAL file back into the cache file

@@ -7,14 +7,16 @@ Main window for the SongSelector
 import json
 import os
 import sqlite3
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
 from mutagen import MutagenError
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
+    QActionGroup,
     QCheckBox,
     QDialog,
     QFileDialog,
@@ -62,7 +64,8 @@ from songselector.core.color_search import (
     replace_color_filter,
 )
 from songselector.core.data_manager import DataManager
-from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, file_fingerprint
+from songselector.core.embedding_models import CNN14, DEFAULT_MODEL_IDS, MODELS, store_path
+from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, OnnxEmbedder, file_fingerprint
 from songselector.core.key_calculator import KeyCalculator
 from songselector.core.key_formats import parse_bpm, parse_key
 from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
@@ -89,6 +92,7 @@ from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.music_paths_dialog import MusicPathsDialog
 from songselector.ui.saved_lists import SavedListsMixin
 from songselector.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
+from songselector.ui.text_search_dialog import TextSearchDialog
 from songselector.ui.theme import DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha, status_style
 from songselector.ui.track_info_dialog import TrackInfoDialog
 from songselector.ui.traktor_watcher import CollectionWatcher
@@ -242,14 +246,20 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.rekordbox_watcher.loaded.connect(self._rekordbox_changed)
         self.rekordbox_watcher.failed.connect(lambda message: self.status_bar.showMessage(message))
 
-        # Embeddings of every library track, analysed in the background
-        self.embedding_store = EmbeddingStore(Path(SETTINGS_FILE).with_name('embeddings.sqlite'))
+        # Embeddings of every library track, analysed in the background: one cache per model
+        # (core/embedding_models.py); CNN14's is embeddings.sqlite, as before.
+        data_dir = Path(SETTINGS_FILE).parent
+        self.embedding_store = EmbeddingStore(data_dir / 'embeddings.sqlite')
+        self.model_stores = {spec.id: (self.embedding_store if spec is CNN14 else
+                                       EmbeddingStore(store_path(data_dir, spec), spec=spec))
+                             for spec in MODELS.values()}
         self.embedding_analyzer = None
+        self.text_search_dialog = None
         self._init_analysis_menu()
         self.start_embedding_analysis()
 
-        # Similarity map: second tab of the library panel
-        self.similarity_map = SimilarityMapWidget(self.embedding_store, self.settings, self)
+        # Similarity map: second tab of the library panel; uses the model chosen under Analysis -> Similarity model
+        self.similarity_map = SimilarityMapWidget(self.model_stores[self.similarity_model_id()], self.settings, self)
         self.similarity_map.request_add_to_playlist.connect(self._map_add_to_playlist)
         self.similarity_map.request_context_menu.connect(self._map_context_menu)
         self.similarity_map.selected.connect(self._select_in_list)
@@ -1266,6 +1276,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def _embedding_added(self, _key):
         self._map_stale = True  # placed on the map the next time it is opened
+        if self.text_search_dialog is not None:
+            self.text_search_dialog.mark_stale()
 
     def _list_item(self, key):
         for index in range(self.candidate_tree.topLevelItemCount()):
@@ -1362,10 +1374,127 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.embedding_toggle.setCheckable(True)
         self.embedding_toggle.setChecked(self.settings.get('Embedding analysis', True))
         self.embedding_toggle.toggled.connect(self.set_embedding_analysis_enabled)
-        menu.addAction('Choose embedding model (cnn14.onnx)...').triggered.connect(self.choose_embedding_model)
+
+        # Which models are kept up to date, and which one the map, closest matches and groups use.
+        self.model_menu = menu.addMenu('Embedding models')
+        self.model_menu.setToolTipsVisible(True)
+        self.model_actions = {}
+        self.similarity_menu = menu.addMenu('Similarity model')
+        self.similarity_menu.setToolTipsVisible(True)
+        self.similarity_group = QActionGroup(self)
+        self.similarity_actions = {}
+        for spec in MODELS.values():
+            action = self.model_menu.addAction(spec.name)
+            action.setCheckable(True)
+            action.toggled.connect(lambda on, model_id=spec.id: self.set_model_enabled(model_id, on))
+            self.model_actions[spec.id] = action
+            choice = self.similarity_menu.addAction(spec.name)
+            choice.setCheckable(True)
+            choice.setActionGroup(self.similarity_group)
+            choice.triggered.connect(lambda _checked, model_id=spec.id: self.set_similarity_model(model_id))
+            self.similarity_actions[spec.id] = choice
+        self.model_menu.aboutToShow.connect(self._update_model_menu)
+        self._update_model_menu()
+
+        menu.addSeparator()
+        search = menu.addAction('Search by description...')
+        search.setShortcut('Ctrl+Shift+F')
+        search.setToolTip('Type what a track should sound like and get the closest tracks (CLAP models)')
+        search.triggered.connect(self.open_text_search)
+        menu.addSeparator()
+        menu.addAction('Choose CNN14 model file (cnn14.onnx)...').triggered.connect(self.choose_embedding_model)
+        menu.addAction('Open models folder').triggered.connect(self.open_models_folder)
+
+    def models_folder(self):
+        return Path(SETTINGS_FILE).with_name('models')
+
+    def enabled_model_ids(self):
+        return [model_id for model_id in self.settings.get('Embedding models', DEFAULT_MODEL_IDS) if model_id in MODELS]
+
+    def similarity_model_id(self):
+        model_id = self.settings.get('Similarity model', CNN14.id)
+        return model_id if model_id in MODELS else CNN14.id
+
+    def model_file(self, spec):
+        """The model's audio file if all its files exist, else None."""
+        if spec is CNN14:
+            return self.embedding_model_path()
+        folder = self.models_folder()
+        return folder / spec.audio_file if not spec.missing_files(folder) else None
+
+    def _update_model_menu(self):
+        """Check marks and availability; a model whose files are missing cannot be switched on."""
+        enabled, similarity = self.enabled_model_ids(), self.similarity_model_id()
+        for spec in MODELS.values():
+            present = self.model_file(spec) is not None
+            missing = ', '.join(spec.missing_files(self.models_folder())) if spec is not CNN14 else MODEL_FILE_NAME
+            action = self.model_actions[spec.id]
+            action.blockSignals(True)
+            action.setChecked(spec.id in enabled)
+            action.blockSignals(False)
+            action.setEnabled(present or spec.id in enabled)
+            action.setText(spec.name if present else f'{spec.name} (model files missing)')
+            tip = spec.description
+            if not present:
+                tip += f' Missing in the models folder: {missing}. Create them with scripts/' + \
+                       ('export_cnn14_onnx.py' if spec is CNN14 else 'export_clap_onnx.py') + ' (see the README).'
+            action.setToolTip(tip)
+            self.similarity_actions[spec.id].setChecked(spec.id == similarity)
+            self.similarity_actions[spec.id].setToolTip(spec.description)
+
+    def set_model_enabled(self, model_id, on):
+        enabled = [m for m in self.enabled_model_ids() if m != model_id]
+        if on:
+            enabled = [m for m in MODELS if m in enabled or m == model_id]  # keep the menu's order
+        self.settings['Embedding models'] = enabled
+        self.start_embedding_analysis()
+
+    def set_similarity_model(self, model_id):
+        """Map, closest matches and groups switch to this model's embeddings (each keeps its own map layout)."""
+        self.settings['Similarity model'] = model_id
+        self.similarity_map.set_store(self.model_stores[model_id])
+        self._map_stale = True
+        if self.map_visible() or self.similarity_map.groups:
+            self._map_stale = False
+            self.similarity_map.load()
+        self._refresh_map()
+        if model_id not in self.enabled_model_ids():
+            self.status_bar.showMessage(f'{MODELS[model_id].name} is not analysing tracks: switch it on under '
+                                        'Analysis -> Embedding models.', 8000)
+
+    def open_models_folder(self):
+        folder = self.models_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def searchable_models(self):
+        """CLAP models whose files are there (text search needs the text encoder)."""
+        return [spec for spec in MODELS.values() if spec.has_text and self.model_file(spec) is not None]
+
+    def open_text_search(self):
+        models = self.searchable_models()
+        if not models:
+            QMessageBox.information(
+                self, 'Search by description',
+                'Searching by description needs a CLAP model (LAION CLAP or Microsoft CLAP).\n\n'
+                f'Create its files with scripts/export_clap_onnx.py and put them in the models folder:\n'
+                f'{self.models_folder()}\n\nThen switch it on under Analysis -> Embedding models, so your tracks '
+                'get analysed with it.')
+            return
+        if self.text_search_dialog is None:
+            self.text_search_dialog = TextSearchDialog(
+                models, self.model_stores, self.models_folder(), self.settings, self._fields_for_key,
+                self._select_in_list, self._add_keys_to_playlist, parent=self)
+        self.text_search_dialog.show()
+        self.text_search_dialog.raise_()
+        self.text_search_dialog.activateWindow()
+
+    def _add_keys_to_playlist(self, keys):
+        for key in keys:
+            self._map_add_to_playlist(key)
 
     def embedding_model_path(self):
-        """Chosen model, else <data folder>/models/cnn14.onnx, else the default; None if none exists."""
+        """Chosen CNN14 model, else <data folder>/models/cnn14.onnx, else the default; None if none exists."""
         for candidate in (self.settings.get('Embedding model'),
                           Path(SETTINGS_FILE).with_name('models') / MODEL_FILE_NAME,
                           DEFAULT_EMBEDDING_MODEL):
@@ -1377,18 +1506,27 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if not self.settings.get('Embedding analysis', True):
             self.embedding_label.setText('Embeddings: paused')
             return
-        model = self.embedding_model_path()
-        if model is None:
+        models = [(MODELS[model_id], self.model_file(MODELS[model_id])) for model_id in self.enabled_model_ids()]
+        models = [(spec, path) for spec, path in models if path is not None]
+        if not models:
             self.embedding_label.setText('Embeddings: no model (Analysis menu)')
             return
-        if self.embedding_analyzer is not None and self.embedding_analyzer.model_path != model:
+        stores = [(self.model_stores[spec.id], path) for spec, path in models]
+        configuration = tuple((store.spec.id, str(path)) for store, path in stores)
+        if self.embedding_analyzer is not None and self.embedding_analyzer.configuration != configuration:
             self.embedding_analyzer.stop()
             self.embedding_analyzer = None
         if self.embedding_analyzer is None:
-            self.embedding_analyzer = EmbeddingAnalyzer(self.embedding_store, model, parent=self)
+            (store, path), extra = stores[0], stores[1:]
+            factory = {} if store.spec is CNN14 else {'embedder_factory': partial(OnnxEmbedder, model_id=store.spec.id)}
+            # Only CNN14 on its own: the call the app made before there were several models.
+            self.embedding_analyzer = (EmbeddingAnalyzer(store, path, parent=self, extra_models=extra, **factory)
+                                       if extra or factory else EmbeddingAnalyzer(store, path, parent=self))
             self.embedding_analyzer.progress.connect(self._show_embedding_progress)
             self.embedding_analyzer.track_analyzed.connect(self._embedding_added)
             self.embedding_analyzer.failed.connect(self.embedding_label.setText)
+            if hasattr(self.embedding_analyzer, 'warning'):
+                self.embedding_analyzer.warning.connect(lambda message: self.status_bar.showMessage(message, 10000))
         self._queue_embeddings()
         self.embedding_analyzer.start()
 
@@ -1399,7 +1537,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def _show_embedding_progress(self, done, total, missing, current):
         device = self.embedding_analyzer.device if self.embedding_analyzer is not None else ''
-        text = f'Embeddings{f" ({device})" if device else ""}: {done}/{total}'
+        names = '+'.join(MODELS[model_id].name for model_id in self.enabled_model_ids()
+                         if self.model_file(MODELS[model_id]) is not None)
+        details = ', '.join(part for part in (names if len(names.split('+')) > 1 else '', device) if part)
+        text = f'Embeddings{f" ({details})" if details else ""}: {done}/{total}'
         if missing:
             text += f' ({missing} files missing)'
         text += f' - {current}' if current else (' - up to date' if done == total else '')
@@ -1550,6 +1691,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.rekordbox_watcher.stop()
         if self.embedding_analyzer is not None:
             self.embedding_analyzer.stop(timeout=2)
+        if self.text_search_dialog is not None:
+            self.text_search_dialog.worker.stop(timeout=1)
         if hasattr(self, 'similarity_map'):
             self.similarity_map.stop()
         self._save_playlist()
