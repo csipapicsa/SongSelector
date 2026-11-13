@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds the one-file Windows exe into dist\TraktorKeyCalculator-<version>.exe.
+    Builds the one-file Windows exe into dist\SongSelector-<version>.exe.
 .EXAMPLE
     .\scripts\build.ps1
 #>
@@ -21,7 +21,7 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:PYTHONHASHSEED = '0'
 # Intermediate files (hundreds of MB) go to the system temp folder, not next to the
 # project: keeps the build off slow or busy data disks. Only the exe lands in dist\.
-$work = Join-Path $env:TEMP 'traktor-key-calculator-build'
+$work = Join-Path $env:TEMP 'songselector-build'
 $env:PYINSTALLER_CONFIG_DIR = Join-Path $work 'pyinstaller-cache'
 
 Push-Location $root
@@ -32,14 +32,14 @@ try {
     & $python -B -m PyInstaller --noconfirm --clean `
         --distpath (Join-Path $root 'dist') `
         --workpath $work `
-        (Join-Path $root 'packaging\TraktorKeyCalculator.spec')
+        (Join-Path $root 'packaging\SongSelector.spec')
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
     $ErrorActionPreference = 'Stop'
 } finally {
     Pop-Location
 }
 
-$exe = Get-ChildItem -LiteralPath (Join-Path $root 'dist') -Filter 'TraktorKeyCalculator-*.exe' |
+$exe = Get-ChildItem -LiteralPath (Join-Path $root 'dist') -Filter 'SongSelector-*.exe' |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $hash = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLower()
 Write-Host ''

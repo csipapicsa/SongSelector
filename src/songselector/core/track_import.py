@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from traktor_key_calculator.config import AUDIO_EXTENSIONS
-from traktor_key_calculator.core.audio_metadata import extract_audio_metadata
-from traktor_key_calculator.core.key_formats import parse_bpm, parse_key
-from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
+from songselector.config import AUDIO_EXTENSIONS
+from songselector.core.audio_metadata import extract_audio_metadata
+from songselector.core.key_formats import parse_bpm, parse_key
+from songselector.core.traktor_collection import TraktorCollection, canonical_path
 
 
 class TrackImporter:

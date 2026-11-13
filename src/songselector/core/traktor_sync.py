@@ -8,8 +8,8 @@ so a rating or key read from the file's tags is not overwritten by an old Trakto
 A track Traktor has not been seen with yet (first sync, new track): its colour is taken
 from Traktor (as an import does); key, BPM and rating only fill empty values.
 """
-from traktor_key_calculator.core.key_formats import parse_bpm, parse_key
-from traktor_key_calculator.core.traktor_collection import canonical_path
+from songselector.core.key_formats import parse_bpm, parse_key
+from songselector.core.traktor_collection import canonical_path
 
 TRAKTOR_SOURCE = 'Traktor collection'
 BPM_TOLERANCE = 0.005

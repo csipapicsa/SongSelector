@@ -1,4 +1,4 @@
-"""Embedding pipeline, storage and the background analyzer (fake model unless TKC_CNN14_ONNX is set)."""
+"""Embedding pipeline, storage and the background analyzer (fake model unless SONGSELECTOR_CNN14_ONNX is set)."""
 import os
 import sqlite3
 import tempfile
@@ -10,8 +10,8 @@ from unittest.mock import patch
 import numpy as np
 import soundfile
 
-from traktor_key_calculator.core import embeddings
-from traktor_key_calculator.core.embeddings import (
+from songselector.core import embeddings
+from songselector.core.embeddings import (
     CHUNK_SAMPLES,
     EMBEDDING_DIM,
     SAMPLE_RATE,
@@ -23,7 +23,7 @@ from traktor_key_calculator.core.embeddings import (
     load_audio,
     split_chunks,
 )
-from traktor_key_calculator.core.traktor_collection import canonical_path
+from songselector.core.traktor_collection import canonical_path
 
 
 def write_wav(path, seconds, sample_rate=44100, channels=2):
@@ -94,7 +94,7 @@ class BrokenModel:
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
 
     def tearDown(self):
@@ -142,7 +142,7 @@ class PipelineTests(unittest.TestCase):
         import subprocess
         import sys
         code = ('import ctypes; from ctypes import wintypes; '
-                'from traktor_key_calculator.core.embeddings import _lower_process_priority; '
+                'from songselector.core.embeddings import _lower_process_priority; '
                 '_lower_process_priority(); k = ctypes.WinDLL("kernel32"); '
                 'k.GetCurrentProcess.restype = wintypes.HANDLE; k.GetPriorityClass.argtypes = (wintypes.HANDLE,); '
                 'io = ctypes.c_ulong(); ctypes.WinDLL("ntdll").NtQueryInformationProcess('
@@ -265,7 +265,7 @@ class AnalyzerTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         self.store = EmbeddingStore(self.root / 'embeddings.sqlite')
         self.analyzers = []
@@ -276,7 +276,7 @@ class AnalyzerTests(unittest.TestCase):
         self.temp.cleanup()
 
     def analyzer(self, factory=FakeEmbedder):
-        from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
+        from songselector.ui.embedding_worker import EmbeddingAnalyzer
         analyzer = EmbeddingAnalyzer(self.store, self.root / 'model.onnx', factory)
         analyzer.analysed = []
         analyzer.track_analyzed.connect(analyzer.analysed.append)
@@ -340,8 +340,8 @@ class AnalyzerTests(unittest.TestCase):
             'import sys, time',
             'from pathlib import Path',
             'from PyQt5.QtWidgets import QApplication',
-            'from traktor_key_calculator.core.embeddings import EmbeddingStore',
-            'from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer',
+            'from songselector.core.embeddings import EmbeddingStore',
+            'from songselector.ui.embedding_worker import EmbeddingAnalyzer',
             'from test_embeddings import SlowEmbedder, write_wav',
             'if __name__ == "__main__":',
             '    app = QApplication([])',
@@ -395,10 +395,10 @@ class WindowAnalysisTests(unittest.TestCase):
         import pandas as pd
         from PyQt5.QtCore import QTimer
 
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
+        from songselector.config import SETTINGS_DEFAULT
+        from songselector.ui.embedding_worker import EmbeddingAnalyzer
 
-        with tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR']) as folder:
+        with tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR']) as folder:
             root = Path(folder)
             model = root / 'models' / 'cnn14.onnx'
             model.parent.mkdir()
@@ -409,12 +409,12 @@ class WindowAnalysisTests(unittest.TestCase):
             (root / 'settings.json').write_text(json.dumps(settings))
             library = pd.DataFrame([{'Artist': 'T', 'Title': p.stem, 'BPM': 120, 'File_Path': str(p),
                                      'Musical_Key_Base': 'C', 'BaseMinorOrMajor': 'major'} for p in tracks])
-            with patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE', str(root / 'settings.json')), \
-                    patch('traktor_key_calculator.ui.main_window.DataManager.load_default_data', return_value=library), \
-                    patch('traktor_key_calculator.ui.main_window.EmbeddingAnalyzer',
+            with patch('songselector.ui.main_window.SETTINGS_FILE', str(root / 'settings.json')), \
+                    patch('songselector.ui.main_window.DataManager.load_default_data', return_value=library), \
+                    patch('songselector.ui.main_window.EmbeddingAnalyzer',
                           lambda store, path, parent=None: EmbeddingAnalyzer(store, path, BriefEmbedder, parent)):
-                from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-                window = TraktorKeyCalculator()
+                from songselector.ui.main_window import MainWindow
+                window = MainWindow()
                 self.assertTrue(window.embedding_analyzer.running)
                 ticks = []
                 timer = QTimer()
@@ -434,7 +434,7 @@ class WindowAnalysisTests(unittest.TestCase):
                 self.assertFalse(window.embedding_analyzer.running)
 
 
-@unittest.skipUnless(os.environ.get('TKC_CNN14_ONNX'), 'set TKC_CNN14_ONNX to the cnn14.onnx path to run')
+@unittest.skipUnless(os.environ.get('SONGSELECTOR_CNN14_ONNX'), 'set SONGSELECTOR_CNN14_ONNX to the cnn14.onnx path to run')
 class RealModelTests(unittest.TestCase):
     """Runs the real CNN14 through the analysis process, exactly as the app does."""
 
@@ -444,11 +444,11 @@ class RealModelTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def test_real_cnn14_produces_2048_values_per_5_seconds(self):
-        from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
-        with tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR']) as folder:
+        from songselector.ui.embedding_worker import EmbeddingAnalyzer
+        with tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR']) as folder:
             track = write_wav(Path(folder) / 'tone.wav', 11)
             store = EmbeddingStore(Path(folder) / 'embeddings.sqlite')
-            analyzer = EmbeddingAnalyzer(store, os.environ['TKC_CNN14_ONNX'])
+            analyzer = EmbeddingAnalyzer(store, os.environ['SONGSELECTOR_CNN14_ONNX'])
             analyzer.submit([(canonical_path(track), str(track))])
             analyzer.start()
             try:

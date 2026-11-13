@@ -12,7 +12,7 @@ file (embeddings.sqlite) instead of library.sqlite, which holds user data.
 Analysis runs in a separate process (run_analysis) that never loads Qt:
 PyQt5 ships an older MSVC runtime that makes onnxruntime crash when it loads
 after Qt, and a crashing decoder on a broken file must not take the app down.
-This module must therefore not import PyQt5 or traktor_key_calculator.config.
+This module must therefore not import PyQt5 or songselector.config.
 """
 import os
 import queue
@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+
+from songselector.env import getenv
 
 MODEL_ID = 'panns-cnn14-mAP0.431'
 MODEL_FILE_NAME = 'cnn14.onnx'
@@ -170,7 +172,7 @@ PREFERRED_PROVIDERS = ('CUDAExecutionProvider', 'DmlExecutionProvider', 'CPUExec
 # size, so 1 there, which also lets a pause take effect sooner.
 BATCH_SIZES = {'CUDAExecutionProvider': 16, 'DmlExecutionProvider': 8, 'CPUExecutionProvider': 1}
 # Folder with CUDA 12 / cuDNN 9 DLLs to use, e.g. ...\site-packages\torch\lib of a CUDA PyTorch.
-CUDA_DLL_DIR_VARIABLE = 'TRAKTOR_CUDA_DLL_DIR'
+CUDA_DLL_DIR_VARIABLE = 'CUDA_DLL_DIR'  # read as SONGSELECTOR_CUDA_DLL_DIR (see env.py)
 
 
 class Cnn14Embedder:
@@ -179,8 +181,8 @@ class Cnn14Embedder:
     def __init__(self, model_path, threads=None):
         import onnxruntime
         if 'CUDAExecutionProvider' in onnxruntime.get_available_providers() and hasattr(onnxruntime, 'preload_dlls'):
-            try:  # CUDA 12 / cuDNN 9 DLLs: from TRAKTOR_CUDA_DLL_DIR, else the nvidia-* pip packages
-                onnxruntime.preload_dlls(directory=os.environ.get(CUDA_DLL_DIR_VARIABLE) or None)
+            try:  # CUDA 12 / cuDNN 9 DLLs: from SONGSELECTOR_CUDA_DLL_DIR, else the nvidia-* pip packages
+                onnxruntime.preload_dlls(directory=getenv(CUDA_DLL_DIR_VARIABLE) or None)
             except Exception:
                 pass
         available = onnxruntime.get_available_providers()

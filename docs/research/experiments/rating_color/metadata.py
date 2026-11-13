@@ -21,7 +21,7 @@ from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import REPO, bootstrap, fmt, fold_splits, load_labels, load_vectors, locked_test, snapshot_data
-from traktor_key_calculator.core.traktor_collection import canonical_path, nml_track_path
+from songselector.core.traktor_collection import canonical_path, nml_track_path
 
 warnings.filterwarnings('ignore')
 NML = Path(r'E:\DJ\TRAKTOR\collection.nml')

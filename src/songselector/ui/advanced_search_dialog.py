@@ -17,8 +17,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from traktor_key_calculator.core.color_search import COLOR_HELP, COLOR_NAMES, parse_color_values
-from traktor_key_calculator.core.search_filters import (
+from songselector.core.color_search import COLOR_HELP, COLOR_NAMES, parse_color_values
+from songselector.core.search_filters import (
     COLOR_COLUMNS,
     NO_COLUMN,
     NUMERIC_COLUMNS,

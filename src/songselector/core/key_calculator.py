@@ -1,10 +1,10 @@
 """
-Music-related calculations for the Traktor Key Calculator
+Music-related calculations for the SongSelector
 """
 import math
 
-from traktor_key_calculator.config import CAMELOT_KEY_TO_OPEN_KEY
-from traktor_key_calculator.core.key_tables import key_list, musical_key_to_harmonic_key
+from songselector.config import CAMELOT_KEY_TO_OPEN_KEY
+from songselector.core.key_tables import key_list, musical_key_to_harmonic_key
 
 
 class KeyCalculator:

@@ -45,7 +45,7 @@ jobs:
         if: env.IS_RELEASE == 'true'
         shell: pwsh
         run: |
-          $code = (Select-String -LiteralPath src/traktor_key_calculator/__init__.py -Pattern "__version__ = '([^']+)'").Matches[0].Groups[1].Value
+          $code = (Select-String -LiteralPath src/songselector/__init__.py -Pattern "__version__ = '([^']+)'").Matches[0].Groups[1].Value
           if ("v$code" -ne $env:TAG) { throw "Tag $env:TAG does not match __version__ = '$code' in the code." }
           git merge-base --is-ancestor $env:GITHUB_SHA origin/main
           if ($LASTEXITCODE -ne 0) { throw "Tag $env:TAG points to a commit that is not on main (not reviewed through a PR)." }
@@ -75,11 +75,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release | Out-Null
-          $exe = Get-ChildItem dist -Filter 'TraktorKeyCalculator-*.exe' | Select-Object -First 1
+          $exe = Get-ChildItem dist -Filter 'SongSelector-*.exe' | Select-Object -First 1
           Copy-Item -LiteralPath $exe.FullName -Destination release
           $hash = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLower()
           Set-Content -LiteralPath release/SHA256SUMS.txt -Value "$hash  $($exe.Name)" -Encoding ascii
-          $version = (Select-String -LiteralPath src/traktor_key_calculator/__init__.py -Pattern "__version__ = '([^']+)'").Matches[0].Groups[1].Value
+          $version = (Select-String -LiteralPath src/songselector/__init__.py -Pattern "__version__ = '([^']+)'").Matches[0].Groups[1].Value
           if ($env:IS_RELEASE -eq 'true') {
             # A release must have its own changelog section; the script fails if it is missing.
             .\scripts\release_notes.ps1 -Version $version -Out release/notes.md

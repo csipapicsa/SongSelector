@@ -3,8 +3,8 @@ import sys
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
-from traktor_key_calculator.config import init_settings
-from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
+from songselector.config import init_settings
+from songselector.ui.main_window import MainWindow
 
 
 def main():
@@ -13,7 +13,7 @@ def main():
     if not ok:
         QMessageBox.critical(None, 'Cannot start', str(error))
         return 1
-    window = TraktorKeyCalculator()
+    window = MainWindow()
     window.show()
     return application.exec_()
 

@@ -20,6 +20,8 @@ import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
 
+from songselector.env import getenv
+
 _OBFUSCATED_KEY = b"PN_Pq^*N>(JYe*u^8;Yg76HuZ<mR13S?=>)b9;DpoTXV(6ItkU`}8*m6tx_I{Solh_N#dfe{v="
 _XOR = b'657f48f84c437cc1'
 
@@ -36,7 +38,7 @@ def database_key():
 def discover_library():
     """Path of Rekordbox's master.db: the one named in its settings, else the standard place;
     the most recently written if there are several. '' if Rekordbox has none."""
-    override = os.environ.get('TRAKTOR_REKORDBOX_LIBRARY')
+    override = getenv('REKORDBOX_LIBRARY')
     if override is not None:  # tests and unusual installs; 'none' or '' switches Rekordbox off
         return '' if override.lower() in ('', 'none') else override
     candidates = []

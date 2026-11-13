@@ -14,7 +14,8 @@ dist/
 
 # Local app data when running from source (settings, imported tracks)
 .appdata/
-SpotNextTrack_settings.json
+SongSelector_settings.json
+SpotNextTrack_settings.json*
 imported_tracks.json
 
 # Editors / OS

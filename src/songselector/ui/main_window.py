@@ -1,5 +1,5 @@
 """
-Main window for the Traktor Key Calculator
+Main window for the SongSelector
 """
 
 # ADD:
@@ -36,8 +36,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from traktor_key_calculator import __version__
-from traktor_key_calculator.config import (
+from songselector import __version__
+from songselector.config import (
     COLOR_COLUMN_INDEX,
     COLOR_MAPPING_CATEGORY,
     DEFAULT_BPM,
@@ -55,44 +55,44 @@ from traktor_key_calculator.config import (
     SS_RATING_COLUMN,
     WINDOW_SIZE,
 )
-from traktor_key_calculator.core.color_search import (
+from songselector.core.color_search import (
     COLOR_NAMES,
     SS_COLOR_TOKEN,
     parse_color_search,
     replace_color_filter,
 )
-from traktor_key_calculator.core.data_manager import DataManager
-from traktor_key_calculator.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, file_fingerprint
-from traktor_key_calculator.core.key_calculator import KeyCalculator
-from traktor_key_calculator.core.key_formats import parse_bpm, parse_key
-from traktor_key_calculator.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
-from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, discover_library
-from traktor_key_calculator.core.rekordbox_library import signature as rekordbox_signature
-from traktor_key_calculator.core.search_filters import active_filters, matches_condition
-from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS, write_tags
-from traktor_key_calculator.core.track_import import (
+from songselector.core.data_manager import DataManager
+from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, file_fingerprint
+from songselector.core.key_calculator import KeyCalculator
+from songselector.core.key_formats import parse_bpm, parse_key
+from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
+from songselector.core.rekordbox_library import RekordboxLibrary, discover_library
+from songselector.core.rekordbox_library import signature as rekordbox_signature
+from songselector.core.search_filters import active_filters, matches_condition
+from songselector.core.tag_writer import EDITABLE_TAGS, write_tags
+from songselector.core.track_import import (
     ImportedTrackStore,
     TrackImporter,
     drop_duplicate_paths,
     enrich_ratings,
     merge_tracks,
 )
-from traktor_key_calculator.core.traktor_collection import canonical_path, discover_collection
-from traktor_key_calculator.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
-from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
-from traktor_key_calculator.ui.coloring_dialog import ColoringDialog
-from traktor_key_calculator.ui.delegates import ColorDotDelegate
-from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
-from traktor_key_calculator.ui.list_browser import ORDERED_KINDS, ListBrowser, node_label
-from traktor_key_calculator.ui.map_settings_dialog import HoverFieldsDialog
-from traktor_key_calculator.ui.menu_bar import AppMenuBar
-from traktor_key_calculator.ui.music_paths_dialog import MusicPathsDialog
-from traktor_key_calculator.ui.saved_lists import SavedListsMixin
-from traktor_key_calculator.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
-from traktor_key_calculator.ui.theme import DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha, status_style
-from traktor_key_calculator.ui.track_info_dialog import TrackInfoDialog
-from traktor_key_calculator.ui.traktor_watcher import CollectionWatcher
-from traktor_key_calculator.ui.tree_widgets import (
+from songselector.core.traktor_collection import canonical_path, discover_collection
+from songselector.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
+from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
+from songselector.ui.coloring_dialog import ColoringDialog
+from songselector.ui.delegates import ColorDotDelegate
+from songselector.ui.embedding_worker import EmbeddingAnalyzer
+from songselector.ui.list_browser import ORDERED_KINDS, ListBrowser, node_label
+from songselector.ui.map_settings_dialog import HoverFieldsDialog
+from songselector.ui.menu_bar import AppMenuBar
+from songselector.ui.music_paths_dialog import MusicPathsDialog
+from songselector.ui.saved_lists import SavedListsMixin
+from songselector.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
+from songselector.ui.theme import DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha, status_style
+from songselector.ui.track_info_dialog import TrackInfoDialog
+from songselector.ui.traktor_watcher import CollectionWatcher
+from songselector.ui.tree_widgets import (
     PlaylistTreeWidget,
     PoolTreeWidget,
     TrackItem,
@@ -106,7 +106,7 @@ IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the p
 GROUPING_MESSAGE = 'Grouping tracks for the List...'
 
 
-class TraktorKeyCalculator(SavedListsMixin, QMainWindow):
+class MainWindow(SavedListsMixin, QMainWindow):
     """Main application window"""
     def __init__(self):
         super().__init__()

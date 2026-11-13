@@ -48,12 +48,12 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from traktor_key_calculator.config import COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN
-from traktor_key_calculator.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
-from traktor_key_calculator.core.color_search import COLOR_NAMES
-from traktor_key_calculator.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
-from traktor_key_calculator.core.search_filters import NUMERIC_COLUMNS
-from traktor_key_calculator.core.similarity import (
+from songselector.config import COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN
+from songselector.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
+from songselector.core.color_search import COLOR_NAMES
+from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
+from songselector.core.search_filters import NUMERIC_COLUMNS
+from songselector.core.similarity import (
     EDGE_SAME_COLOR,
     EDGE_SAME_RATING,
     display_color,
@@ -62,8 +62,8 @@ from traktor_key_calculator.core.similarity import (
     track_vectors,
     tsne_layout,
 )
-from traktor_key_calculator.core.traktor_collection import canonical_path
-from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
+from songselector.core.traktor_collection import canonical_path
+from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
 
 DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Selector',
                         'Rating - Song Selector', 'Color', 'Rating']

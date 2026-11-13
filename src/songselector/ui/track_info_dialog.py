@@ -1,7 +1,7 @@
 """Dialog to edit the Artist / Title / Genre / Comment tags of one audio file."""
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout
 
-from traktor_key_calculator.core.tag_writer import EDITABLE_TAGS
+from songselector.core.tag_writer import EDITABLE_TAGS
 
 
 class TrackInfoDialog(QDialog):

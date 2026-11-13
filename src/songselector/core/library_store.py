@@ -20,7 +20,7 @@ from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
-from traktor_key_calculator.core.traktor_collection import canonical_path
+from songselector.core.traktor_collection import canonical_path
 
 SCHEMA_VERSION = 3
 LIBRARY_LIST = 'Library'

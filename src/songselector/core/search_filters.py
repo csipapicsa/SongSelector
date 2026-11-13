@@ -2,8 +2,8 @@
 import math
 import operator
 
-from traktor_key_calculator.config import SS_COLOR_COLUMN, SS_RATING_COLUMN
-from traktor_key_calculator.core.color_search import color_id, parse_color_values
+from songselector.config import SS_COLOR_COLUMN, SS_RATING_COLUMN
+from songselector.core.color_search import color_id, parse_color_values
 
 NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color', SS_RATING_COLUMN, SS_COLOR_COLUMN}
 # Columns holding a category color number; they also accept color names (blue, red,orange).

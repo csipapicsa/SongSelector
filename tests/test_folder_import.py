@@ -9,8 +9,8 @@ from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 from test_imports import tagged_file
 from test_song_selector_fields import GuiTestBase
 
-from traktor_key_calculator.config import HEADER_INDEX
-from traktor_key_calculator.ui.tree_widgets import dropped_paths, find_audio_files
+from songselector.config import HEADER_INDEX
+from songselector.ui.tree_widgets import dropped_paths, find_audio_files
 
 
 def mime_for(*paths):
@@ -75,13 +75,13 @@ class FolderImportTests(GuiTestBase):
 
     def test_add_folder_menu_with_progress_dialog_and_cancel(self):
         window = self.window()
-        with patch('traktor_key_calculator.ui.main_window.QFileDialog.getExistingDirectory', return_value=str(self.music)), \
-                patch('traktor_key_calculator.ui.main_window.PROGRESS_THRESHOLD', 1):
+        with patch('songselector.ui.main_window.QFileDialog.getExistingDirectory', return_value=str(self.music)), \
+                patch('songselector.ui.main_window.PROGRESS_THRESHOLD', 1):
             window.choose_audio_folder()
         self.assertTrue(set(self.expected) <= self.paths(window.candidate_tree))
         cancel_after_first = iter([False, True, True])
-        with patch('traktor_key_calculator.ui.main_window.PROGRESS_THRESHOLD', 1), \
-                patch('traktor_key_calculator.ui.main_window.QProgressDialog.wasCanceled',
+        with patch('songselector.ui.main_window.PROGRESS_THRESHOLD', 1), \
+                patch('songselector.ui.main_window.QProgressDialog.wasCanceled',
                       side_effect=lambda: next(cancel_after_first)):
             imported = window.import_audio_files([str(self.root / 'other' / 'd.flac')] + [str(p) for p in self.expected])
         self.assertEqual(len(imported), 1)

@@ -2,7 +2,7 @@
 saved_lists.py
 What the Browser tab does: show a collection entry, playlist or smartlist in the List
 view; load playlists and smartlists into the Playlist tab; save, rename, duplicate and
-delete them. Mixed into the main window (TraktorKeyCalculator), whose state it uses.
+delete them. Mixed into the main window (MainWindow), whose state it uses.
 
 Playlists keep their tracks in order (the "#" column). Smartlists keep Complex Search
 rows and always list the tracks that match them now.
@@ -12,12 +12,12 @@ import sqlite3
 
 from PyQt5.QtWidgets import QDialog, QInputDialog, QLineEdit, QMenu, QMessageBox
 
-from traktor_key_calculator.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
-from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST
-from traktor_key_calculator.core.search_filters import active_filters
-from traktor_key_calculator.core.traktor_collection import canonical_path
-from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchDialog
-from traktor_key_calculator.ui.list_browser import (
+from songselector.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
+from songselector.core.library_store import PLAYLIST, SMARTLIST
+from songselector.core.search_filters import active_filters
+from songselector.core.traktor_collection import canonical_path
+from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
+from songselector.ui.list_browser import (
     COLLECTION_GROUPS,
     FOREIGN_KINDS,
     ORDERED_KINDS,
@@ -27,8 +27,8 @@ from traktor_key_calculator.ui.list_browser import (
     TRAKTOR,
     node_label,
 )
-from traktor_key_calculator.ui.theme import status_style
-from traktor_key_calculator.ui.tree_widgets import audio_paths, dragged_tracks
+from songselector.ui.theme import status_style
+from songselector.ui.tree_widgets import audio_paths, dragged_tracks
 
 POSITION = HEADER_INDEX[POSITION_COLUMN]
 PATH = HEADER_INDEX['Path']

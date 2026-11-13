@@ -15,7 +15,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $venv 'Scripts\python.exe'))) {
 $python = Join-Path $venv 'Scripts\python.exe'
 & $python -m pip install --upgrade pip
 & $python -m pip install -r (Join-Path $root 'requirements-dev.txt')
-# Editable install so `python -m traktor_key_calculator` works from anywhere.
+# Editable install so `python -m songselector` works from anywhere.
 & $python -m pip install --no-deps -e $root
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
 # PyQt5 ships a 2020 MSVC runtime that makes onnxruntime crash; see the script for details.

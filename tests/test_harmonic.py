@@ -1,7 +1,7 @@
 """Harmonic mixing relations, checked cell by cell against Mixed In Key's published table."""
 import unittest
 
-from traktor_key_calculator.core.harmonic import MIX_TYPES, compatible_keys, mix_type, parse_camelot
+from songselector.core.harmonic import MIX_TYPES, compatible_keys, mix_type, parse_camelot
 
 COLUMNS = ('perfect_mix', 'minus_1_mix', 'plus_1_mix', 'energy_boost', 'scale_change',
            'diagonal_mix', 'jaws_mix', 'mood_shifter')

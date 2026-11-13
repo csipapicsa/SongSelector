@@ -147,7 +147,7 @@ def connection(from_fields, to_fields, criteria):
     criteria: names of harmonic mix types (core.harmonic.MIX_TYPES, compared on the
     tempo-adjusted Camelot key), EDGE_SAME_COLOR and/or EDGE_SAME_RATING.
     """
-    from traktor_key_calculator.core.harmonic import mix_type
+    from songselector.core.harmonic import mix_type
     mix = mix_type(from_fields.get('Camelot Key New'), to_fields.get('Camelot Key New'))
     if mix is not None and mix.name in criteria:
         return mix.name

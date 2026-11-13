@@ -6,19 +6,19 @@ from pathlib import Path
 
 
 def _check_embedding_process():
-    """With TRAKTOR_VERIFY_MODEL set to cnn14.onnx: analyse a generated 11 s tone in the
+    """With SONGSELECTOR_VERIFY_MODEL set to cnn14.onnx: analyse a generated 11 s tone in the
     analysis process, which proves multiprocessing, onnxruntime, soundfile and soxr work
     inside the frozen exe. Returns a summary, or 'skipped' without a model."""
-    model=os.environ.get('TRAKTOR_VERIFY_MODEL')
+    model=os.environ.get('SONGSELECTOR_VERIFY_MODEL')
     if not model:
-        return 'skipped (set TRAKTOR_VERIFY_MODEL to cnn14.onnx)'
+        return 'skipped (set SONGSELECTOR_VERIFY_MODEL to cnn14.onnx)'
     import numpy as np
     import soundfile
 
-    from traktor_key_calculator.config import APP_DATA_DIR
-    from traktor_key_calculator.core.embeddings import EmbeddingStore
-    from traktor_key_calculator.core.traktor_collection import canonical_path
-    from traktor_key_calculator.ui.embedding_worker import EmbeddingAnalyzer
+    from songselector.config import APP_DATA_DIR
+    from songselector.core.embeddings import EmbeddingStore
+    from songselector.core.traktor_collection import canonical_path
+    from songselector.ui.embedding_worker import EmbeddingAnalyzer
     tone=APP_DATA_DIR/'embedding_check.wav'
     seconds=np.arange(11*44100)/44100
     soundfile.write(str(tone),np.stack([0.3*np.sin(2*np.pi*440*seconds)]*2,axis=1),44100)
@@ -41,8 +41,8 @@ def _check_aac_decoding():
     import av
     import numpy as np
 
-    from traktor_key_calculator.config import APP_DATA_DIR
-    from traktor_key_calculator.core.embeddings import SAMPLE_RATE, load_audio
+    from songselector.config import APP_DATA_DIR
+    from songselector.core.embeddings import SAMPLE_RATE, load_audio
     path=APP_DATA_DIR/'aac_check.m4a'
     seconds=np.arange(4*44100)/44100
     tone=(0.3*np.sin(2*np.pi*440*seconds)).astype(np.float32)
@@ -65,8 +65,8 @@ def _check_rekordbox_reader():
     the app's own reader: proves the SQLCipher module and the key work inside the frozen exe."""
     from sqlcipher3 import dbapi2 as sqlcipher
 
-    from traktor_key_calculator.config import APP_DATA_DIR
-    from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary, database_key
+    from songselector.config import APP_DATA_DIR
+    from songselector.core.rekordbox_library import RekordboxLibrary, database_key
     path=APP_DATA_DIR/'rekordbox_check.db'
     path.unlink(missing_ok=True)
     connection=sqlcipher.connect(str(path))
@@ -88,7 +88,7 @@ def _check_rekordbox_reader():
 
 
 def run():
-    result_path=Path(os.environ['TRAKTOR_VERIFY_RESULT']).resolve()
+    result_path=Path(os.environ['SONGSELECTOR_VERIFY_RESULT']).resolve()
     result={}
     window=None
     try:
@@ -100,19 +100,20 @@ def run():
         from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QImage, QPainter, QStandardItem, QStandardItemModel
         from PyQt5.QtWidgets import QApplication, QStyle, QStyleOptionViewItem
 
-        from traktor_key_calculator.config import (
+        from songselector.config import (
             APP_DATA_DIR,
             COLOR_MAPPING_CATEGORY,
             HEADER_INDEX,
             HEADER_LABELS,
             OPEN_KEY_COLOR_MAPPING,
+            SETTINGS_FILE,
             init_settings,
         )
-        from traktor_key_calculator.core.track_import import TrackImporter
-        from traktor_key_calculator.core.traktor_collection import canonical_path
-        from traktor_key_calculator.ui.advanced_search_dialog import AdvancedSearchRow
-        from traktor_key_calculator.ui.delegates import ColorDotDelegate
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
+        from songselector.core.track_import import TrackImporter
+        from songselector.core.traktor_collection import canonical_path
+        from songselector.ui.advanced_search_dialog import AdvancedSearchRow
+        from songselector.ui.delegates import ColorDotDelegate
+        from songselector.ui.main_window import MainWindow
         fixture=APP_DATA_DIR/'packaged_check.mp3'
         tags=ID3()
         tags.add(TIT2(encoding=3,text=['Packaged drop check']))
@@ -134,7 +135,7 @@ def run():
         application=QApplication.instance() or QApplication(sys.argv)
         ok,error=init_settings()
         assert ok,str(error)
-        settings_path=APP_DATA_DIR/'SpotNextTrack_settings.json'
+        settings_path=Path(SETTINGS_FILE)
         legacy=json.loads(settings_path.read_text())
         legacy.pop('Rating display version',None)
         legacy['Search columns']=['Artist','Title']
@@ -142,7 +143,7 @@ def run():
             legacy['Visible column '+side]=[name for name in HEADER_LABELS if name!='Rating']
             legacy.setdefault('Column sizes '+side,{})['Rating']=0
         settings_path.write_text(json.dumps(legacy))
-        window=TraktorKeyCalculator()
+        window=MainWindow()
         assert window.search_column_actions['Rating'].isChecked()
         baseline=window.candidate_tree.topLevelItemCount()
         assert baseline==0,f'A fresh install must start with an empty library, found {baseline} tracks'
@@ -265,7 +266,7 @@ def run():
         window.close()
         window=None
         application.processEvents()
-        restored=TraktorKeyCalculator()
+        restored=MainWindow()
         assert canonical_path(fixture) in restored.saved_imports
         assert find(restored.candidate_tree,fixture).text(HEADER_INDEX['Original Key'])=='C major'
         assert restored.library_store.path.is_file()

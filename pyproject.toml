@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "traktor-key-calculator"
+name = "songselector"
 dynamic = ["version"]
-description = "DJ helper that shows how a track's musical key shifts at a different playback tempo (Key Lock off)."
+description = "Desktop DJ library tool: tempo-aware harmonic keys, audio-similarity search over neural embeddings, Traktor and Rekordbox integration."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 authors = [{ name = "Gergo Gyori" }]
@@ -23,10 +23,10 @@ dependencies = [
 dev = ["pytest>=8", "pyinstaller>=6.16,<7"]
 
 [project.gui-scripts]
-traktor-key-calculator = "traktor_key_calculator.app:main"
+songselector = "songselector.app:main"
 
 [tool.setuptools.dynamic]
-version = { attr = "traktor_key_calculator.__version__" }
+version = { attr = "songselector.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

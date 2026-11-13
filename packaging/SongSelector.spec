@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(SPECPATH).parent
-PACKAGE = ROOT / 'src' / 'traktor_key_calculator'
+PACKAGE = ROOT / 'src' / 'songselector'
 VERSION = re.search(r"__version__ = '([^']+)'", (PACKAGE / '__init__.py').read_text()).group(1)
 
 # Heavy libraries that may exist in the environment but are not used by the app.
@@ -34,7 +34,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name=f'TraktorKeyCalculator-{VERSION}',
+    name=f'SongSelector-{VERSION}',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

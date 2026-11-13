@@ -1,6 +1,6 @@
 """
 treee_widgets.py
-Custom tree widgets for the Traktor Key Calculator
+Custom tree widgets for the SongSelector
 """
 import json
 import os
@@ -10,7 +10,7 @@ from PyQt5.QtCore import QMimeData, Qt, QUrl
 from PyQt5.QtGui import QDrag, QPainter, QPen
 from PyQt5.QtWidgets import QAbstractItemView, QApplication, QTreeWidget, QTreeWidgetItem
 
-from traktor_key_calculator.config import (
+from songselector.config import (
     AUDIO_EXTENSIONS,
     GROUP_COLUMN,
     HEADER_INDEX,
@@ -18,9 +18,9 @@ from traktor_key_calculator.config import (
     SS_COLOR_COLUMN,
     SS_RATING_COLUMN,
 )
-from traktor_key_calculator.core.audio_metadata import get_file_extension
-from traktor_key_calculator.ui.delegates import ColorDotDelegate, StarRatingDelegate
-from traktor_key_calculator.ui.theme import status_style
+from songselector.core.audio_metadata import get_file_extension
+from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate
+from songselector.ui.theme import status_style
 
 _NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN,
                                                    POSITION_COLUMN, GROUP_COLUMN)}

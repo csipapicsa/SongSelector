@@ -1,13 +1,16 @@
 """
-Configuration and constants for the Traktor Key Calculator
+Configuration and constants for SongSelector
 """
 import json
 import os
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt5.QtGui import QColor
+
+from songselector.env import getenv
 
 # Color mapping - Map integer values to colors (similar to Traktor)
 COLOR_MAPPING_CATEGORY = {
@@ -104,29 +107,32 @@ MAX_BPM = 200
 def _default_app_data_dir():
     """Where settings and imported tracks are stored.
 
-    Priority: TRAKTOR_APP_DATA_DIR env var, then the folder of the frozen exe,
-    then <repo>/.appdata when running from a source checkout.
+    Priority: SONGSELECTOR_APP_DATA_DIR env var, then the folder of the frozen exe,
+    then <repo>/.appdata when running from a source checkout, then ~/.songselector
+    (~/.traktor_key_calculator if only that one exists, from before the rename).
     """
-    if os.environ.get('TRAKTOR_APP_DATA_DIR'):
-        return Path(os.environ['TRAKTOR_APP_DATA_DIR'])
+    if getenv('APP_DATA_DIR'):
+        return Path(getenv('APP_DATA_DIR'))
     if getattr(sys, 'frozen', False):
         return Path(sys.executable).resolve().parent
     repo_root = Path(__file__).resolve().parents[2]
     if (repo_root / 'pyproject.toml').is_file():
         return repo_root / '.appdata'
-    return Path.home() / '.traktor_key_calculator'
+    current, legacy = Path.home() / '.songselector', Path.home() / '.traktor_key_calculator'
+    return legacy if legacy.is_dir() and not current.exists() else current
 
 
 APP_DATA_DIR = _default_app_data_dir()
 
 # Embedding model used unless one is chosen in the app (Analysis menu) or placed in
-# <data folder>\models\cnn14.onnx: the CNN14 of the developer's DJ mix segmentation project.
-# TRAKTOR_EMBEDDING_MODEL overrides it; "none" means no default (used by tests and verification).
-DEFAULT_EMBEDDING_MODEL = os.environ.get('TRAKTOR_EMBEDDING_MODEL',
-                                         r'E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx')
+# <data folder>\models\cnn14.onnx: where the developer keeps the model. Skipped when the file is absent.
+# SONGSELECTOR_EMBEDDING_MODEL overrides it; "none" means no default (used by tests and verification).
+DEFAULT_EMBEDDING_MODEL = getenv('EMBEDDING_MODEL', r'E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx')
 if DEFAULT_EMBEDDING_MODEL.strip().lower() in ('', 'none'):
     DEFAULT_EMBEDDING_MODEL = None
-SETTINGS_FILE = str(APP_DATA_DIR / 'SpotNextTrack_settings.json')
+SETTINGS_FILE = str(APP_DATA_DIR / 'SongSelector_settings.json')
+# The settings file's name before 1.1. init_settings() moves it to SETTINGS_FILE once.
+LEGACY_SETTINGS_FILE = str(APP_DATA_DIR / 'SpotNextTrack_settings.json')
 
 HEADER_LABELS = [
     "Artist", "Title", "Original BPM", "Original Key", "New Key",
@@ -172,8 +178,6 @@ GROUP_COLUMN = 'Group'
 HEADER_LABELS += [GROUP_COLUMN]
 HEADER_INDEX[GROUP_COLUMN] = len(HEADER_LABELS) - 1
 
-test = 100
-
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,
     "Visible column right": HEADER_LABELS,
@@ -182,15 +186,30 @@ SETTINGS_DEFAULT = {
 }
 
 
+def migrate_legacy_settings(settings_file=None, legacy_file=None):
+    """Move the settings of a pre-1.1 install to the new file name, once.
+
+    The old file is renamed to <name>.bak rather than deleted: it stays as a backup, and it is no
+    longer found here, so resetting the settings later does not bring the old ones back.
+    Returns True if a file was migrated.
+    """
+    settings_file = Path(settings_file or SETTINGS_FILE)
+    legacy_file = Path(legacy_file or LEGACY_SETTINGS_FILE)
+    if settings_file.exists() or not legacy_file.is_file():
+        return False
+    shutil.copy2(legacy_file, settings_file)
+    os.replace(legacy_file, legacy_file.with_name(legacy_file.name + '.bak'))
+    return True
+
+
 def init_settings():
-    """Create default settings file if not exists"""
+    """Create the settings file with defaults if it does not exist (after migrating an old one)."""
     try:
         APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        migrate_legacy_settings()
         if not os.path.exists(SETTINGS_FILE):
             with open(SETTINGS_FILE, "w") as f:
                 json.dump(SETTINGS_DEFAULT, f, indent=4)
-        else:
-            pass
         return True, ""
     except Exception as e:
         return False, e

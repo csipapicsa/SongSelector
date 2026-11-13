@@ -23,7 +23,7 @@ shown in Camelot (`8B`) and Traktor Open Key (`1d`) notation.
 ## Layers
 
 ```text
-app.py ──> ui.main_window.TraktorKeyCalculator   (QMainWindow, owns all state)
+app.py ──> ui.main_window.MainWindow   (QMainWindow, owns all state)
               │
               ├── ui/*            widgets, dialogs, painting
               └── core/*          logic without widgets; easy to unit-test
@@ -81,7 +81,7 @@ Until 4.14.0 they were always hidden, which made searches miss them without noti
 
 ### Right-click menu (both panels)
 
-`TraktorKeyCalculator.track_context_menu(tree)` acts on all selected rows (Shift/Ctrl+click): *Edit track info…* (the clicked row), *Remove from library/playlist* (also the Delete key),
+`MainWindow.track_context_menu(tree)` acts on all selected rows (Shift/Ctrl+click): *Edit track info…* (the clicked row), *Remove from library/playlist* (also the Delete key),
 *Rating - Song Selector*, *Color - Song Selector*, and in the library panel
 *Delete duplicates from the list*.
 
@@ -115,19 +115,23 @@ Dropped audio file ──> TrackImporter.read()
 
 `config.APP_DATA_DIR` resolves to (first match wins):
 
-1. `TRAKTOR_APP_DATA_DIR` environment variable (used by tests and verification)
+1. `SONGSELECTOR_APP_DATA_DIR` environment variable (used by tests and verification)
 2. The folder containing the exe (when frozen by PyInstaller)
 3. `<repo>/.appdata` when running from a source checkout
-4. `~/.traktor_key_calculator` otherwise
+4. `~/.songselector` otherwise (`~/.traktor_key_calculator` if only that one exists)
+
+Environment variables are read through `env.getenv(NAME)`: `SONGSELECTOR_<NAME>`, else the pre-rename
+`TRAKTOR_<NAME>` (fallback for one release). The ones in use: `APP_DATA_DIR`, `EMBEDDING_MODEL`,
+`REKORDBOX_LIBRARY`, `CUDA_DLL_DIR`.
 
 It holds:
 
 | File | Content | Written |
 |---|---|---|
-| `SpotNextTrack_settings.json` | UI settings (name is historical, kept for existing installs) | on close |
+| `SongSelector_settings.json` | UI settings. Before 1.1 it was `SpotNextTrack_settings.json`; `config.init_settings()` moves that one to the new name once and keeps it as `SpotNextTrack_settings.json.bak` | on close |
 | `library.sqlite` | Collection, Song Selector rating/color, saved lists (see below) | on every change |
 | `embeddings.sqlite` | Audio embeddings, a cache that can be deleted and recomputed (see below) | by the analysis process |
-| `models/cnn14.onnx` | Optional location of the embedding model. Order: model chosen in *Analysis*, this file, then `config.DEFAULT_EMBEDDING_MODEL` (`TRAKTOR_EMBEDDING_MODEL=none` disables the default; tests and verification do) | never |
+| `models/cnn14.onnx` | Optional location of the embedding model. Order: model chosen in *Analysis*, this file, then `config.DEFAULT_EMBEDDING_MODEL` (`SONGSELECTOR_EMBEDDING_MODEL=none` disables the default; tests and verification do). `scripts/export_cnn14_onnx.py` creates the file from the published PANNs checkpoint | never |
 | `imported_tracks.json` | Imports saved by versions ≤ 4.5.0 | never; read once, kept as a backup |
 
 ### library.sqlite
@@ -206,7 +210,7 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
 
 ### Similarity map
 
-- **Same rows as the list.** `TraktorKeyCalculator._refresh_map` passes the texts of the visible
+- **Same rows as the list.** `MainWindow._refresh_map` passes the texts of the visible
   list rows to the map (`set_tracks`), at the end of every `filter_items`, but only while the map
   tab is shown. Filters, tempo-adjusted keys and colours therefore always match the list.
 - **Layout** (`build_map_data`, background thread): load all embeddings, `track_vectors`, then
@@ -215,7 +219,7 @@ vector per 5 s of audio (background in `docs/research/audio_embeddings.md`).
   (`map_layout`) and only `save_layout` replaces them, so filtering never moves dots.
 - **Reference track:** a dropped track the list does not show (e.g. on the playlist) is added to
   the map's `fields` as `reference` while it is selected (`show_reference`); its table texts come
-  from `fields_provider` (`TraktorKeyCalculator._fields_for_key`).
+  from `fields_provider` (`MainWindow._fields_for_key`).
 - **Edges** (`SimilarityMapWidget._edges`): tracks are grouped by tempo-adjusted Camelot key,
   colour and rating, and partners are looked up per group (no all-pairs loop); one edge per
   pair, capped at `MAX_EDGES`. `_edge_sources` decides which tracks edges start from: all visible
@@ -266,9 +270,11 @@ fixed colours, so they stay readable on both backgrounds. Row tint opacity comes
 - `tests/test_embeddings.py`: pipeline, storage, and the analysis process with
   fake embedders (module-level classes, because they run in the spawned process),
   including crash recovery and clean exit. `RealModelTests` runs the real CNN14
-  only when `TKC_CNN14_ONNX` points at `cnn14.onnx`.
+  only when `SONGSELECTOR_CNN14_ONNX` points at `cnn14.onnx`.
 - `tests/conftest.py` makes Qt headless (`QT_QPA_PLATFORM=offscreen`) and points
-  `TRAKTOR_APP_DATA_DIR` at a temporary folder **before** the package is imported.
+  `SONGSELECTOR_APP_DATA_DIR` at a temporary folder **before** the package is imported.
+- `tests/test_rename_migration.py`: settings and environment variables from before the rename
+  to SongSelector keep working.
 - `selfcheck.py` repeats the key scenarios inside the frozen exe, because
   PyInstaller builds can break things that pass from source (missing data files,
   hidden imports). `scripts/verify_release.ps1` runs it. With `-Model <cnn14.onnx>`,
@@ -276,6 +282,6 @@ fixed colours, so they stay readable on both backgrounds. Row tint opacity comes
 
 ## Packaging
 
-`packaging/TraktorKeyCalculator.spec` builds a one-file, windowed exe from
+`packaging/SongSelector.spec` builds a one-file, windowed exe from
 `packaging/launcher.py`. No data files are bundled (the former starting library CSV was removed in 4.26.0).
 Large unused libraries are excluded explicitly to keep the exe size down.

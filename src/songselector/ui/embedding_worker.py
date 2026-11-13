@@ -14,7 +14,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 
-from traktor_key_calculator.core.embeddings import Cnn14Embedder, file_fingerprint, run_analysis
+from songselector.core.embeddings import Cnn14Embedder, file_fingerprint, run_analysis
 
 MAX_CRASHES = 3          # consecutive crashes before giving up (e.g. a broken model or runtime)
 POLL_INTERVAL_MS = 200

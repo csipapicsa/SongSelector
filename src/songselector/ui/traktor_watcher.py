@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QFileSystemWatcher, QObject, QTimer, pyqtSignal
 
-from traktor_key_calculator.core.traktor_collection import TraktorCollection
+from songselector.core.traktor_collection import TraktorCollection
 
 SETTLE_MS = 3000         # the file must be unchanged this long before it is read
 POLL_MS = 60000          # fallback check of size and modification time

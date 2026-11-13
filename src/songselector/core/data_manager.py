@@ -1,5 +1,5 @@
 """
-Data management for the Traktor Key Calculator
+Data management for the SongSelector
 """
 import os
 

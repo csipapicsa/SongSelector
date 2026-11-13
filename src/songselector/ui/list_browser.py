@@ -16,8 +16,8 @@ from PyQt5.QtCore import QMimeData, QPoint, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QDrag, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import QAbstractItemView, QApplication, QStyle, QTreeWidget, QTreeWidgetItem
 
-from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST
-from traktor_key_calculator.ui.tree_widgets import NODE_MIME, dragged_tracks, dropped_paths
+from songselector.core.library_store import PLAYLIST, SMARTLIST
+from songselector.ui.tree_widgets import NODE_MIME, dragged_tracks, dropped_paths
 
 NODE_ROLE = Qt.UserRole + 1
 # Collection folders: node kind -> (folder label, track column)

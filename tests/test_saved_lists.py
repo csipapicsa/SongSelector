@@ -10,9 +10,9 @@ from unittest.mock import patch
 import pandas as pd
 from PyQt5.QtCore import QUrl
 
-from traktor_key_calculator.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
-from traktor_key_calculator.core.library_store import PLAYLIST, SMARTLIST, LibraryStore
-from traktor_key_calculator.core.traktor_collection import TraktorCollection, canonical_path
+from songselector.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
+from songselector.core.library_store import PLAYLIST, SMARTLIST, LibraryStore
+from songselector.core.traktor_collection import TraktorCollection, canonical_path
 
 POSITION = HEADER_INDEX[POSITION_COLUMN]
 
@@ -24,7 +24,7 @@ def track(path, title, artist='Test', genre='House', bpm=120.0):
 
 class SavedListStoreTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.store = LibraryStore(Path(self.temp.name) / 'library.sqlite')
 
     def tearDown(self):
@@ -73,7 +73,7 @@ class TraktorPlaylistParsingTests(unittest.TestCase):
 <ENTRY><PRIMARYKEY TYPE="TRACK" KEY="E:/:DJ/:Other/:b.mp3"></PRIMARYKEY></ENTRY>
 <ENTRY><PRIMARYKEY TYPE="TRACK" KEY="E:/:DJ/:Break/:a.mp3"></PRIMARYKEY></ENTRY></PLAYLIST></NODE>
 </SUBNODES></NODE></PLAYLISTS></NML>"""
-        with tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR']) as folder:
+        with tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR']) as folder:
             path = Path(folder) / 'collection.nml'
             path.write_text(nml, encoding='utf-8')
             collection = TraktorCollection(path)
@@ -94,8 +94,8 @@ class BrowserGuiTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import SETTINGS_DEFAULT
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         self.settings_path = self.root / 'settings.json'
         settings = copy.deepcopy(SETTINGS_DEFAULT)
@@ -110,8 +110,8 @@ class BrowserGuiTests(unittest.TestCase):
             rows.append(track(self.paths[title], title, artist, genre, bpm))
         self.default_library = pd.DataFrame(rows)
         self.patches = [
-            patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
-            patch('traktor_key_calculator.ui.main_window.DataManager.load_default_data',
+            patch('songselector.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
+            patch('songselector.ui.main_window.DataManager.load_default_data',
                   side_effect=lambda: self.default_library.copy()),
         ]
         for active in self.patches:
@@ -127,8 +127,8 @@ class BrowserGuiTests(unittest.TestCase):
         self.temp.cleanup()
 
     def window(self):
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        window = TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        window = MainWindow()
         self.windows.append(window)
         return window
 
@@ -169,7 +169,7 @@ class BrowserGuiTests(unittest.TestCase):
     def node_mime(node):
         from PyQt5.QtCore import QMimeData
 
-        from traktor_key_calculator.ui.tree_widgets import NODE_MIME
+        from songselector.ui.tree_widgets import NODE_MIME
         mime = QMimeData()
         mime.setData(NODE_MIME, json.dumps(node).encode('utf-8'))
         return mime
@@ -219,7 +219,7 @@ class BrowserGuiTests(unittest.TestCase):
     def test_saved_playlist_keeps_its_order_and_is_shown_in_list_order_by_position(self):
         window = self.window()
         self.add(window, 'two', 'four', 'one')
-        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('Friday set', True)):
+        with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('Friday set', True)):
             window.save_playlist_as()
         window.list_browser.setCurrentItem(window.list_browser.playlists_root.child(0))
         self.assertEqual(self.shown(window), ['two', 'four', 'one'])
@@ -291,7 +291,7 @@ class BrowserGuiTests(unittest.TestCase):
     def test_tracks_dropped_on_a_playlist_in_the_browser_are_added(self):
         from PyQt5.QtCore import QMimeData
 
-        from traktor_key_calculator.ui.tree_widgets import TRACKS_MIME
+        from songselector.ui.tree_widgets import TRACKS_MIME
         window = self.window()
         window.library_store.save_playlist('Set', [])
         window.library_store.save_smartlist('Rules', [])
@@ -318,7 +318,7 @@ class BrowserGuiTests(unittest.TestCase):
         window.set_song_selector_fields([str(self.paths['four'])], SS_Rating=5)
         window.save_smartlist('House', rules + [{'column': 'Rating - Song Selector', 'condition': 'at least (>=)', 'value': '4'}])
         self.assertEqual(self.shown(window), ['four'])  # edited rules apply at once
-        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('Best house', True)):
+        with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('Best house', True)):
             window.rename_saved_list(node)
         self.assertEqual(window.list_source, {'kind': SMARTLIST, 'name': 'Best house'})
         self.assertEqual(self.shown(window), ['four'])
@@ -330,8 +330,8 @@ class BrowserGuiTests(unittest.TestCase):
     def test_names_in_use_are_refused_and_complex_search_saves_a_smartlist(self):
         window = self.window()
         window.save_smartlist('Rules', [])
-        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('rules', True)), \
-                patch('traktor_key_calculator.ui.saved_lists.QMessageBox.warning') as warning:
+        with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('rules', True)), \
+                patch('songselector.ui.saved_lists.QMessageBox.warning') as warning:
             self.assertIsNone(window.save_playlist_as())
         warning.assert_called_once()
         self.assertEqual(window.library_store.saved_list('Rules')['kind'], SMARTLIST)
@@ -342,7 +342,7 @@ class BrowserGuiTests(unittest.TestCase):
             row = dialog.filter_rows[0]
             row.column_combo.setCurrentText('Artist')
             row.value_edit.setText('cat')
-            with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('Cats', True)):
+            with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('Cats', True)):
                 dialog.button_save_smartlist.click()
             dialog.button_cancel.click()
         QTimer.singleShot(0, configure)
@@ -424,7 +424,7 @@ class BrowserGuiTests(unittest.TestCase):
         window.import_foreign_missing(node)  # the file that exists comes in; the view stays
         self.assertEqual(window.list_source, node)
         self.assertEqual(self.shown(window), ['three', 'one', 'not imported'])
-        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('My breaks', True)):
+        with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('My breaks', True)):
             copy = window.copy_foreign_playlist(node)
         self.assertEqual([r['Title'] for r in window.library_store.load_playlist('My breaks')],
                          ['three', 'one', 'not imported'])
@@ -439,7 +439,7 @@ class BrowserGuiTests(unittest.TestCase):
         self.assertIsNone(window.list_source)
 
     def test_rekordbox_playlists_are_listed_shown_loaded_and_copied_like_traktors(self):
-        from traktor_key_calculator.core.rekordbox_library import RekordboxLibrary
+        from songselector.core.rekordbox_library import RekordboxLibrary
         window = self.window()
         browser = window.list_browser
         self.assertTrue(browser.rekordbox_root.isHidden())  # no Rekordbox library: no entry
@@ -467,7 +467,7 @@ class BrowserGuiTests(unittest.TestCase):
         self.assertEqual(self.playlist(window), ['four', 'two'])
         window.import_foreign_missing(node)
         self.assertEqual(self.shown(window), ['four', 'two', 'not imported'])
-        with patch('traktor_key_calculator.ui.saved_lists.QInputDialog.getText', return_value=('From Rekordbox', True)):
+        with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('From Rekordbox', True)):
             copy = window.copy_foreign_playlist(node)
         self.assertEqual([r['Title'] for r in window.library_store.load_playlist('From Rekordbox')],
                          ['four', 'two', 'not imported'])

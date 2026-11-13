@@ -9,13 +9,13 @@ from unittest.mock import patch
 import pandas as pd
 from test_imports import make_collection, tagged_file
 
-from traktor_key_calculator.core.track_import import enrich_ratings
-from traktor_key_calculator.core.traktor_collection import TraktorCollection
+from songselector.core.track_import import enrich_ratings
+from songselector.core.traktor_collection import TraktorCollection
 
 
 class RatingEnrichmentTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         self.track = tagged_file(self.root/'rated.mp3')
         self.nml = self.root/'collection.nml'
@@ -56,8 +56,8 @@ class RatingGuiTests(unittest.TestCase):
         cls.application=QApplication.instance() or QApplication([])
 
     def setUp(self):
-        from traktor_key_calculator.config import SETTINGS_DEFAULT
-        self.temp=tempfile.TemporaryDirectory(dir=os.environ['TRAKTOR_APP_DATA_DIR'])
+        from songselector.config import SETTINGS_DEFAULT
+        self.temp=tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root=Path(self.temp.name)
         self.track=tagged_file(self.root/'rated.mp3')
         self.nml=self.root/'collection.nml'
@@ -70,7 +70,7 @@ class RatingGuiTests(unittest.TestCase):
             settings['Visible column '+side]=['Artist','Title','Original BPM']
             settings['Column sizes '+side]={'Rating':0}
         self.settings_path.write_text(json.dumps(settings))
-        self.patches=[patch('traktor_key_calculator.ui.main_window.SETTINGS_FILE',str(self.settings_path))]
+        self.patches=[patch('songselector.ui.main_window.SETTINGS_FILE',str(self.settings_path))]
         for p in self.patches:
             p.start()
         self.windows=[]
@@ -83,8 +83,8 @@ class RatingGuiTests(unittest.TestCase):
         self.temp.cleanup()
 
     def window(self):
-        from traktor_key_calculator.ui.main_window import TraktorKeyCalculator
-        window=TraktorKeyCalculator()
+        from songselector.ui.main_window import MainWindow
+        window=MainWindow()
         self.windows.append(window)
         return window
 
@@ -95,7 +95,7 @@ class RatingGuiTests(unittest.TestCase):
                              'File_Path':str(self.root/'unrated.mp3'),'Musical_Key_Base':'C','BaseMinorOrMajor':'major'}])
 
     def test_legacy_settings_upgrade_once_and_user_choices_survive_restart(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         window=self.window()
         for tree in (window.candidate_tree,window.playlist_tree):
             self.assertFalse(tree.isColumnHidden(HEADER_INDEX['Rating']))
@@ -109,7 +109,7 @@ class RatingGuiTests(unittest.TestCase):
         self.assertTrue(restored.playlist_tree.isColumnHidden(HEADER_INDEX['Rating']))
 
     def test_existing_library_ratings_visible_in_both_panels_and_searchable(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         window=self.window()
         window.table=window._load_library(self.library())
         window.populate_tree()
@@ -143,16 +143,16 @@ class RatingGuiTests(unittest.TestCase):
         self.assertEqual(window.table.iloc[0]['Rating'],5)
         csv=self.root/'library.csv'
         table.to_csv(csv,index=False)
-        with patch('traktor_key_calculator.ui.main_window.QFileDialog.getOpenFileName',return_value=(str(csv),'')):
+        with patch('songselector.ui.main_window.QFileDialog.getOpenFileName',return_value=(str(csv),'')):
             window.load_csv()
         self.assertEqual(window.table.iloc[0]['Rating'],5)
         window.table=table
-        with patch('traktor_key_calculator.ui.main_window.QFileDialog.getOpenFileName',return_value=(str(self.nml),'')):
+        with patch('songselector.ui.main_window.QFileDialog.getOpenFileName',return_value=(str(self.nml),'')):
             window.choose_traktor_collection()
         self.assertEqual(window.table.iloc[0]['Rating'],5)
 
     def test_imported_tag_rating_takes_precedence_over_collection_rating(self):
-        from traktor_key_calculator.config import HEADER_INDEX
+        from songselector.config import HEADER_INDEX
         window=self.window()
         window.table=window._load_library(self.library())
         window.import_audio_files([str(self.track)],to_playlist=True)
