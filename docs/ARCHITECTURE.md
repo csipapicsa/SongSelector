@@ -214,6 +214,15 @@ use) are set in the *Analysis* menu.
 - **Storage:** float16 + zlib, lossless; about 17–21 % of raw size, because ~87 %
   of the values are exactly 0. A 6-minute track takes ~50 KB. WAL mode lets the
   UI read while the process writes.
+- **Which GPU:** DirectML gets `performance_preference=high_performance` (`DML_OPTIONS`). Without it DirectML takes
+  the first adapter in Windows' per-program order, which for the packaged app on a two-GPU laptop was the integrated
+  Intel UHD (python.exe got the GeForce, which hid the problem in development).
+- **Parallel streams:** several analysis processes can share the job queue (`EmbeddingAnalyzer.workers`, events carry
+  the worker number, crashes are attributed per worker). `auto`: the first process starts, tunes, reports `ready`;
+  on a GPU a second one follows. Measured: one MS CLAP stream ~36 % GeForce load, two ~65 % at the same speed each.
+- **Batch sizes are tuned** once per model, provider and onnxruntime version (`OnnxEmbedder.tune`): ms per window for
+  batch 1, 2, 4, 8, 16 on synthetic audio, stopping when it gets clearly worse or memory runs out; the smallest within
+  5 % of the fastest wins. Stored in `batch_sizes.json` next to the caches; the fixed table is only the fallback.
 - **Device:** CUDA, then DirectML, then CPU, whichever the installed onnxruntime
   supports. The default package is `onnxruntime-directml`. Batch sizes are per model and device
   (`EmbeddingModel.batch_sizes`; CLAP on DirectML is fastest at 4, 8 overflows a 4 GB card), and batches are
@@ -244,6 +253,11 @@ once at the first start without any model, except when `SONGSELECTOR_EMBEDDING_M
 a file it would reject.
 
 ### Free-text search
+
+The **Sounds like** bar (main window) and the *Search by description* window share the same pieces. The bar uses
+`ui/text_search_engine.py` (worker process + each model's track vectors) and shows the result as a List source of
+kind `description` (`list_browser.DESCRIPTION`, an ordered kind like a playlist): `MainWindow.description_positions`
+fills the # column with the ranks. Saved prompts are the setting `Saved prompts`, shared by bar and window.
 
 *Analysis → Search by description* (`ui/text_search_dialog.py`). The prompt goes to a separate **text search
 process** (`ui/text_search_worker.py` → `core.text_search.run_text_encoder`), started on the first query and

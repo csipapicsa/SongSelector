@@ -8,6 +8,23 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [1.1.2] - 2026-11-13
+
+- **The analysis now uses the graphics card it should.** On laptops with two GPUs, DirectML picked the integrated one
+  for the packaged app (Intel UHD), so the GeForce stayed idle. It now asks for the high-performance GPU: Microsoft
+  CLAP 42 ms per window on the GeForce GTX 1650 Ti instead of about 60-250 ms on the Intel graphics.
+- **Two analysis streams on a GPU.** One stream kept the GPU only about a third busy; two nearly double the speed at
+  about two thirds load, leaving headroom for Traktor and the rest of the system. *Analysis -> Parallel analysis*:
+  Automatic (2 on a GPU, 1 on the CPU), or 1-3 streams.
+- **Batch sizes measured on your machine.** Each model's best batch size is measured once on the GPU (a few seconds,
+  the first time) and remembered in `batch_sizes.json` next to the caches, instead of a fixed table from one laptop.
+- **"Sounds like:" bar** above the List: type a description or pick a saved prompt from its dropdown, press Enter, and
+  the List shows the closest tracks, best first in the # column (keys at master tempo, colours, drag to Traktor as
+  usual). The star saves the prompt, the cross deletes it; Top N sets how many. "Show all tracks" goes back. The
+  *Search by description* window is still in the Analysis menu.
+- **Esc on the similarity map** clears the selection: no selected or compared track, no rings, edges, closest
+  matches or card.
+
 ## [1.1.1] - 2026-11-13
 
 - **Embedding analysis up to 15x faster on the GPU.** The analysis process ran in Windows' background mode, which

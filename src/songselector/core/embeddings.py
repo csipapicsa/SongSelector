@@ -189,6 +189,11 @@ def decode(blob, frames, dim=EMBEDDING_DIM):
 # or onnxruntime (CPU only).
 PREFERRED_PROVIDERS = ('CUDAExecutionProvider', 'DmlExecutionProvider', 'CPUExecutionProvider')
 BATCH_SIZES = CNN14.batch_sizes  # windows per model call; each model has its own (core/embedding_models.py)
+# DirectML: the high-performance GPU. Without this DirectML takes the first adapter in Windows' order, which on a
+# laptop with two GPUs is the integrated one for most programs: the packaged app ran Microsoft CLAP on Intel UHD
+# graphics (about 250 ms per window when shared) instead of the GeForce (42 ms).
+DML_OPTIONS = {'performance_preference': 'high_performance', 'device_filter': 'gpu'}
+BATCH_CANDIDATES = (1, 2, 4, 8, 16)
 # Folder with CUDA 12 / cuDNN 9 DLLs to use, e.g. ...\site-packages\torch\lib of a CUDA PyTorch.
 CUDA_DLL_DIR_VARIABLE = 'CUDA_DLL_DIR'  # read as SONGSELECTOR_CUDA_DLL_DIR (see env.py)
 
@@ -208,6 +213,7 @@ class OnnxEmbedder:
                 pass
         available = onnxruntime.get_available_providers()
         providers = [name for name in PREFERRED_PROVIDERS if name in available] or ['CPUExecutionProvider']
+        providers = [(name, DML_OPTIONS) if name == 'DmlExecutionProvider' else name for name in providers]
         try:
             self.session = onnxruntime.InferenceSession(str(model_path), self._options(onnxruntime, threads),
                                                         providers=providers)
@@ -220,6 +226,57 @@ class OnnxEmbedder:
         self.provider = self.session.get_providers()[0]
         self.input_name = self.session.get_inputs()[0].name
         self.batch_size = self.spec.batch_sizes.get(self.provider, 1)
+        self._runtime_version = onnxruntime.__version__
+
+    def tune(self, cache_file):
+        """Use the batch size that is fastest for this model on this machine's GPU, measured once and remembered in
+        cache_file (JSON next to the caches). The fixed table in embedding_models.py came from one laptop; other
+        GPUs differ. Of batch sizes within 5 % of the fastest, the smallest wins: less GPU memory, quicker pausing.
+        Returns the batch size."""
+        import json
+        if self.provider == 'CPUExecutionProvider':
+            return self.batch_size  # the CPU is as fast at any batch size (measured); 1 lets a pause act sooner
+        key = f'{self.spec.id}|{self.provider}|onnxruntime {self._runtime_version}'
+        cache_file = Path(cache_file)
+        try:
+            cache = json.loads(cache_file.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            cache = {}
+        if isinstance(cache.get(key), int):
+            self.batch_size = cache[key]
+            return self.batch_size
+        self.batch_size = cache[key] = self.measure_batch_size()
+        try:
+            temporary = cache_file.with_name(cache_file.name + '.tmp')
+            temporary.write_text(json.dumps(cache, indent=1), encoding='utf-8')
+            os.replace(temporary, cache_file)
+        except OSError:
+            pass  # measured again next time
+        return self.batch_size
+
+    def measure_batch_size(self, candidates=BATCH_CANDIDATES, windows=16):
+        """ms per window for each batch size on synthetic audio; stops when it gets clearly worse or memory runs out."""
+        import time
+        audio = np.random.default_rng(0).uniform(-0.3, 0.3, (max(candidates), self.spec.chunk_samples)).astype(np.float32)
+        timings = {}
+        for size in candidates:
+            try:
+                batch = audio[:size]
+                for _ in range(2):  # the first runs of a new shape include planning
+                    self.session.run(['embedding'], {self.input_name: batch})
+                runs = max(1, windows // size)
+                started = time.perf_counter()
+                for _ in range(runs):
+                    self.session.run(['embedding'], {self.input_name: batch})
+                timings[size] = (time.perf_counter() - started) / (runs * size)
+            except Exception:  # out of GPU memory, for example
+                break
+            if timings[size] > 1.5 * min(timings.values()):
+                break  # clearly worse than a smaller batch: larger ones will not win
+        if not timings:
+            return 1
+        best = min(timings.values())
+        return min(size for size, seconds in timings.items() if seconds <= 1.05 * best)
 
     @staticmethod
     def _options(onnxruntime, threads):
@@ -441,19 +498,22 @@ def _lower_process_priority():
     kernel32.SetPriorityClass(process, BELOW_NORMAL_PRIORITY_CLASS)
 
 
-def run_analysis(models, jobs, events, stop):
+def run_analysis(models, jobs, events, stop, worker=0, tuning_file=None):
     """Entry point of the analysis process.
 
     models: [(model_id, model_path, store_path, factory)], one per enabled model; factory(model_path) builds the
     embedder (picklable: a module-level class, or functools.partial of one). Each track is decoded once and
     resampled for every model whose cache does not have it yet.
 
+    Several of these processes can share one `jobs` queue (worker: their number, sent with every event). The batch
+    size of each model is tuned once per machine (OnnxEmbedder.tune) and remembered in `tuning_file`.
+
     Reads (path_key, file_path) jobs from the `jobs` queue until `stop` is set and reports on `events`:
-      ('ready', provider)        models loaded; provider of the first, e.g. CUDAExecutionProvider
-      ('warning', message)       a model could not be loaded; the others go on
-      ('start', key, file name)  analysing a file (if the process dies now, this file caused it)
-      ('done', key, status)      status: analysed | current | missing | failed | cancelled
-      ('fatal', message)         cannot continue (e.g. no model file could be loaded)
+      ('ready', provider, worker)        models loaded; provider of the first, e.g. DmlExecutionProvider
+      ('warning', message, worker)       a model could not be loaded; the others go on
+      ('start', key, file name, worker)  analysing a file (if the process dies now, this file caused it)
+      ('done', key, status, worker)      status: analysed | current | missing | failed | cancelled
+      ('fatal', message, worker)         cannot continue (e.g. no model file could be loaded)
     """
     _lower_process_priority()
     workers, problem = [], 'no embedding model'
@@ -461,16 +521,18 @@ def run_analysis(models, jobs, events, stop):
         spec = model_spec(model_id)
         try:
             embedder = factory(model_path)
+            if tuning_file and hasattr(embedder, 'tune'):
+                embedder.tune(tuning_file)
             store = EmbeddingStore(store_path, keep_open=True, spec=spec)
             workers.append((spec, embedder, store, store.fingerprints()))
         except Exception as error:
             problem = f'{type(error).__name__}: {error}'
             if len(models) > 1:
-                events.put(('warning', f'{spec.name} could not be loaded ({problem})'))
+                events.put(('warning', f'{spec.name} could not be loaded ({problem})', worker))
     if not workers:
-        events.put(('fatal', problem))
+        events.put(('fatal', problem, worker))
         return
-    events.put(('ready', getattr(workers[0][1], 'provider', 'CPUExecutionProvider')))
+    events.put(('ready', getattr(workers[0][1], 'provider', 'CPUExecutionProvider'), worker))
     while not stop.is_set():
         try:
             key, path = jobs.get(timeout=0.2)
@@ -479,23 +541,23 @@ def run_analysis(models, jobs, events, stop):
         try:
             fingerprint = file_fingerprint(path)
         except OSError:
-            events.put(('done', key, 'missing'))
+            events.put(('done', key, 'missing', worker))
             continue
         todo = [worker for worker in workers if worker[3].get(key) != fingerprint]
         if not todo:
-            events.put(('done', key, 'current'))
+            events.put(('done', key, 'current', worker))
             continue
-        events.put(('start', key, Path(path).name))
+        events.put(('start', key, Path(path).name, worker))
         try:
             audio = load_audio_rates(path, [spec.sample_rate for spec, *_ in todo], stop.is_set)
         except Cancelled:
-            events.put(('done', key, 'cancelled'))
+            events.put(('done', key, 'cancelled', worker))
             break
         except Exception as error:  # undecodable file: remember it, retry only if the file changes
             for _spec, _embedder, store, known in todo:
                 store.save_error(key, fingerprint, f'{type(error).__name__}: {error}')
                 known[key] = fingerprint
-            events.put(('done', key, 'failed'))
+            events.put(('done', key, 'failed', worker))
             continue
         status, cancelled = 'failed', False
         for spec, embedder, store, known in todo:
@@ -509,8 +571,8 @@ def run_analysis(models, jobs, events, stop):
                 store.save_error(key, fingerprint, f'{type(error).__name__}: {error}')
             known[key] = fingerprint
         if cancelled:
-            events.put(('done', key, 'cancelled'))
+            events.put(('done', key, 'cancelled', worker))
             break
-        events.put(('done', key, status))
+        events.put(('done', key, status, worker))
     for _spec, _embedder, store, _known in workers:
         store.close()  # checkpoints the WAL file back into the cache file

@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QActionGroup,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -30,6 +31,7 @@ from PyQt5.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QSlider,
+    QSpinBox,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -87,7 +89,7 @@ from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.coloring_dialog import ColoringDialog
 from songselector.ui.delegates import ColorDotDelegate
 from songselector.ui.embedding_worker import EmbeddingAnalyzer
-from songselector.ui.list_browser import ORDERED_KINDS, ListBrowser, node_label
+from songselector.ui.list_browser import DESCRIPTION, ORDERED_KINDS, ListBrowser, node_label
 from songselector.ui.map_settings_dialog import HoverFieldsDialog
 from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.model_download_dialog import ModelDownloadDialog
@@ -95,6 +97,7 @@ from songselector.ui.music_paths_dialog import MusicPathsDialog
 from songselector.ui.saved_lists import SavedListsMixin
 from songselector.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
 from songselector.ui.text_search_dialog import TextSearchDialog
+from songselector.ui.text_search_engine import TextSearchEngine
 from songselector.ui.theme import DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha, status_style
 from songselector.ui.track_info_dialog import TrackInfoDialog
 from songselector.ui.traktor_watcher import CollectionWatcher
@@ -258,8 +261,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.embedding_analyzer = None
         self.text_search_dialog = None
         self.model_download_dialog = None
+        self.text_search_engine = None
         self._groups_waiting = False  # before the analysis starts: its progress reads it
         self._init_analysis_menu()
+        self._refresh_description_models()
         self.start_embedding_analysis()
         QTimer.singleShot(0, self._offer_model_download)  # after the window is shown
 
@@ -404,6 +409,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.search_bar.textChanged.connect(self.filter_items)
         search_layout.addWidget(self.search_bar)
         right_layout.addLayout(search_layout)
+        right_layout.addLayout(self._build_description_bar())
 
         # -----------------
         # DROPDOWN FOR SEARCH BAR
@@ -1282,6 +1288,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def _embedding_added(self, _key):
         self._map_stale = True  # placed on the map the next time it is opened
+        if self.text_search_engine is not None:
+            self.text_search_engine.mark_stale()
         if self.text_search_dialog is not None:
             self.text_search_dialog.mark_stale()
 
@@ -1403,6 +1411,19 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.model_menu.aboutToShow.connect(self._update_model_menu)
         self._update_model_menu()
 
+        streams = menu.addMenu('Parallel analysis')
+        streams.setToolTipsVisible(True)
+        group = QActionGroup(self)
+        for value, label in (('auto', 'Automatic (2 on a GPU, 1 on the CPU)'), (1, '1 stream'), (2, '2 streams'),
+                             (3, '3 streams')):
+            action = streams.addAction(label)
+            action.setCheckable(True)
+            action.setActionGroup(group)
+            action.setChecked(self.settings.get('Analysis streams', 'auto') == value)
+            action.triggered.connect(lambda _checked, value=value: self.set_analysis_streams(value))
+        streams.setToolTip('How many tracks are analysed at the same time. One stream keeps a GPU busy only part of '
+                           'the time; two nearly double the speed and leave headroom for the rest of the system.')
+
         menu.addSeparator()
         search = menu.addAction('Search by description...')
         search.setShortcut('Ctrl+Shift+F')
@@ -1470,6 +1491,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.status_bar.showMessage(f'{MODELS[model_id].name} is not analysing tracks: switch it on under '
                                         'Analysis -> Embedding models.', 8000)
 
+    def set_analysis_streams(self, value):
+        self.settings['Analysis streams'] = value
+        if self.embedding_analyzer is not None:  # restart with the new number; finished tracks are kept
+            self.embedding_analyzer.stop()
+            self.embedding_analyzer = None
+        self.start_embedding_analysis()
+
     def _groups_wanted(self):
         return self.group_colours_switch.isChecked() or (
             not self.candidate_tree.isColumnHidden(HEADER_INDEX[GROUP_COLUMN]) and bool(self.settings.get('Map grouping')))
@@ -1535,6 +1563,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         enabled = self.enabled_model_ids()
         self.settings['Embedding models'] = [m for m in MODELS if m in enabled or m in model_ids]
         self._update_model_menu()
+        self._refresh_description_models()
         self.start_embedding_analysis()
 
     def _offer_model_download(self):
@@ -1546,6 +1575,125 @@ class MainWindow(SavedListsMixin, QMainWindow):
             return
         self.settings['Model download offered'] = True
         self.open_model_download()
+
+    # -- the description bar: free-text search shown in the List -------------------------------------------
+
+    def _build_description_bar(self):
+        """'Sounds like:' a prompt typed or picked from the saved ones, the CLAP model, how many, save / delete."""
+        layout = QHBoxLayout()
+        label = QLabel('Sounds like:')
+        label.setToolTip('Free-text search with a CLAP model: the List shows the tracks that sound most like the '
+                         'description, best first (# column). "Show all tracks" goes back.')
+        layout.addWidget(label)
+        self.description_box = QComboBox()
+        self.description_box.setEditable(True)
+        self.description_box.setInsertPolicy(QComboBox.NoInsert)
+        self.description_box.addItems(self.settings.get('Saved prompts', []))
+        self.description_box.setCurrentIndex(-1)
+        self.description_box.lineEdit().setPlaceholderText(
+            'describe a sound, e.g. funky breakbeat with a groovy bassline (Enter), or pick a saved prompt')
+        self.description_box.lineEdit().returnPressed.connect(self.describe)
+        self.description_box.activated.connect(lambda _index: self.describe())
+        layout.addWidget(self.description_box, 1)
+        self.description_model = QComboBox()
+        self.description_model.setToolTip('The CLAP model to search with (only tracks analysed with it can be found)')
+        self.description_model.currentIndexChanged.connect(self._description_model_changed)
+        layout.addWidget(self.description_model)
+        self.description_count = QSpinBox()
+        self.description_count.setRange(5, 500)
+        self.description_count.setValue(int(self.settings.get('Description results', 25)))
+        self.description_count.setPrefix('Top ')
+        self.description_count.setToolTip('How many tracks to show')
+        self.description_count.valueChanged.connect(lambda value: self.settings.__setitem__('Description results', value))
+        layout.addWidget(self.description_count)
+        save = QToolButton()
+        save.setText('\u2605')  # star
+        save.setToolTip('Save this prompt (it appears in the dropdown)')
+        save.clicked.connect(self.save_description_prompt)
+        layout.addWidget(save)
+        delete = QToolButton()
+        delete.setText('\u2715')  # multiplication x
+        delete.setToolTip('Delete this prompt from the saved ones')
+        delete.clicked.connect(self.delete_description_prompt)
+        layout.addWidget(delete)
+        self.description_positions = {}  # path_key -> rank of the last results (the List's # column)
+        return layout
+
+    def _refresh_description_models(self):
+        """The model choice lists the CLAP models whose files are there."""
+        if not hasattr(self, 'description_model'):
+            return
+        models = self.searchable_models()
+        chosen = self.description_model.currentData() or self.settings.get('Text search model')
+        self.description_model.blockSignals(True)
+        self.description_model.clear()
+        for spec in models:
+            self.description_model.addItem(spec.name, spec.id)
+        index = self.description_model.findData(chosen)
+        self.description_model.setCurrentIndex(index if index >= 0 else 0)
+        self.description_model.blockSignals(False)
+        self.description_model.setVisible(len(models) > 1)
+        self.description_box.setEnabled(bool(models))
+        if not models:
+            self.description_box.lineEdit().setPlaceholderText(
+                'needs a CLAP model: Analysis -> Download models...')
+
+    def _description_model_changed(self):
+        self.settings['Text search model'] = self.description_model.currentData()
+        if self.list_source and self.list_source['kind'] == DESCRIPTION:
+            self.describe()
+
+    def describe(self):
+        prompt = self.description_box.currentText().strip()
+        model_id = self.description_model.currentData()
+        if not prompt or model_id is None:
+            return
+        if self.text_search_engine is None:
+            self.text_search_engine = TextSearchEngine(self.model_stores, self.models_folder(), parent=self)
+            self.text_search_engine.results.connect(self.show_description_results)
+            self.text_search_engine.status.connect(self._description_status)
+            self.text_search_engine.failed.connect(lambda message: self._description_status(f'Search failed: {message}', 'error'))
+        self._description_model_id = model_id
+        self.text_search_engine.search(model_id, prompt)
+
+    def _description_status(self, text, level='info'):
+        if text:
+            self.status_label.setStyleSheet(status_style(level))
+            self.status_label.setText(text)
+
+    def show_description_results(self, prompt, ranked, seconds):
+        """Show the top tracks in the List, best first; tracks no longer in the library are skipped."""
+        library = {canonical_path(path) for path in self.table['File_Path'] if isinstance(path, str)} \
+            if self.table is not None and 'File_Path' in self.table else set()
+        top = [(key, score) for key, score in ranked if key in library][:self.description_count.value()]
+        self.description_positions = {key: position for position, (key, _score) in enumerate(top, start=1)}
+        self.show_list_source({'kind': DESCRIPTION, 'name': prompt})
+        spec = MODELS[self._description_model_id]
+        analysed, total = self.analysis_coverage(self.model_stores[spec.id])
+        note = f' ({analysed:,} of {total:,} tracks analysed so far)' if total and analysed < total else ''
+        best = f'; best match {top[0][1]:.2f}' if top else ''
+        self._description_status(f'{spec.name}: top {len(top)} for "{prompt}"{best}{note}. '
+                                 f'Text encoded in {seconds * 1000:.0f} ms.', 'ok')
+
+    def save_description_prompt(self):
+        prompt = self.description_box.currentText().strip()
+        prompts = list(self.settings.get('Saved prompts', []))
+        if prompt and prompt not in prompts:
+            self.settings['Saved prompts'] = prompts + [prompt]
+            self.description_box.addItem(prompt)
+            self.description_box.setCurrentIndex(self.description_box.count() - 1)
+            self._description_status(f'Saved the prompt "{prompt}".', 'ok')
+
+    def delete_description_prompt(self):
+        prompt = self.description_box.currentText().strip()
+        index = self.description_box.findText(prompt)
+        if index < 0:
+            return
+        self.settings['Saved prompts'] = [p for p in self.settings.get('Saved prompts', []) if p != prompt]
+        self.description_box.removeItem(index)
+        self.description_box.setCurrentIndex(-1)
+        self.description_box.setEditText('')
+        self._description_status(f'Deleted the prompt "{prompt}".', 'ok')
 
     def _add_keys_to_playlist(self, keys):
         for key in keys:
@@ -1580,6 +1728,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
             # Only CNN14 on its own: the call the app made before there were several models.
             self.embedding_analyzer = (EmbeddingAnalyzer(store, path, parent=self, extra_models=extra, **factory)
                                        if extra or factory else EmbeddingAnalyzer(store, path, parent=self))
+            self.embedding_analyzer.workers = self.settings.get('Analysis streams', 'auto')
+            self.embedding_analyzer.tuning_file = Path(SETTINGS_FILE).with_name('batch_sizes.json')
             self.embedding_analyzer.progress.connect(self._show_embedding_progress)
             self.embedding_analyzer.track_analyzed.connect(self._embedding_added)
             self.embedding_analyzer.failed.connect(self.embedding_label.setText)
@@ -1755,6 +1905,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.text_search_dialog.worker.stop(timeout=1)
         if self.model_download_dialog is not None:
             self.model_download_dialog.close()
+        if self.text_search_engine is not None:
+            self.text_search_engine.stop()
         if hasattr(self, 'similarity_map'):
             self.similarity_map.stop()
         self._save_playlist()

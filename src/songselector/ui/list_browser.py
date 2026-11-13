@@ -25,9 +25,10 @@ COLLECTION_GROUPS = {'artist': ('Artists', 'Artist'), 'album': ('Albums', 'Album
 TRAKTOR = 'traktor'      # a playlist in Traktor's collection.nml
 REKORDBOX = 'rekordbox'  # a playlist in Rekordbox's master.db
 FOREIGN_KINDS = {TRAKTOR: 'Traktor', REKORDBOX: 'Rekordbox'}  # playlists of other programs, read-only
-TRACK_SOURCES = {'all', 'artist', 'album', 'genre', PLAYLIST, SMARTLIST, *FOREIGN_KINDS}
+DESCRIPTION = 'description'  # the results of a typed description (search bar), best match first
+TRACK_SOURCES = {'all', 'artist', 'album', 'genre', PLAYLIST, SMARTLIST, DESCRIPTION, *FOREIGN_KINDS}
 SAVED_KINDS = {PLAYLIST, SMARTLIST}
-ORDERED_KINDS = {PLAYLIST, *FOREIGN_KINDS}  # shown in the List in their order (# column)
+ORDERED_KINDS = {PLAYLIST, DESCRIPTION, *FOREIGN_KINDS}  # shown in the List in their order (# column)
 LOADABLE_KINDS = {PLAYLIST, SMARTLIST, *FOREIGN_KINDS}  # double-click loads into the Playlist tab
 
 
@@ -37,6 +38,8 @@ def node_label(node):
         return 'All Tracks'
     if node['kind'] in FOREIGN_KINDS:
         return f"{FOREIGN_KINDS[node['kind']]} playlist: {node['name']}"
+    if node['kind'] == DESCRIPTION:
+        return f'tracks that sound like "{node["name"]}"'
     return f"{node['kind'].title()}: {node['name']}"
 
 
