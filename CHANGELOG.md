@@ -8,6 +8,17 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [1.1.1] - 2026-11-13
+
+- **Embedding analysis up to 15x faster on the GPU.** The analysis process ran in Windows' background mode, which
+  also lowers memory and GPU scheduling priority: Microsoft CLAP on DirectML took 36 s per 6-minute track instead of
+  2.4 s (model loading 20 s instead of 1 s). It now only gets below-normal CPU priority, so the UI and Traktor still
+  go first for the CPU.
+- **Groups wait for the analysis.** At startup the List's groups were computed from whatever the similarity model
+  had analysed, even 1 track of 3,700, while the analysis was still running. Now they are computed once the model
+  has finished at least 95 % of the library; until then the status line says how far it is, and grouping starts by
+  itself when the analysis is up to date. Opening the map still groups what is there.
+
 ## [1.1.0] - 2026-11-13
 
 - **Two more embedding models: LAION CLAP and Microsoft CLAP**, next to CNN14. CLAP models put sound and text in

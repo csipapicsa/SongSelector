@@ -287,7 +287,8 @@ class MainWindowModelTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR'])
         self.root = Path(self.temp.name)
         settings = copy.deepcopy(SETTINGS_DEFAULT)
-        settings.update({'Traktor collection': '', 'Advanced search': {'enabled': False, 'filters': []}})
+        settings.update({'Traktor collection': '', 'Advanced search': {'enabled': False, 'filters': []},
+                         'Map grouping': 'communities'})
         (self.root / 'settings.json').write_text(json.dumps(settings))
         library = pd.DataFrame([{'Artist': 'A', 'Title': 'T', 'BPM': 128, 'File_Path': str(self.root / 'a.mp3'),
                                  'Musical_Key_Base': 'A', 'BaseMinorOrMajor': 'minor'}])
@@ -305,6 +306,12 @@ class MainWindowModelTests(unittest.TestCase):
         for active in self.patches:
             active.stop()
         self.temp.cleanup()
+
+    def test_groups_wait_until_the_similarity_model_has_analysed_the_library(self):
+        # Grouping is on and the Group column is shown, but no track is analysed yet: nothing to group.
+        self.assertTrue(self.window._groups_waiting)
+        self.assertIn('Groups wait', self.window.status_label.text())
+        self.assertIsNone(self.window.similarity_map.data)  # no map loaded for nothing
 
     def test_models_without_files_cannot_be_switched_on_and_the_map_follows_the_chosen_model(self):
         window = self.window

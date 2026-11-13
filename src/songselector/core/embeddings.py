@@ -419,12 +419,14 @@ class EmbeddingStore:
 
 
 BELOW_NORMAL_PRIORITY_CLASS = 0x4000
-PROCESS_MODE_BACKGROUND_BEGIN = 0x00100000
 
 
 def _lower_process_priority():
-    """Run as a Windows background process: low CPU, disk and memory priority, so
-    the UI, Traktor or a media player reading from the same disk always go first."""
+    """Below-normal CPU priority, so the UI and Traktor always go first for the CPU.
+
+    Not Windows' background mode (PROCESS_MODE_BACKGROUND_BEGIN), which this used until 1.1.0: it also lowers
+    memory and GPU scheduling priority, and made Microsoft CLAP on DirectML 15x slower (36 s instead of 2.4 s for
+    a 6-minute track, model load 20 s instead of 1 s). Reading one file every few seconds needs no low I/O priority."""
     if os.name != 'nt':
         return
     import ctypes
@@ -436,9 +438,6 @@ def _lower_process_priority():
     kernel32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
     kernel32.SetPriorityClass.restype = wintypes.BOOL
     process = kernel32.GetCurrentProcess()
-    # Background mode lowers the I/O priority, which a priority class alone does not.
-    # It resets the class to normal, so set below-normal afterwards.
-    kernel32.SetPriorityClass(process, PROCESS_MODE_BACKGROUND_BEGIN)
     kernel32.SetPriorityClass(process, BELOW_NORMAL_PRIORITY_CLASS)
 
 

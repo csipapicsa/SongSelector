@@ -218,10 +218,14 @@ use) are set in the *Analysis* menu.
   supports. The default package is `onnxruntime-directml`. Batch sizes are per model and device
   (`EmbeddingModel.batch_sizes`; CLAP on DirectML is fastest at 4, 8 overflows a 4 GB card), and batches are
   padded to a fixed shape, because GPU providers re-plan the model for every new input shape.
-- **Background process:** `_lower_process_priority` uses `PROCESS_MODE_BACKGROUND_BEGIN`
-  (very low I/O priority) and then `BELOW_NORMAL_PRIORITY_CLASS`, in that order (background
-  mode resets the class). The ctypes argument types must be declared, or the 64-bit
-  process handle is truncated and the call silently fails.
+- **Priority:** `_lower_process_priority` sets `BELOW_NORMAL_PRIORITY_CLASS`, so the UI and Traktor go first for the
+  CPU. Not Windows' background mode (`PROCESS_MODE_BACKGROUND_BEGIN`, used until 1.1.0): it also lowers memory and
+  GPU scheduling priority and made Microsoft CLAP on DirectML 15x slower (36 s instead of 2.4 s per track). The
+  ctypes argument types must be declared, or the 64-bit process handle is truncated and the call silently fails.
+- **Groups wait for the analysis.** At startup the List's groups (Group column, group colours) are only computed
+  when the similarity model has finished at least 95 % of the library (`_groups_when_ready`); otherwise the status
+  line says how far it is, and the analysis progress triggers the grouping once it is up to date. Opening the map
+  still arranges and groups whatever is analysed.
 - **Disk writes:** the process keeps one connection (`EmbeddingStore(keep_open=True)`) with
   `synchronous=NORMAL`, so it syncs at WAL checkpoints only. UI-side stores open and close a
   connection per call, so no file stays locked.
