@@ -8,6 +8,16 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [1.1.4] - 2026-11-16
+
+- **Top N updates the List right away.** Changing the number next to the description field now shows the new
+  number of tracks immediately. The whole ranking of the last search is kept, so no new search is needed.
+- **Match column.** While the List shows description results, *Match* shows how well each track matches the
+  description: the cosine similarity of the description and the track in the CLAP model (-1 to 1, higher is
+  closer). For music, CLAP scores are mostly between 0.1 and 0.5, so compare tracks within one search rather than
+  between searches or models. The status line shows the range of the shown tracks. The column sits next to `#` in
+  the List and is hidden in the Playlist (*right-click a column header* to show or hide it).
+
 ## [1.1.3] - 2026-11-16
 
 - **Choosing a model analyses what it is missing.** Switching the description search between LAION CLAP and

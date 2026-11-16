@@ -14,6 +14,7 @@ from songselector.config import (
     AUDIO_EXTENSIONS,
     GROUP_COLUMN,
     HEADER_INDEX,
+    MATCH_COLUMN,
     POSITION_COLUMN,
     SS_COLOR_COLUMN,
     SS_RATING_COLUMN,
@@ -23,7 +24,7 @@ from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate
 from songselector.ui.theme import status_style
 
 _NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN,
-                                                   POSITION_COLUMN, GROUP_COLUMN)}
+                                                   POSITION_COLUMN, GROUP_COLUMN, MATCH_COLUMN)}
 # Paths of tracks dragged inside the app (one per line), next to the file URLs other apps use.
 # Also carries tracks whose file is missing.
 TRACKS_MIME = 'application/x-songselector-tracks'
