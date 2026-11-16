@@ -3,6 +3,18 @@
 Known issues, technical debt and ideas, roughly by priority. Move items into the
 CHANGELOG when they ship.
 
+## Next session (Wednesday 2026-11-18)
+
+1.1.4 is merged into main (PR #19) but not tagged or released. `dist\SongSelector-1.1.4.exe` is an older local
+build, made before the last tweaks.
+- [ ] Build a fresh exe (`.\scripts\build.ps1`) and test it on the real library:
+  - [ ] Description search: changing *Top* updates the List without a new search; *All* (one step below 1) lists
+        every analysed track; the field shows only the number, with "Top" as a label next to it.
+  - [ ] *Match* column shows whole percentages next to `#` and sorts correctly; it is hidden in the Playlist.
+  - [ ] Still OK from 1.1.3: switching to LAION CLAP / Microsoft CLAP analyses its missing tracks; the window
+        does not stretch; "no search: show all tracks" in the dropdown.
+- [ ] If it's good: tag `v1.1.4` and release (the workflow publishes the exe).
+
 ## Product
 
 - [ ] Show file details outside the main window (noted as "next step" in the v4 source `info.txt`).
