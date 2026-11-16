@@ -50,6 +50,7 @@ from songselector.config import (
     GROUP_COLUMN,
     HEADER_INDEX,
     HEADER_LABELS,
+    MATCH_COLUMN,
     MAX_BPM,
     MIN_BPM,
     OPEN_KEY_COLOR_MAPPING,
@@ -95,7 +96,7 @@ from songselector.ui.map_settings_dialog import HoverFieldsDialog
 from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.model_download_dialog import ModelDownloadDialog
 from songselector.ui.music_paths_dialog import MusicPathsDialog
-from songselector.ui.saved_lists import SavedListsMixin
+from songselector.ui.saved_lists import SavedListsMixin, match_text
 from songselector.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
 from songselector.ui.text_search_dialog import TextSearchDialog
 from songselector.ui.text_search_engine import TextSearchEngine
@@ -114,6 +115,7 @@ from songselector.ui.tree_widgets import (
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
 GROUPING_MESSAGE = 'Grouping tracks for the List...'
+ALL_RESULTS, MAX_RESULTS = 0, 100000   # Top N of the description search: 0 is All
 NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
 
 
@@ -220,6 +222,20 @@ class MainWindow(SavedListsMixin, QMainWindow):
                 if sizes.get(GROUP_COLUMN, 0) <= 0:
                     sizes[GROUP_COLUMN] = 50
             self.settings['Group column version'] = 1
+
+        # 1.1.4: the description search's similarity column, shown in the List only.
+        if not self.settings.get('Match column version'):
+            visible = self.settings.setdefault('Visible column right', list(HEADER_LABELS))
+            if MATCH_COLUMN not in visible:
+                visible.append(MATCH_COLUMN)
+            left = self.settings.setdefault('Visible column left', list(HEADER_LABELS))
+            if MATCH_COLUMN in left:
+                left.remove(MATCH_COLUMN)
+            for side in ('left', 'right'):
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                if sizes.get(MATCH_COLUMN, 0) <= 0:
+                    sizes[MATCH_COLUMN] = 55
+            self.settings['Match column version'] = 1
 
         
         self.playlist_paths = set()
@@ -604,6 +620,14 @@ class MainWindow(SavedListsMixin, QMainWindow):
         # The # column comes first
         for tree in (self.playlist_tree, self.candidate_tree):
             tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[POSITION_COLUMN]), 0)
+            # the similarity to a searched description, next to its rank
+            tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[MATCH_COLUMN]), 1)
+            tree.headerItem().setToolTip(
+                HEADER_INDEX[MATCH_COLUMN],
+                'How well the track matches the description searched for: cosine similarity of the description '
+                'and the track in the CLAP model, as a percentage (higher is closer).\nFor music, it is mostly '
+                'between 10% and 50%; it is not a probability. Compare tracks within one search, not between '
+                'searches or models.')
 
         # Track counts under the playlist and next to the tabs. Many changes arrive at once
         # (thousands of rows added on load), so they are counted once afterwards.
@@ -1692,12 +1716,15 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.description_model.setToolTip('The CLAP model to search with (only tracks analysed with it can be found)')
         self.description_model.currentIndexChanged.connect(self._description_model_changed)
         layout.addWidget(self.description_model)
+        layout.addWidget(QLabel('Top'))
         self.description_count = QSpinBox()
-        self.description_count.setRange(5, 500)
+        # 0 shows as "All": every analysed track, ranked (one step below 1, or type "All")
+        self.description_count.setRange(ALL_RESULTS, MAX_RESULTS)
+        self.description_count.setSpecialValueText('All')
         self.description_count.setValue(int(self.settings.get('Description results', 25)))
-        self.description_count.setPrefix('Top ')
-        self.description_count.setToolTip('How many tracks to show')
-        self.description_count.valueChanged.connect(lambda value: self.settings.__setitem__('Description results', value))
+        self.description_count.setToolTip('How many tracks to show; "All" (below 1) lists every analysed track, '
+                                          'ranked. Changing it re-cuts the last results, no new search.')
+        self.description_count.valueChanged.connect(self._description_count_changed)
         layout.addWidget(self.description_count)
         save = QToolButton()
         save.setText('\u2605')  # star
@@ -1710,6 +1737,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         delete.clicked.connect(self.delete_description_prompt)
         layout.addWidget(delete)
         self.description_positions = {}  # path_key -> rank of the last results (the List's # column)
+        self.description_scores = {}     # path_key -> similarity to the description (the Match column)
+        # The whole ranking of the last search (library tracks only), so a new Top N needs no new search.
+        self._description_ranked, self._description_prompt, self._description_seconds = [], '', 0.0
         return layout
 
     def _refresh_description_models(self):
@@ -1775,11 +1805,24 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.status_label.setText(text)
 
     def show_description_results(self, prompt, ranked, seconds):
-        """Show the top tracks in the List, best first; tracks no longer in the library are skipped."""
-        library = {canonical_path(path) for path in self.table['File_Path'] if isinstance(path, str)} \
-            if self.table is not None and 'File_Path' in self.table else set()
-        top = [(key, score) for key, score in ranked if key in library][:self.description_count.value()]
+        """Show the top tracks in the List, best first; tracks no longer in the library are skipped. The whole
+        ranking is kept: changing Top N re-cuts it without searching again."""
+        library = self.library_keys()
+        self._description_ranked = [(key, score) for key, score in ranked if key in library]
+        self._description_prompt, self._description_seconds = prompt, seconds
+        self._show_description_top()
+
+    def _description_count_changed(self, value):
+        self.settings['Description results'] = value
+        if self._description_ranked and self.list_source and self.list_source['kind'] == DESCRIPTION:
+            self._show_description_top()
+
+    def _show_description_top(self):
+        prompt, seconds = self._description_prompt, self._description_seconds
+        count = self.description_count.value()
+        top = self._description_ranked[:count] if count != ALL_RESULTS else list(self._description_ranked)
         self.description_positions = {key: position for position, (key, _score) in enumerate(top, start=1)}
+        self.description_scores = dict(top)
         self.show_list_source({'kind': DESCRIPTION, 'name': prompt})
         spec = MODELS[self._description_model_id]
         analysed, total = self.analysis_coverage(self.model_stores[spec.id])
@@ -1789,8 +1832,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
                     and self.model_file(spec) is not None)
             note = (f' ({analysed:,} of {total:,} tracks analysed so far'
                     f'{"; the rest are being analysed" if busy else ""})')
-        best = f'; best match {top[0][1]:.2f}' if top else ''
-        self._description_status(f'{spec.name}: top {len(top)} for "{prompt}"{best}{note}. '
+        best = f'; match {match_text(top[0][1])} to {match_text(top[-1][1])}' if top else ''
+        shown = f'all {len(top):,}' if count == ALL_RESULTS else f'top {len(top):,}'
+        self._description_status(f'{spec.name}: {shown} for "{prompt}"{best}{note}. '
                                  f'Text encoded in {seconds * 1000:.0f} ms.', 'ok')
 
     def save_description_prompt(self):

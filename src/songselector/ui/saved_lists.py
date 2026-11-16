@@ -12,7 +12,7 @@ import sqlite3
 
 from PyQt5.QtWidgets import QDialog, QInputDialog, QLineEdit, QMenu, QMessageBox
 
-from songselector.config import FIELD_LABELS, HEADER_INDEX, POSITION_COLUMN
+from songselector.config import FIELD_LABELS, HEADER_INDEX, MATCH_COLUMN, POSITION_COLUMN
 from songselector.core.library_store import PLAYLIST, SMARTLIST
 from songselector.core.search_filters import active_filters
 from songselector.core.traktor_collection import canonical_path
@@ -32,12 +32,19 @@ from songselector.ui.theme import status_style
 from songselector.ui.tree_widgets import audio_paths, dragged_tracks
 
 POSITION = HEADER_INDEX[POSITION_COLUMN]
+MATCH = HEADER_INDEX[MATCH_COLUMN]
 PATH = HEADER_INDEX['Path']
+
+
+def match_text(score):
+    """A description match as a whole percentage: cosine similarity x 100 (0.312 -> '31%')."""
+    return f'{round(score * 100)}%'
 
 
 class SavedListsMixin:
     list_source = None          # Browser entry the List view shows; None: all tracks
     _source_positions = {}      # playlist shown: canonical path -> position (1, 2, ...)
+    _source_scores = {}         # description results shown: canonical path -> similarity to the description
     _source_rules = ()          # smartlist shown: its active rows
     _source_column = None       # artist/album/genre shown: that column
     _sort_before_source = None  # List sort to go back to after a playlist (sorted by #)
@@ -82,6 +89,7 @@ class SavedListsMixin:
     def _resolve_source(self):
         node = self.list_source
         self._source_positions, self._source_rules, self._source_column = {}, (), None
+        self._source_scores = {}
         if node is None:
             return
         if node['kind'] in COLLECTION_GROUPS:
@@ -89,6 +97,7 @@ class SavedListsMixin:
             return
         if node['kind'] == DESCRIPTION:  # ranks set by the search bar (MainWindow.show_description_results)
             self._source_positions = dict(self.description_positions)
+            self._source_scores = dict(self.description_scores)
             return
         if node['kind'] in FOREIGN_KINDS:
             keys = self._foreign_keys(node)
@@ -128,8 +137,11 @@ class SavedListsMixin:
         tree.setSortingEnabled(False)
         for index in range(tree.topLevelItemCount()):
             item = tree.topLevelItem(index)
-            position = self._source_positions.get(canonical_path(item.text(PATH)))
+            key = canonical_path(item.text(PATH))
+            position = self._source_positions.get(key)
             item.setText(POSITION, str(position) if position else '')
+            score = self._source_scores.get(key)
+            item.setText(MATCH, match_text(score) if score is not None else '')
             shown += position is not None
         tree.setSortingEnabled(True)
         node = self.list_source

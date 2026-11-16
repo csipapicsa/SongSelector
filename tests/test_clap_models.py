@@ -555,6 +555,51 @@ class DescriptionBarTests(WindowCase):
         window.save_description_prompt()  # nor saved as a prompt
         self.assertEqual(window.settings.get('Saved prompts', []), [])
 
+    def test_top_n_recuts_the_last_results_and_the_match_column_shows_the_similarity(self):
+        import pandas as pd
+
+        from songselector.config import HEADER_INDEX, MATCH_COLUMN, POSITION_COLUMN
+        window = self.window
+        paths = [str(self.root / f'{n}.mp3') for n in range(8)]
+        window.table = window._load_library(pd.DataFrame([{'Artist': 'A', 'Title': f'T{n}', 'BPM': 128, 'File_Path': path}
+                                                          for n, path in enumerate(paths)]))
+        window.populate_tree()
+        ranked = [(canonical_path(path), 0.5 - n / 100) for n, path in enumerate(paths)]
+        window._description_model_id = LAION_CLAP.id
+        window.description_count.setValue(5)
+        window.show_description_results('warm pads', ranked, 0.02)
+
+        def shown():
+            rows = {}
+            for index in range(window.candidate_tree.topLevelItemCount()):
+                item = window.candidate_tree.topLevelItem(index)
+                if not item.isHidden():
+                    rows[int(item.text(HEADER_INDEX[POSITION_COLUMN]))] = item.text(HEADER_INDEX[MATCH_COLUMN])
+            return rows
+        self.assertEqual(shown(), {1: '50%', 2: '49%', 3: '48%', 4: '47%', 5: '46%'})
+
+        with patch.object(window, 'describe') as describe:  # no new search, the kept ranking is cut again
+            window.description_count.setValue(7)
+            self.assertEqual(len(shown()), 7)
+            self.assertEqual(shown()[7], '44%')
+            window.description_count.setValue(6)
+            self.assertEqual(len(shown()), 6)
+        describe.assert_not_called()
+        self.assertIn('top 6', window.status_label.text())
+        self.assertEqual(window.description_count.text(), '6')  # the number only; "Top" is a label next to it
+        window.description_count.setValue(0)  # "All": every analysed track, ranked
+        self.assertEqual(window.description_count.text(), 'All')
+        self.assertEqual(len(shown()), 8)
+        self.assertIn('all 8', window.status_label.text())
+        from songselector.ui.tree_widgets import track_sort_key
+        self.assertLess(track_sort_key(HEADER_INDEX[MATCH_COLUMN], '9%'), track_sort_key(HEADER_INDEX[MATCH_COLUMN], '31%'))
+
+        window.show_list_source(None)  # all tracks: no ranks, no scores
+        item = window.candidate_tree.topLevelItem(0)
+        self.assertEqual(item.text(HEADER_INDEX[MATCH_COLUMN]), '')
+        window.description_count.setValue(5)  # not showing results: nothing happens
+        self.assertIsNone(window.list_source)
+
     def test_long_messages_and_prompts_do_not_stretch_the_window(self):
         window = self.window
         window.show()

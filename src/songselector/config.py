@@ -177,6 +177,11 @@ HEADER_INDEX[POSITION_COLUMN] = len(HEADER_LABELS) - 1
 GROUP_COLUMN = 'Group'
 HEADER_LABELS += [GROUP_COLUMN]
 HEADER_INDEX[GROUP_COLUMN] = len(HEADER_LABELS) - 1
+# How well a track matches the description searched for (cosine similarity of the CLAP text and track vectors,
+# -1..1); filled only while the List shows description results. Not a track field.
+MATCH_COLUMN = 'Match'
+HEADER_LABELS += [MATCH_COLUMN]
+HEADER_INDEX[MATCH_COLUMN] = len(HEADER_LABELS) - 1
 
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,
