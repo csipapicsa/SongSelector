@@ -52,7 +52,7 @@ def track_sort_key(column, text):
     text = text.strip()
     if column in _NUMBER_COLUMNS:
         try:
-            number = float(text)
+            number = float(text.rstrip('%'))  # Match: '31%'
         except ValueError:
             number = float('nan')
         return (1, 0.0) if number != number else (0, number)

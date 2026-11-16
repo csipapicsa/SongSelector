@@ -145,9 +145,9 @@ Distances on a 2D map are approximate; the closest-matches list uses the full em
 
 The **Describe a sound:** bar above the List is the quickest way: type, in your own words, what a track should
 sound like (or pick a saved prompt from its dropdown) and press Enter. The List then shows the closest tracks of
-the chosen CLAP model, best first in the `#` column, with their similarity to the description in *Match* (cosine similarity,
-higher is closer; compare within one search). ★ saves the prompt, ✕ deletes it, and *Top N* changes how many
-tracks are shown without searching again. *No search: show all
+the chosen CLAP model, best first in the `#` column, with their similarity to the description in *Match* (cosine similarity as a
+percentage, higher is closer; compare within one search). ★ saves the prompt, ✕ deletes it, and *Top* changes how
+many tracks are shown without searching again (*All* lists every analysed track). *No search: show all
 tracks* at the top of the dropdown (or Enter in an empty field, or *Show all tracks*) goes back. Choosing a model
 that has not analysed the whole library yet switches it on and analyses the rest in the background.
 *Analysis → Search by description…* (Ctrl+Shift+F) opens the same search in its own window, with scores.

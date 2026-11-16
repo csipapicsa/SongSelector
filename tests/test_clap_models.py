@@ -576,16 +576,23 @@ class DescriptionBarTests(WindowCase):
                 if not item.isHidden():
                     rows[int(item.text(HEADER_INDEX[POSITION_COLUMN]))] = item.text(HEADER_INDEX[MATCH_COLUMN])
             return rows
-        self.assertEqual(shown(), {1: '0.500', 2: '0.490', 3: '0.480', 4: '0.470', 5: '0.460'})
+        self.assertEqual(shown(), {1: '50%', 2: '49%', 3: '48%', 4: '47%', 5: '46%'})
 
         with patch.object(window, 'describe') as describe:  # no new search, the kept ranking is cut again
             window.description_count.setValue(7)
             self.assertEqual(len(shown()), 7)
-            self.assertEqual(shown()[7], '0.440')
+            self.assertEqual(shown()[7], '44%')
             window.description_count.setValue(6)
             self.assertEqual(len(shown()), 6)
         describe.assert_not_called()
         self.assertIn('top 6', window.status_label.text())
+        self.assertEqual(window.description_count.text(), '6')  # the number only; "Top" is a label next to it
+        window.description_count.setValue(0)  # "All": every analysed track, ranked
+        self.assertEqual(window.description_count.text(), 'All')
+        self.assertEqual(len(shown()), 8)
+        self.assertIn('all 8', window.status_label.text())
+        from songselector.ui.tree_widgets import track_sort_key
+        self.assertLess(track_sort_key(HEADER_INDEX[MATCH_COLUMN], '9%'), track_sort_key(HEADER_INDEX[MATCH_COLUMN], '31%'))
 
         window.show_list_source(None)  # all tracks: no ranks, no scores
         item = window.candidate_tree.topLevelItem(0)

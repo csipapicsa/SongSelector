@@ -36,6 +36,11 @@ MATCH = HEADER_INDEX[MATCH_COLUMN]
 PATH = HEADER_INDEX['Path']
 
 
+def match_text(score):
+    """A description match as a whole percentage: cosine similarity x 100 (0.312 -> '31%')."""
+    return f'{round(score * 100)}%'
+
+
 class SavedListsMixin:
     list_source = None          # Browser entry the List view shows; None: all tracks
     _source_positions = {}      # playlist shown: canonical path -> position (1, 2, ...)
@@ -136,7 +141,7 @@ class SavedListsMixin:
             position = self._source_positions.get(key)
             item.setText(POSITION, str(position) if position else '')
             score = self._source_scores.get(key)
-            item.setText(MATCH, f'{score:.3f}' if score is not None else '')
+            item.setText(MATCH, match_text(score) if score is not None else '')
             shown += position is not None
         tree.setSortingEnabled(True)
         node = self.list_source
