@@ -467,6 +467,14 @@ class EmbeddingStore:
             rows = connection.execute('SELECT path_key, x, y, z FROM map_layout_3d WHERE model = ?', (model,)).fetchall()
         return {key: (x, y, z) for key, x, y, z in rows}
 
+    def keys(self, model=None):
+        """(analysed, failed): sets of path_keys with an embedding / with an error (no vectors read)."""
+        model = model or self.spec.id
+        with self._open() as connection:
+            rows = connection.execute('SELECT path_key, error IS NULL FROM embeddings WHERE model = ?',
+                                      (model,)).fetchall()
+        return {key for key, ok in rows if ok}, {key for key, ok in rows if not ok}
+
     def counts(self, model=None):
         """(analysed, failed) number of tracks."""
         model = model or self.spec.id

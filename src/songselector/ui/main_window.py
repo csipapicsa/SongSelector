@@ -88,6 +88,7 @@ from songselector.env import getenv
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.coloring_dialog import ColoringDialog
 from songselector.ui.delegates import ColorDotDelegate
+from songselector.ui.elided_label import ElidedLabel
 from songselector.ui.embedding_worker import EmbeddingAnalyzer
 from songselector.ui.list_browser import DESCRIPTION, ORDERED_KINDS, ListBrowser, node_label
 from songselector.ui.map_settings_dialog import HoverFieldsDialog
@@ -113,6 +114,7 @@ from songselector.ui.tree_widgets import (
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
 GROUPING_MESSAGE = 'Grouping tracks for the List...'
+NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
 
 
 class MainWindow(SavedListsMixin, QMainWindow):
@@ -263,6 +265,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.model_download_dialog = None
         self.text_search_engine = None
         self._groups_waiting = False  # before the analysis starts: its progress reads it
+        self._coverage_checked, self._coverage_short = None, []  # coverage check when the analysis finishes
         self._init_analysis_menu()
         self._refresh_description_models()
         self.start_embedding_analysis()
@@ -282,6 +285,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         # Groups for the List (colours or the Group column) without opening the map first; but only once the
         # similarity model has analysed the library: groups of a few tracks are meaningless, and computing them
         # competes with the analysis for nothing.
+        # Which tracks each model has analysed; the models in use (map, description search) analyse what they miss.
+        self._report_model_coverage()
+        self.ensure_models_analysed(self._models_in_use())
         if self._groups_wanted():
             self._groups_when_ready()
 
@@ -563,7 +569,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.source_bar = QWidget()
         source_layout = QHBoxLayout(self.source_bar)
         source_layout.setContentsMargins(0, 0, 0, 0)
-        self.source_label = QLabel('')
+        self.source_label = ElidedLabel('')  # a long prompt or playlist name must not widen the window
         self.source_label.setStyleSheet(status_style('warning', bold=True))
         source_layout.addWidget(self.source_label, 1)
         self.source_clear_button = QPushButton('Show all tracks')
@@ -625,10 +631,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.playlist_tree.header().setSectionsMovable(True)
         self.candidate_tree.header().setSectionsMovable(True)
         # self.status_bar.showMessage("Ready")
-        self.status_label = QLabel("Ready")
+        # Eliding labels: a long message (a file name, a prompt) would otherwise raise the window's minimum width,
+        # stretching the window so that it cannot be made narrower again. The whole text is in the tooltip.
+        self.status_label = ElidedLabel("Ready")
         self.status_label.setStyleSheet(status_style('info'))
         self.status_bar.addPermanentWidget(self.status_label)
-        self.embedding_label = QLabel('')
+        self.embedding_label = ElidedLabel('')
         self.status_bar.addPermanentWidget(self.embedding_label)
 
 
@@ -1409,6 +1417,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             choice.triggered.connect(lambda _checked, model_id=spec.id: self.set_similarity_model(model_id))
             self.similarity_actions[spec.id] = choice
         self.model_menu.aboutToShow.connect(self._update_model_menu)
+        self.similarity_menu.aboutToShow.connect(self._update_model_menu)
         self._update_model_menu()
 
         streams = menu.addMenu('Parallel analysis')
@@ -1453,20 +1462,24 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def _update_model_menu(self):
         """Check marks and availability; a model whose files are missing cannot be switched on."""
         enabled, similarity = self.enabled_model_ids(), self.similarity_model_id()
+        library = self.library_keys()
         for spec in MODELS.values():
             present = self.model_file(spec) is not None
             missing = ', '.join(spec.missing_files(self.models_folder())) if spec is not CNN14 else MODEL_FILE_NAME
+            analysed, _failed, total = self.model_coverage(spec.id, library)
+            coverage = f' ({analysed:,} of {total:,} tracks)' if total and (present or analysed) else ''
             action = self.model_actions[spec.id]
             action.blockSignals(True)
             action.setChecked(spec.id in enabled)
             action.blockSignals(False)
             action.setEnabled(present or spec.id in enabled)
-            action.setText(spec.name if present else f'{spec.name} (model files missing)')
+            action.setText(spec.name + coverage if present else f'{spec.name} (model files missing)')
             tip = spec.description
             if not present:
                 tip += f' Missing in the models folder: {missing}. Get them with Analysis -> Download models...'
             action.setToolTip(tip)
             self.similarity_actions[spec.id].setChecked(spec.id == similarity)
+            self.similarity_actions[spec.id].setText(spec.name + coverage)
             self.similarity_actions[spec.id].setToolTip(spec.description)
 
     def set_model_enabled(self, model_id, on):
@@ -1487,9 +1500,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         elif self._groups_wanted():
             self._groups_when_ready()
         self._refresh_map()
-        if model_id not in self.enabled_model_ids():
-            self.status_bar.showMessage(f'{MODELS[model_id].name} is not analysing tracks: switch it on under '
-                                        'Analysis -> Embedding models.', 8000)
+        self.ensure_models_analysed([model_id])
 
     def set_analysis_streams(self, value):
         self.settings['Analysis streams'] = value
@@ -1502,14 +1513,85 @@ class MainWindow(SavedListsMixin, QMainWindow):
         return self.group_colours_switch.isChecked() or (
             not self.candidate_tree.isColumnHidden(HEADER_INDEX[GROUP_COLUMN]) and bool(self.settings.get('Map grouping')))
 
+    def library_keys(self):
+        """path_keys of the library's tracks, as the embedding caches store them."""
+        if self.table is None or 'File_Path' not in self.table:
+            return set()
+        return {canonical_path(path) for path in self.table['File_Path'] if isinstance(path, str) and path} - {''}
+
+    def model_coverage(self, model_id, library=None):
+        """(analysed, failed, tracks in the library) for one model. Only the library's tracks count: a cache
+        also holds tracks that were removed from the library since."""
+        library = self.library_keys() if library is None else library
+        try:
+            analysed, failed = self.model_stores[model_id].keys()
+        except sqlite3.Error:
+            analysed = failed = set()
+        return len(analysed & library), len(failed & library), len(library)
+
     def analysis_coverage(self, store=None):
         """(tracks the model has finished, analysed or failed; tracks in the library)."""
         store = store or self.similarity_map.store
-        try:
-            analysed, failed = store.counts()
-        except sqlite3.Error:
-            analysed = failed = 0
-        return analysed + failed, (len(self.table) if self.table is not None else 0)
+        analysed, failed, total = self.model_coverage(store.spec.id)
+        return analysed + failed, total
+
+    def _models_in_use(self):
+        """The similarity model and the description search model, if their files are there."""
+        chosen = [self.similarity_model_id()]
+        if hasattr(self, 'description_model') and self.description_model.currentData():
+            chosen.append(self.description_model.currentData())
+        return [model_id for model_id in dict.fromkeys(chosen) if self.model_file(MODELS[model_id]) is not None]
+
+    def _report_model_coverage(self, library=None):
+        """Which tracks each model has analysed: the embedding label's tooltip (the menus show it too)."""
+        library = self.library_keys() if library is None else library
+        lines = []
+        for spec in MODELS.values():
+            analysed, failed, total = self.model_coverage(spec.id, library)
+            if self.model_file(spec) is None and not analysed:
+                continue
+            line = f'{spec.name}: {analysed:,} of {total:,} tracks analysed'
+            if failed:
+                line += f', {failed:,} could not be read'
+            if spec.id not in self.enabled_model_ids():
+                line += ' (off under Analysis -> Embedding models)'
+            lines.append(line)
+        self.embedding_label.set_details('\n'.join(lines))
+        return lines
+
+    def ensure_models_analysed(self, model_ids):
+        """These models were chosen (similarity map, description search): if they miss tracks of the library,
+        analyse those in the background, switching a model on if it was off. Says what is happening."""
+        library = self.library_keys()
+        messages, level, switch_on = [], 'info', []
+        for model_id in model_ids:
+            spec = MODELS[model_id]
+            analysed, failed, total = self.model_coverage(model_id, library)
+            todo = total - analysed - failed
+            if todo <= 0:
+                continue
+            counted = f'{spec.name} has analysed {analysed:,} of {total:,} tracks'
+            if self.model_file(spec) is None:
+                messages.append(f'{counted}; its model files are missing (Analysis -> Download models...)')
+                level = 'warning'
+            elif not self.settings.get('Embedding analysis', True):
+                messages.append(f'{counted}; background analysis is paused (Analysis -> Analyse embeddings '
+                                'in background)')
+                level = 'warning'
+            else:
+                if model_id not in self.enabled_model_ids():
+                    switch_on.append(model_id)
+                messages.append(f'{counted}; analysing the other {todo:,} in the background')
+        if switch_on:
+            enabled = self.enabled_model_ids()
+            self.settings['Embedding models'] = [m for m in MODELS if m in enabled or m in switch_on]
+            self._update_model_menu()
+        if messages:
+            self.start_embedding_analysis()  # takes in newly switched-on models; a running analysis goes on
+            self.status_label.setStyleSheet(status_style(level))
+            self.status_label.setText('. '.join(messages) + '.')
+        self._report_model_coverage(library)
+        return messages
 
     def _groups_when_ready(self):
         """Group the List's tracks now if the similarity model has analysed (nearly) all of them, else wait: the
@@ -1546,6 +1628,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.text_search_dialog = TextSearchDialog(
                 models, self.model_stores, self.models_folder(), self.settings, self._fields_for_key,
                 self._select_in_list, self._add_keys_to_playlist, parent=self)
+            dialog = self.text_search_dialog  # switching its model analyses the tracks that model misses
+            dialog.model_box.currentIndexChanged.connect(lambda _index: self.ensure_models_analysed([dialog.model_id()]))
+        self.ensure_models_analysed([self.text_search_dialog.model_id()])
         self.text_search_dialog.show()
         self.text_search_dialog.raise_()
         self.text_search_dialog.activateWindow()
@@ -1579,21 +1664,29 @@ class MainWindow(SavedListsMixin, QMainWindow):
     # -- the description bar: free-text search shown in the List -------------------------------------------
 
     def _build_description_bar(self):
-        """'Sounds like:' a prompt typed or picked from the saved ones, the CLAP model, how many, save / delete."""
+        """'Describe a sound:' free text typed or picked from the saved prompts, the CLAP model, how many,
+        save / delete. The dropdown's first entry is no search: the List shows all tracks again."""
         layout = QHBoxLayout()
-        label = QLabel('Sounds like:')
-        label.setToolTip('Free-text search with a CLAP model: the List shows the tracks that sound most like the '
-                         'description, best first (# column). "Show all tracks" goes back.')
+        label = QLabel('Describe a sound:')
+        tip = ('Free-text search (AI, CLAP models): type what the tracks should sound like, in your own words, and '
+               'press Enter. The List shows the closest tracks, best first (# column).\n'
+               'Pick "no search" at the top of the dropdown (or press Enter in an empty field) to show all tracks.')
+        label.setToolTip(tip)
         layout.addWidget(label)
         self.description_box = QComboBox()
         self.description_box.setEditable(True)
         self.description_box.setInsertPolicy(QComboBox.NoInsert)
+        self.description_box.setToolTip(tip)
+        # Its width must not follow the longest saved prompt: that raised the window's minimum width.
+        self.description_box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.description_box.setMinimumContentsLength(20)
+        self.description_box.addItem(NO_DESCRIPTION)
         self.description_box.addItems(self.settings.get('Saved prompts', []))
         self.description_box.setCurrentIndex(-1)
         self.description_box.lineEdit().setPlaceholderText(
-            'describe a sound, e.g. funky breakbeat with a groovy bassline (Enter), or pick a saved prompt')
+            'free text, e.g. funky breakbeat with a groovy bassline - Enter searches; or pick a saved prompt')
         self.description_box.lineEdit().returnPressed.connect(self.describe)
-        self.description_box.activated.connect(lambda _index: self.describe())
+        self.description_box.activated.connect(self._description_picked)
         layout.addWidget(self.description_box, 1)
         self.description_model = QComboBox()
         self.description_model.setToolTip('The CLAP model to search with (only tracks analysed with it can be found)')
@@ -1639,14 +1732,34 @@ class MainWindow(SavedListsMixin, QMainWindow):
                 'needs a CLAP model: Analysis -> Download models...')
 
     def _description_model_changed(self):
-        self.settings['Text search model'] = self.description_model.currentData()
+        model_id = self.description_model.currentData()
+        self.settings['Text search model'] = model_id
+        if model_id is not None:
+            self.ensure_models_analysed([model_id])  # its missing tracks are analysed in the background
         if self.list_source and self.list_source['kind'] == DESCRIPTION:
             self.describe()
+
+    def _description_picked(self, index):
+        if index == 0:  # NO_DESCRIPTION
+            self.clear_description()
+        else:
+            self.describe()
+
+    def clear_description(self):
+        """No description search: empty field, and the List shows all tracks if it showed the results."""
+        self.description_box.setCurrentIndex(-1)
+        self.description_box.setEditText('')
+        if self.list_source and self.list_source['kind'] == DESCRIPTION:
+            self.show_list_source(None)
+            self._description_status('No description search: showing all tracks.', 'info')
 
     def describe(self):
         prompt = self.description_box.currentText().strip()
         model_id = self.description_model.currentData()
-        if not prompt or model_id is None:
+        if not prompt or prompt == NO_DESCRIPTION:
+            self.clear_description()
+            return
+        if model_id is None:
             return
         if self.text_search_engine is None:
             self.text_search_engine = TextSearchEngine(self.model_stores, self.models_folder(), parent=self)
@@ -1670,7 +1783,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.show_list_source({'kind': DESCRIPTION, 'name': prompt})
         spec = MODELS[self._description_model_id]
         analysed, total = self.analysis_coverage(self.model_stores[spec.id])
-        note = f' ({analysed:,} of {total:,} tracks analysed so far)' if total and analysed < total else ''
+        note = ''
+        if total and analysed < total:
+            busy = (spec.id in self.enabled_model_ids() and self.settings.get('Embedding analysis', True)
+                    and self.model_file(spec) is not None)
+            note = (f' ({analysed:,} of {total:,} tracks analysed so far'
+                    f'{"; the rest are being analysed" if busy else ""})')
         best = f'; best match {top[0][1]:.2f}' if top else ''
         self._description_status(f'{spec.name}: top {len(top)} for "{prompt}"{best}{note}. '
                                  f'Text encoded in {seconds * 1000:.0f} ms.', 'ok')
@@ -1678,7 +1796,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def save_description_prompt(self):
         prompt = self.description_box.currentText().strip()
         prompts = list(self.settings.get('Saved prompts', []))
-        if prompt and prompt not in prompts:
+        if prompt and prompt != NO_DESCRIPTION and prompt not in prompts:
             self.settings['Saved prompts'] = prompts + [prompt]
             self.description_box.addItem(prompt)
             self.description_box.setCurrentIndex(self.description_box.count() - 1)
@@ -1687,7 +1805,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def delete_description_prompt(self):
         prompt = self.description_box.currentText().strip()
         index = self.description_box.findText(prompt)
-        if index < 0:
+        if index <= 0:  # not saved, or the "no search" entry
             return
         self.settings['Saved prompts'] = [p for p in self.settings.get('Saved prompts', []) if p != prompt]
         self.description_box.removeItem(index)
@@ -1751,7 +1869,23 @@ class MainWindow(SavedListsMixin, QMainWindow):
         text = f'Embeddings{f" ({details})" if details else ""}: {done}/{total}'
         if missing:
             text += f' ({missing} files missing)'
-        text += f' - {current}' if current else (' - up to date' if done == total else '')
+        finished = not current and done == total
+        if finished and self._coverage_checked != (done, total):
+            # Every track came back, but a model that could not be loaded leaves its tracks unanalysed.
+            self._coverage_checked = (done, total)
+            library = self.library_keys()
+            short = []
+            for model_id in self.enabled_model_ids():
+                if self.model_file(MODELS[model_id]) is not None:
+                    analysed, failed, all_tracks = self.model_coverage(model_id, library)
+                    if all_tracks - analysed - failed - missing > 0:
+                        short.append(f'{MODELS[model_id].name} {analysed:,}/{all_tracks:,}')
+            self._coverage_short = short
+            self._report_model_coverage(library)
+        if current:
+            text += f' - {current}'
+        elif finished:
+            text += f' - not analysed: {", ".join(self._coverage_short)}' if self._coverage_short else ' - up to date'
         self.embedding_label.setText(text)
         if self._groups_waiting and done == total:
             self._groups_when_ready()

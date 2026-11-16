@@ -143,16 +143,19 @@ Distances on a 2D map are approximate; the closest-matches list uses the full em
 
 ### Search by description and choosing models
 
-The **Sounds like:** bar above the List is the quickest way: type what a track should sound like (or pick a
-saved prompt from its dropdown) and press Enter. The List then shows the closest tracks of the chosen CLAP
-model, best first in the `#` column; ★ saves the prompt, ✕ deletes it, *Show all tracks* goes back.
+The **Describe a sound:** bar above the List is the quickest way: type, in your own words, what a track should
+sound like (or pick a saved prompt from its dropdown) and press Enter. The List then shows the closest tracks of
+the chosen CLAP model, best first in the `#` column; ★ saves the prompt, ✕ deletes it. *No search: show all
+tracks* at the top of the dropdown (or Enter in an empty field, or *Show all tracks*) goes back. Choosing a model
+that has not analysed the whole library yet switches it on and analyses the rest in the background.
 *Analysis → Search by description…* (Ctrl+Shift+F) opens the same search in its own window, with scores.
 Describe the sound (instruments, textures, energy, mood: *"warm pads, slow and dreamy"*, *"distorted
 acid line, hypnotic"*); *"This audio is a drum and bass song."* style sentences also work well. Save
 prompts you want to repeat, double-click a result to select it in the List, drag results onto Traktor.
 Only tracks already analysed with that model can be found.
 
-*Analysis → Embedding models* sets which models are kept up to date; *Similarity model* sets which one the
+*Analysis → Embedding models* sets which models are kept up to date (each shows how many tracks it has
+analysed); *Similarity model* sets which one the
 map, the closest matches and the groups use. Each model keeps its own map layout. *Parallel analysis* sets how
 many tracks are analysed at once (automatic: 2 on a GPU). On laptops with two GPUs the analysis uses the
 high-performance one, and each model's batch size is measured once on your machine.

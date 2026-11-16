@@ -254,10 +254,18 @@ a file it would reject.
 
 ### Free-text search
 
-The **Sounds like** bar (main window) and the *Search by description* window share the same pieces. The bar uses
+The **Describe a sound** bar (main window) and the *Search by description* window share the same pieces. The bar uses
 `ui/text_search_engine.py` (worker process + each model's track vectors) and shows the result as a List source of
 kind `description` (`list_browser.DESCRIPTION`, an ordered kind like a playlist): `MainWindow.description_positions`
-fills the # column with the ranks. Saved prompts are the setting `Saved prompts`, shared by bar and window.
+fills the # column with the ranks. Saved prompts are the setting `Saved prompts`, shared by bar and window. The
+bar's first entry (`NO_DESCRIPTION`) is not a prompt: it clears the search and shows all tracks.
+
+**Model coverage.** `EmbeddingStore.keys()` returns the analysed and failed path_keys of one model (no vectors), and
+`MainWindow.model_coverage()` intersects them with the library's keys. Whenever a model is chosen (the bar's or the
+search window's model, *Similarity model*, and at startup for the models in use) `ensure_models_analysed()` switches
+a model that misses library tracks on and restarts the analysis with it; the analysis skips what each cache already
+has, so only the missing tracks are decoded. When the analysis reports every track done, the progress re-checks the
+coverage of each enabled model, so a model that failed to load is reported instead of "up to date".
 
 *Analysis → Search by description* (`ui/text_search_dialog.py`). The prompt goes to a separate **text search
 process** (`ui/text_search_worker.py` → `core.text_search.run_text_encoder`), started on the first query and
