@@ -15,7 +15,7 @@ from unittest.mock import patch
 import numpy as np
 import soundfile
 from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QLabel
 
 from songselector.core.embedding_models import CNN14, LAION_CLAP, MODELS, MS_CLAP, model, store_path
 from songselector.core.embeddings import EmbeddingStore, load_audio, load_audio_rates
@@ -335,9 +335,74 @@ class MainWindowModelTests(WindowCase):
         self.assertTrue(action.isEnabled())
         self.assertEqual(window.searchable_models(), [LAION_CLAP])
 
-        window.set_similarity_model(LAION_CLAP.id)
+        with patch.object(window, 'start_embedding_analysis'):  # the stand-in files are not real models
+            window.set_similarity_model(LAION_CLAP.id)
         self.assertIs(window.similarity_map.store, window.model_stores[LAION_CLAP.id])
         self.assertEqual(window.settings['Similarity model'], LAION_CLAP.id)
+
+    def test_store_coverage_counts_analysed_and_failed_tracks(self):
+        store = EmbeddingStore(self.root / 'coverage.sqlite', spec=LAION_CLAP)
+        store.save('a', (1, 1), np.zeros((2, LAION_CLAP.dim), dtype=np.float32))
+        store.save_error('b', (1, 1), 'broken')
+        self.assertEqual(store.keys(), ({'a'}, {'b'}))
+
+    def test_choosing_a_model_that_misses_tracks_switches_it_on_and_analyses_them(self):
+        window = self.window
+        models = self.root / 'models'
+        models.mkdir()
+        for name in LAION_CLAP.files():
+            (models / name).write_bytes(b'x')
+        key = canonical_path(str(self.root / 'a.mp3'))
+        self.assertEqual(window.model_coverage(LAION_CLAP.id), (0, 0, 1))
+        self.assertNotIn(LAION_CLAP.id, window.enabled_model_ids())
+
+        with patch.object(window, 'start_embedding_analysis') as start:
+            window.set_similarity_model(LAION_CLAP.id)
+        start.assert_called()
+        self.assertIn(LAION_CLAP.id, window.enabled_model_ids())  # switched on for its missing track
+        self.assertIn('LAION CLAP has analysed 0 of 1 tracks', window.status_label.text())
+        self.assertIn('analysing the other 1', window.status_label.text())
+        self.assertIn('LAION CLAP: 0 of 1 tracks analysed', window.embedding_label.toolTip())
+
+        # Once the model has the library, choosing it again starts nothing.
+        window.model_stores[LAION_CLAP.id].save(key, (1, 1), np.zeros((1, LAION_CLAP.dim), dtype=np.float32))
+        self.assertEqual(window.model_coverage(LAION_CLAP.id), (1, 0, 1))
+        with patch.object(window, 'start_embedding_analysis') as start:
+            self.assertEqual(window.ensure_models_analysed([LAION_CLAP.id]), [])
+        start.assert_not_called()
+        window._update_model_menu()
+        self.assertIn('1 of 1 tracks', window.similarity_actions[LAION_CLAP.id].text())
+
+    def test_a_paused_analysis_is_not_started_but_says_so(self):
+        window = self.window
+        models = self.root / 'models'
+        models.mkdir()
+        for name in MS_CLAP.files():
+            (models / name).write_bytes(b'x')
+        window.settings['Embedding analysis'] = False
+        with patch.object(window, 'start_embedding_analysis'):
+            messages = window.ensure_models_analysed([MS_CLAP.id])
+        self.assertIn('paused', messages[0])
+
+
+class StatusLabelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_a_long_message_does_not_widen_the_window(self):
+        from songselector.ui.elided_label import MIN_WIDTH, ElidedLabel
+        label = ElidedLabel('short')
+        label.setText('a very long status message about a file ' * 20)
+        self.assertEqual(label.minimumSizeHint().width(), MIN_WIDTH)
+        self.assertTrue(label.text().startswith('a very long'))  # the whole text, not the elided one
+        self.assertIn('a very long', label.toolTip())
+        label.resize(120, 20)
+        label.show()  # a hidden widget gets its resize event only when shown
+        self.assertLess(label.fontMetrics().horizontalAdvance(QLabel.text(label)), 130)
+        label.close()
+        label.set_details('CNN14: 1 of 1 tracks analysed')
+        self.assertIn('CNN14', label.toolTip())
 
 
 
@@ -445,7 +510,7 @@ class GpuUseTests(unittest.TestCase):
 
 
 class DescriptionBarTests(WindowCase):
-    """The 'Sounds like' bar: results in the List (best first), saved prompts."""
+    """The 'Describe a sound' bar: results in the List (best first), saved prompts, no search."""
 
     def test_results_show_in_the_list_in_rank_order_and_prompts_can_be_saved(self):
         from songselector.config import HEADER_INDEX, POSITION_COLUMN
@@ -464,10 +529,55 @@ class DescriptionBarTests(WindowCase):
         window.description_box.setEditText('warm pads')
         window.save_description_prompt()
         self.assertEqual(window.settings['Saved prompts'], ['warm pads'])
-        self.assertEqual(window.description_box.findText('warm pads'), 0)
+        self.assertEqual(window.description_box.findText('warm pads'), 1)  # after the "no search" entry
         window.delete_description_prompt()
         self.assertEqual(window.settings['Saved prompts'], [])
-        self.assertEqual(window.description_box.count(), 0)
+        self.assertEqual(window.description_box.count(), 1)
+
+    def test_the_no_search_entry_shows_all_tracks_again(self):
+        from songselector.ui.main_window import NO_DESCRIPTION
+        window = self.window
+        key = canonical_path(str(self.root / 'a.mp3'))
+        window._description_model_id = LAION_CLAP.id
+        window.show_description_results('warm pads', [(key, 0.5)], 0.02)
+        window.description_box.setEditText('warm pads')
+        self.assertEqual(window.description_box.itemText(0), NO_DESCRIPTION)
+
+        window.description_box.setCurrentIndex(0)
+        window.description_box.activated.emit(0)
+        self.assertIsNone(window.list_source)
+        self.assertEqual(window.description_box.currentText(), '')
+        self.assertIn('showing all tracks', window.status_label.text())
+
+        window.description_box.setEditText(NO_DESCRIPTION)
+        window.delete_description_prompt()  # the entry itself cannot be deleted
+        self.assertEqual(window.description_box.itemText(0), NO_DESCRIPTION)
+        window.save_description_prompt()  # nor saved as a prompt
+        self.assertEqual(window.settings.get('Saved prompts', []), [])
+
+    def test_long_messages_and_prompts_do_not_stretch_the_window(self):
+        window = self.window
+        window.show()
+        self.application.processEvents()
+        before = window.minimumSizeHint().width()
+        long_text = 'a remarkably long description of a deep rolling techno groove with pads ' * 6
+        window.status_label.setText(long_text)
+        window.embedding_label.setText(long_text)
+        window.description_box.setEditText(long_text)
+        window.save_description_prompt()
+        window._description_model_id = LAION_CLAP.id
+        window.show_description_results(long_text, [], 0.02)  # the bar above the List shows the prompt
+        self.application.processEvents()
+        self.assertLessEqual(window.minimumSizeHint().width(), before)
+
+    def test_enter_in_an_empty_field_shows_all_tracks(self):
+        window = self.window
+        key = canonical_path(str(self.root / 'a.mp3'))
+        window._description_model_id = LAION_CLAP.id
+        window.show_description_results('warm pads', [(key, 0.5)], 0.02)
+        window.description_box.setEditText('')
+        window.describe()
+        self.assertIsNone(window.list_source)
 
     def test_without_a_clap_model_the_bar_says_how_to_get_one(self):
         self.assertFalse(self.window.description_box.isEnabled())

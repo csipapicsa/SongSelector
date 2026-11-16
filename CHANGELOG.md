@@ -8,6 +8,24 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [1.1.3] - 2026-11-16
+
+- **Choosing a model analyses what it is missing.** Switching the description search between LAION CLAP and
+  Microsoft CLAP (or choosing a *Similarity model*) now checks how many library tracks that model has analysed. If
+  some are missing, the model is switched on under *Analysis -> Embedding models* and analyses them in the
+  background; the status line says how many it has and how many are coming. At startup the app checks each model's
+  coverage the same way, and the models in use fill their gaps.
+- **Each model's coverage at a glance.** *Embedding models* and *Similarity model* show "N of M tracks" per model,
+  and the tooltip of the analysis progress lists all models. When the analysis finishes but a model is still short
+  (e.g. it could not be loaded), the progress says so instead of "up to date". Counts include only tracks that are
+  in the library.
+- **The window no longer stretches.** A long status message, file name or saved prompt raised the window's minimum
+  width, so the window grew and could not be made narrower again. Long texts are now shortened with "..." (the whole
+  text is in the tooltip), and the description field no longer grows with the longest saved prompt.
+- **"Sounds like:" is now "Describe a sound:"**, with a hint that it takes free text (AI search with the CLAP
+  models). The dropdown's first entry, *no search: show all tracks*, clears the search and shows all tracks again;
+  Enter in an empty field does the same.
+
 ## [1.1.2] - 2026-11-13
 
 - **The analysis now uses the graphics card it should.** On laptops with two GPUs, DirectML picked the integrated one
