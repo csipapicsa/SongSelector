@@ -40,14 +40,14 @@ One PR per block below, in this order; each with tests (a failing test first for
       to the file. Thumbnails cached on disk, loaded in the background for visible rows. *Cover* column, size
       setting, two styles: cropped to the normal row height (top of the image) or square rows (rows without a
       cover keep the same height). Also in the map cards and the closest matches. No new dependency (Qt scales).
-- [ ] **Release:** version 1.2.0 (CHANGELOG `[1.1.4]` becomes `[1.2.0]`), fresh `.\scripts\build.ps1`, selfcheck,
+- [x] **Release:** version 1.2.0 (CHANGELOG `[1.1.4]` becomes `[1.2.0]`), fresh `.\scripts\build.ps1`, selfcheck,
       then on the real library:
-  - [ ] Description search: changing *Top* updates the List without a new search; *All* lists every analysed
+  - [x] Description search: changing *Top* updates the List without a new search; *All* lists every analysed
         track; *Match* shows whole percentages, sorts correctly, is hidden in the Playlist.
-  - [ ] Still OK from 1.1.3: switching to LAION CLAP / Microsoft CLAP analyses its missing tracks; the window
+  - [x] Still OK from 1.1.3: switching to LAION CLAP / Microsoft CLAP analyses its missing tracks; the window
         does not stretch; "no search: show all tracks" in the dropdown.
-  - [ ] Each block A-H above, as described.
-  - [ ] Tag `v1.2.0`; the workflow publishes the exe.
+  - [x] Each block A-H above, as described.
+  - [x] Tag `v1.2.0`; the workflow publishes the exe.
 
 ## Diagnostics (to do; asked 2026-11-17, after 1.2.0)
 
