@@ -44,6 +44,7 @@ from songselector import __version__
 from songselector.config import (
     COLOR_COLUMN_INDEX,
     COLOR_MAPPING_CATEGORY,
+    COMPLEX_SEARCH_COLUMNS,
     COVER_COLUMN,
     DEFAULT_BPM,
     DEFAULT_EMBEDDING_MODEL,
@@ -2285,7 +2286,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def open_advanced_search(self):
         """Open advanced search dialog"""
-        self.advanced_search_dialog = AdvancedSearchDialog(FIELD_LABELS, self,
+        self.advanced_search_dialog = AdvancedSearchDialog(COMPLEX_SEARCH_COLUMNS, self,
                                                            save_smartlist=self.save_smartlist_from_search)
 
         # Restore previous settings

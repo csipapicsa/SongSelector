@@ -12,7 +12,7 @@ import sqlite3
 
 from PyQt5.QtWidgets import QDialog, QInputDialog, QLineEdit, QMenu, QMessageBox
 
-from songselector.config import FIELD_LABELS, HEADER_INDEX, MATCH_COLUMN, POSITION_COLUMN
+from songselector.config import COMPLEX_SEARCH_COLUMNS, HEADER_INDEX, MATCH_COLUMN, POSITION_COLUMN
 from songselector.core.library_store import PLAYLIST, SMARTLIST
 from songselector.core.search_filters import active_filters
 from songselector.core.traktor_collection import canonical_path
@@ -442,7 +442,7 @@ class SavedListsMixin:
             self.save_smartlist(name, rules)
 
     def _smartlist_dialog(self, name, rules):
-        dialog = AdvancedSearchDialog(FIELD_LABELS, self, smartlist=name)
+        dialog = AdvancedSearchDialog(COMPLEX_SEARCH_COLUMNS, self, smartlist=name)
         dialog.set_filters(rules)
         return dialog.saved_filters() if dialog.exec_() == QDialog.Accepted else None
 
