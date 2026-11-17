@@ -66,10 +66,12 @@ from songselector.core.search_filters import NUMERIC_COLUMNS
 from songselector.core.similarity import (
     EDGE_SAME_COLOR,
     EDGE_SAME_RATING,
+    centred_unit,
     connection,
     display_color,
     nearest,
     place_new,
+    raw_vectors,
     track_vectors,
     tsne_layout,
 )
@@ -106,6 +108,8 @@ EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clic
 # length) beside its middle. Edges from one track then fan out in one direction of turn.
 CURVE_BEND = 0.18
 ONLY_LIST_TEXT = 'Map the List only'
+# Tracks selected in the Playlist: amber ring; those the List does not show also get a paler dot.
+PLAYLIST_RING, MARKER_ALPHA = '#ffb000', 120
 ARRANGING, GROUPING = 'Arranging the map', 'Grouping'   # reasons the map's spinner turns
 # The selected track's label prefers the top of its dot, the cards the bottom: they rarely collide to begin with.
 LABEL_CORNERS = (ABOVE_RIGHT, ABOVE_LEFT, BELOW_RIGHT, BELOW_LEFT)
@@ -142,9 +146,28 @@ class MapData:
     vectors: np.ndarray = field(default_factory=lambda: np.zeros((0, 4096), np.float32))
     positions: dict = field(default_factory=dict)                    # path_key -> (x, y)
     positions3d: dict = field(default_factory=dict)                  # path_key -> (x, y, z), 3D view only
+    centre: np.ndarray = None   # mean raw vector of the mapped tracks: more tracks are centred the same way
 
     def __post_init__(self):
         self.row = {key: index for index, key in enumerate(self.keys)}
+
+    def place(self, matrices):
+        """Add tracks that were not mapped (e.g. Playlist tracks on a "Map the List only" map), each next to its most
+        similar mapped tracks, in the same vector space; no new layout. matrices: {path_key: (frames, dim)}."""
+        keys = [key for key in matrices if key not in self.row]
+        if not keys or self.centre is None or not self.keys:
+            return []
+        vectors = centred_unit(raw_vectors([matrices[key] for key in keys]), self.centre)
+        known = self.vectors
+        for positions in (self.positions, self.positions3d):
+            if positions and all(key in positions for key in self.keys):
+                points = place_new(np.array([positions[key] for key in self.keys]), known, vectors)
+                positions.update({key: tuple(point) for key, point in zip(keys, points)})
+        self.vectors = np.vstack([known, vectors])
+        for key in keys:
+            self.row[key] = len(self.keys)
+            self.keys.append(key)
+        return keys
 
 
 def _layout(keys, vectors, stored, dims, should_stop):
@@ -175,7 +198,7 @@ def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=Fa
     than the whole library does. Computed fresh and not stored: the library's layout stays."""
     matrices = store.load_many() if only is None else store.load_many(only)
     keys = sorted(matrices)
-    vectors = track_vectors([matrices[key] for key in keys])
+    vectors, centre = track_vectors([matrices[key] for key in keys], with_centre=True)
     stored = {} if rearrange or only is not None else store.load_layout()
     positions = _layout(keys, vectors, stored, 2, should_stop)
     if positions is None:
@@ -190,7 +213,7 @@ def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=Fa
             return None
         if only is None and positions3d != stored:
             store.save_layout_3d(positions3d)
-    return MapData(keys, vectors, positions, positions3d)
+    return MapData(keys, vectors, positions, positions3d, centre)
 
 
 def shown_fields(fields, names):
@@ -533,6 +556,10 @@ class SimilarityMapWidget(QWidget):
         # A track dropped on the map that the list does not show (e.g. a playlist track):
         # shown and selected anyway, so its closest matches can be explored. (key, fields)
         self.reference = None
+        # Tracks selected in the Playlist: {path_key: {column: text}}, ringed amber. Those the List does not show
+        # (markers) are shown anyway, dimmed with a dashed ring, but take no part in closest matches and edges.
+        self.highlighted = {}
+        self._markers = set()
         # key -> {column: text} for any library or playlist track; set by the main window.
         self.fields_provider = lambda key: None
         # path_keys of the playlist tracks (set by the main window): italic in the closest matches.
@@ -828,6 +855,7 @@ class SimilarityMapWidget(QWidget):
         first = self.data is None or self._fit_next
         self._fit_next = False
         self.data = result
+        self._place_highlighted()  # Playlist tracks the new map does not contain
         self._rebuild_dots()
         if first:
             self.fit()
@@ -919,8 +947,12 @@ class SimilarityMapWidget(QWidget):
 
     def _dot_colour(self, key, fields):
         if not self.groups:
-            return COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR
-        return group_colour(self.groups.get(key, -1))
+            colour = QColor(COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR)
+        else:
+            colour = QColor(group_colour(self.groups.get(key, -1)))
+        if key in self._markers:
+            colour.setAlpha(MARKER_ALPHA)
+        return colour
 
     def _group_text(self, key):
         """'Group 3' while grouping is on (1 = largest), else ''."""
@@ -946,6 +978,40 @@ class SimilarityMapWidget(QWidget):
         self.fields = dict(self.listed)
         if self.reference is not None:
             self.fields.setdefault(*self.reference)
+        self._markers = {key for key in self.highlighted if key not in self.fields}
+        for key in self._markers:
+            self.fields[key] = self.highlighted[key]
+
+    def set_highlighted(self, fields):
+        """Show these tracks (the Playlist's selection, {path_key: {column: text}}) on the map, also if the List does
+        not show them. On a "Map the List only" map, tracks it does not contain are placed next to their most similar
+        tracks first."""
+        if fields == self.highlighted:
+            return
+        self.highlighted = dict(fields)
+        placed = self._place_highlighted()
+        self._merge_reference()
+        if self.data is None:
+            return
+        if placed:
+            self._rebuild_dots()  # also refreshes
+        else:
+            self._refresh()
+
+    def _place_highlighted(self):
+        """Add highlighted tracks that are analysed but not on the map yet; True if any were added."""
+        if self.data is None:
+            return False
+        matrices = {}
+        for key in self.highlighted:
+            if key not in self.data.row:
+                try:
+                    matrix = self.store.load(key)
+                except sqlite3.Error:
+                    matrix = None
+                if matrix is not None:
+                    matrices[key] = matrix
+        return bool(self.data.place(matrices))
 
     def drop_paths(self, paths):
         """Select the first dropped track that is on the map (analysed)."""
@@ -1117,12 +1183,16 @@ class SimilarityMapWidget(QWidget):
             shown += 1
             dot.setBrush(QBrush(self._dot_colour(key, fields)))
             self._outline(key)
-        missing = len(self.fields) - shown
+        missing = len(self.fields) - shown - len([key for key in self._markers if key not in self.dots])
         if self.only is None:
             note = f'; {missing} listed tracks are not analysed yet' if missing > 0 else ''
         else:
             note = ' (only the tracks the List shows)' + \
                 (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '')
+        if self.highlighted:
+            on_map = sum(1 for key in self.highlighted if key in self.dots)
+            note += (f'; {on_map} of {len(self.highlighted)} selected Playlist tracks shown (amber'
+                     + (', dashed: not in the List' if self._markers else '') + ')')
         self._base_status = (f'{shown} tracks on the map' + note +
                              '. Scroll: zoom, drag background: move, drag dot: file to Traktor, '
                              'hover: details, click: closest matches, Ctrl+click: compare with the selected track.')
@@ -1335,6 +1405,12 @@ class SimilarityMapWidget(QWidget):
         elif key in self.match_keys:
             dot.setPen(QPen(QColor(MATCH_RING), 2.5))
             dot.setZValue(3 + depth)
+        elif key in self.highlighted:
+            pen = QPen(QColor(PLAYLIST_RING), 3)
+            if key in self._markers:
+                pen.setStyle(Qt.DashLine)  # not in the List: shown only because it is selected in the Playlist
+            dot.setPen(pen)
+            dot.setZValue(2.5 + depth)
         else:
             dot.setPen(QPen(QColor(20, 20, 20, 160), 1))
             dot.setZValue(1 + depth)
@@ -1365,7 +1441,8 @@ class SimilarityMapWidget(QWidget):
         Tracks are grouped by tempo-adjusted Camelot key, colour and rating, so matches are
         looked up instead of comparing every pair (thousands of tracks stay fast).
         """
-        visible = [key for key, dot in self.dots.items() if dot.isVisible()]
+        visible = [key for key, dot in self.dots.items()
+                   if dot.isVisible() and (key not in self._markers or key == self.selected_key)]
         if sources is None:
             sources = visible if self.all_edges.isChecked() else [self.selected_key]
         shown = set(visible)
@@ -1504,7 +1581,7 @@ class SimilarityMapWidget(QWidget):
         if self.data is None or self.selected_key not in self.data.row:
             return
         visible = [self.data.row[key] for key, dot in self.dots.items()
-                   if dot.isVisible() and key in self.data.row]
+                   if dot.isVisible() and key in self.data.row and key not in self._markers]
         source = self.fields.get(self.selected_key, {})
         on_playlist = self.playlist_keys()
         added = 0

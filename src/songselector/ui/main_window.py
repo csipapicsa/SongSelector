@@ -299,6 +299,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.similarity_map.request_add_to_playlist.connect(self._map_add_to_playlist)
         self.similarity_map.request_context_menu.connect(self._map_context_menu)
         self.similarity_map.selected.connect(self._select_in_list)
+        self.playlist_tree.itemSelectionChanged.connect(self._highlight_playlist_selection)
         self.similarity_map.fields_provider = self._fields_for_key
         self.similarity_map.playlist_keys = lambda: {canonical_path(path) for path in self.playlist_paths}
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
@@ -1344,6 +1345,17 @@ class MainWindow(SavedListsMixin, QMainWindow):
                 fields[canonical_path(item.text(HEADER_INDEX['Path']))] = \
                     {name: item.text(column) for column, name in enumerate(columns)}
         self.similarity_map.set_tracks(fields)
+        self._highlight_playlist_selection()
+
+    def _highlight_playlist_selection(self):
+        """The tracks selected in the Playlist are shown on the map (amber), even if the List does not show them."""
+        if not self.map_visible():
+            return
+        columns = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
+        fields = {canonical_path(item.text(HEADER_INDEX['Path'])): {name: item.text(column)
+                                                                     for column, name in enumerate(columns)}
+                  for item in self.playlist_tree.selectedItems()}
+        self.similarity_map.set_highlighted(fields)
 
     def _fields_for_key(self, key):
         """Table texts of a track in the library list (also hidden rows) or the playlist."""

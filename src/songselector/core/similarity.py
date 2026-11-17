@@ -17,14 +17,28 @@ import numpy as np
 PERPLEXITY = 30.0
 
 
-def track_vectors(matrices):
-    """(n_tracks, 4096) vectors from a list of (frames, 2048) embedding matrices."""
-    if not matrices:
-        return np.zeros((0, 4096), dtype=np.float32)
-    raw = np.stack([np.concatenate([m.mean(0), m.std(0)]) for m in (np.asarray(x, np.float32) for x in matrices)])
-    centred = raw - raw.mean(0)
+def raw_vectors(matrices):
+    """(n_tracks, 2 * dim) mean and std of each (frames, dim) embedding matrix, not yet centred."""
+    return np.stack([np.concatenate([m.mean(0), m.std(0)]) for m in (np.asarray(x, np.float32) for x in matrices)])
+
+
+def centred_unit(raw, centre):
+    """Raw vectors minus `centre` (the mean of the tracks a map was built from), at unit length."""
+    centred = raw - centre
     norms = np.linalg.norm(centred, axis=1, keepdims=True)
     return (centred / np.where(norms == 0, 1, norms)).astype(np.float32)
+
+
+def track_vectors(matrices, with_centre=False):
+    """(n_tracks, 4096) vectors from a list of (frames, 2048) embedding matrices: centred on these tracks, unit
+    length. with_centre: also return the centre, to place more tracks later in the same space (centred_unit)."""
+    if not matrices:
+        empty = np.zeros((0, 4096), dtype=np.float32)
+        return (empty, None) if with_centre else empty
+    raw = raw_vectors(matrices)
+    centre = raw.mean(0)
+    vectors = centred_unit(raw, centre)
+    return (vectors, centre) if with_centre else vectors
 
 
 def nearest(vectors, index, count=10, among=None):

@@ -139,6 +139,7 @@ filtered now, so narrow the List first to explore one style.
 | Ctrl+click a dot | Compare it with the selected track (card, mix type, similarity); Ctrl+click it again or on empty space to stop |
 | Esc | First stops the comparison, then clears the selection |
 | *Closest matches* | *all*; *harmonic only* (plus tracks without a key); or *Edges selection*: only the relations checked under *Edges* |
+| Select tracks in the Playlist | Shown on the map with an amber ring, even if the List filters them out (dashed) |
 | *Map the List only* | Map and group just the tracks the List shows; follows the List as it changes |
 | *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
 
