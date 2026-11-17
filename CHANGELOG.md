@@ -17,6 +17,12 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Saving the library writes only what changed.** Every save (an import, a removal, a refresh) used to rewrite
+  all tracks and the whole list order of `library.sqlite`. Now unchanged tracks and list positions are not written
+  at all, and the file uses SQLite's WAL journal (fewer disk syncs; still one file between saves). On a 3,400-track
+  library on a SATA SSD under load: 0.13 s instead of 2.5-5.5 s per save.
+- **Importing or removing a few tracks no longer rebuilds the List.** Only their rows are added, redrawn or taken
+  out: importing one file takes about 0.7 s instead of 2 s on the same library.
 - **Playlist tracks on the map.** Tracks selected in the Playlist get an amber ring on the map. If the List
   filters them out, they are shown anyway (paler, dashed ring) without changing the List's closest matches or
   edges; click one to see its closest matches in the List. With *Map the List only*, a selected Playlist track is

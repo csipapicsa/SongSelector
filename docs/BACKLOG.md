@@ -22,7 +22,7 @@ One PR per block below, in this order; each with tests (a failing test first for
       edit). Save only the changed row; file write + re-read on a worker thread; row shows "Saving..." and reverts
       with an error if it fails; edits of one file run in order. Reusable "small background update" helper.
       *Edit track info*: the path is selectable.
-- [ ] **F2 (follow-up, not required for 1.2.0).** Imports, *Remove from library* and *Delete duplicates* still save
+- [x] **F2 (follow-up, done in 1.2.0).** Imports, *Remove from library* and *Delete duplicates* still save
       the whole library on the UI thread (2.5-5 s on the library's SSD under load, measured 2026-11-17). Move them to
       `BackgroundWriter`: append / delete only the changed rows, coalesce a burst of saves into one.
 - [x] **E. Busy indicator.** One `BusySpinner` widget (runs only while busy) next to: analysis progress, map
@@ -175,7 +175,7 @@ One PR per block below, in this order; each with tests (a failing test first for
       list from SQLite is only ~0.05 s. Options: QTreeView with a model instead of QTreeWidget items;
       cache the NML index keyed by the file's mtime.
 - [ ] `_rows_by_path` uses `DataFrame.iterrows` (~0.5 s on 5k rows); use vectorised lookups.
-- [ ] Saving the library list after each import rewrites all 5k tracks (~0.2 s); upsert only the
+- [x] (1.2.0, F2) Saving the library list after each import rewrites all 5k tracks (~0.2 s); upsert only the
       changed tracks and rewrite only the list order.
 
 ## Distribution to other users

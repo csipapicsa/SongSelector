@@ -141,6 +141,11 @@ class LibraryStore:
     def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path)
+        # WAL + synchronous=NORMAL (as the embedding caches): a commit appends to the WAL and syncs to disk only at
+        # checkpoints, instead of a journal file plus several syncs per commit; still crash-safe. The WAL is merged
+        # back and removed when the last connection closes, so library.sqlite stays one file.
+        connection.execute('PRAGMA journal_mode=WAL')
+        connection.execute('PRAGMA synchronous=NORMAL')
         connection.executescript(_SCHEMA)
         self._migrate(connection)
         return connection
@@ -195,10 +200,13 @@ class LibraryStore:
             rows.append((key, *columns, json.dumps(extra, ensure_ascii=False), now, now))
         names = ', '.join(TRACK_COLUMNS.values())
         placeholders = ', '.join('?' * (len(TRACK_COLUMNS) + 4))
-        updates = ', '.join(f'{column}=excluded.{column}' for column in TRACK_COLUMNS.values()
-                            if column not in USER_COLUMNS.values())
+        kept = [column for column in TRACK_COLUMNS.values() if column not in USER_COLUMNS.values()] + ['extra']
+        updates = ', '.join(f'{column}=excluded.{column}' for column in kept)
+        # A track whose values did not change is not written at all (not even updated_at): saving a list of
+        # thousands of tracks after one change then writes only that track's page, not the whole file.
+        unchanged = f'({", ".join(kept)}) IS NOT ({", ".join("excluded." + column for column in kept)})'
         sql = (f'INSERT INTO tracks (path_key, {names}, extra, added_at, updated_at) VALUES ({placeholders}) '
-               f'ON CONFLICT(path_key) DO UPDATE SET {updates}, extra=excluded.extra, updated_at=excluded.updated_at')
+               f'ON CONFLICT(path_key) DO UPDATE SET {updates}, updated_at=excluded.updated_at WHERE {unchanged}')
         with closing(self._connect()) as connection, connection:
             connection.executemany(sql, rows)
         return len(rows)
@@ -263,10 +271,18 @@ class LibraryStore:
         records = list(records)
         self.upsert_tracks(records)
         keys = [canonical_path(record.get('File_Path')) for record in records]
+        new = {position: key for position, key in enumerate(keys) if key}
         with closing(self._connect()) as connection, connection:
-            connection.execute('DELETE FROM list_tracks WHERE list_name = ?', (name,))
-            connection.executemany('INSERT INTO list_tracks VALUES (?, ?, ?)',
-                                   [(name, position, key) for position, key in enumerate(keys) if key])
+            # Only the positions that changed are written: adding a track at the end writes one row, an unchanged
+            # list nothing (it used to delete and insert every row on each save).
+            old = dict(connection.execute('SELECT position, path_key FROM list_tracks WHERE list_name = ?', (name,)))
+            known = connection.execute('SELECT 1 FROM lists WHERE name = ?', (name,)).fetchone() is not None
+            if new == old and known:
+                return
+            connection.executemany('DELETE FROM list_tracks WHERE list_name = ? AND position = ?',
+                                   [(name, position) for position in old if position not in new])
+            connection.executemany('INSERT OR REPLACE INTO list_tracks VALUES (?, ?, ?)',
+                                   [(name, position, key) for position, key in new.items() if old.get(position) != key])
             connection.execute('INSERT OR REPLACE INTO lists VALUES (?, ?)', (name, _now()))
 
     def load_list(self, name):
