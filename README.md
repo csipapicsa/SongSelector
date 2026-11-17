@@ -51,6 +51,7 @@ their libraries automatically, and answers three questions:
 - Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons
 - Own *Rating* and *Color* per track, independent of Traktor
 - Cover art in the List and Playlist (embedded, or cover.jpg / folder.jpg next to the file), cropped to the row or in square rows
+- Speed change to the master tempo per track (+6.2%); *View -> Always on top*
 - Dark and light theme
 
 ## Engineering

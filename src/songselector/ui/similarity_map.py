@@ -242,6 +242,12 @@ def field_html(name, text):
     return escape(text)
 
 
+def track_name(fields):
+    """'Artist - Title', or just the one that is filled in (a track without an artist tag is not ' - Title')."""
+    parts = (str(fields.get('Artist') or '').strip(), str(fields.get('Title') or '').strip())
+    return ' - '.join(part for part in parts if part) or os.path.basename(str(fields.get('Path') or ''))
+
+
 def fields_table(fields, names):
     return ('<table cellspacing="0" cellpadding="1">' +
             ''.join(f'<tr><td style="color:#9aa0a6; padding-right:8px"><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
@@ -1358,7 +1364,7 @@ class SimilarityMapWidget(QWidget):
         relation = self._relation_html(key)
         group = f'<br>{self._group_text(key)}' if self.groups else ''
         return (self._cover_html(fields, CARD_COVER)
-                + f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+                + f'<b>{escape(track_name(fields))}</b><br>'
                 f'<span style="color:#9aa0a6">{escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM</span>'
                 + (f'<br>{relation}' if relation else '') + group
                 + fields_table(fields, self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)))
@@ -1408,7 +1414,7 @@ class SimilarityMapWidget(QWidget):
             self.details.setText('Click a track on the map.')
             return
         key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
-        self.label_text.setText(f"{fields.get('Artist', '')} - {fields.get('Title', '')}\n"
+        self.label_text.setText(f"{track_name(fields)}\n"
                                 f"{key_now} at master tempo, {fields.get('Original BPM', '')} BPM")
         self.label.set_corner(ABOVE_RIGHT)
         self.label.setPos(self.dots[self.selected_key].pos())
@@ -1421,7 +1427,7 @@ class SimilarityMapWidget(QWidget):
                 if self.reference is not None and self.reference[0] == self.selected_key else '')
         group = f'<br>{self._group_text(self.selected_key)}' if self.groups else ''
         self.details.setText(f'{note}{self._cover_html(fields, DETAILS_COVER)}'
-                             f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+                             f'<b>{escape(track_name(fields))}</b><br>'
                              f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM{group}'
                              f'<table cellspacing="4">{rows}</table>')
 

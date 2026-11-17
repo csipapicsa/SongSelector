@@ -186,6 +186,10 @@ HEADER_INDEX[MATCH_COLUMN] = len(HEADER_LABELS) - 1
 COVER_COLUMN = 'Cover'
 HEADER_LABELS += [COVER_COLUMN]
 HEADER_INDEX[COVER_COLUMN] = len(HEADER_LABELS) - 1
+# How much faster (+) or slower (-) the track plays at the master tempo: '+6.2%'. Not a track field.
+SPEED_COLUMN = 'Speed change'
+HEADER_LABELS += [SPEED_COLUMN]
+HEADER_INDEX[SPEED_COLUMN] = len(HEADER_LABELS) - 1
 
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,
