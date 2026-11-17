@@ -124,13 +124,15 @@ def _check_model_download():
             files={'check.bin':(len(data),hashlib.sha256(data).hexdigest())}
             model_download.download('check.bin',folder,f'http://127.0.0.1:{server.server_port}/',files)
             assert Path(folder,'check.bin').read_bytes()==data
-            if os.environ.get('SONGSELECTOR_VERIFY_DOWNLOAD')=='1':
+            if os.environ.get('SONGSELECTOR_VERIFY_DOWNLOAD')=='1' and model_download.BASE_URL:
                 for name in ('clap-laion-tokenizer.json','clap-ms-tokenizer.json'):
                     model_download.download(name,folder)
                 return 'ok, local and GitHub (tokenizer files)'
     finally:
         server.shutdown()
         server.server_close()
+    if not model_download.BASE_URL:
+        return 'ok (local; there is no public model release to fetch from)'
     return 'ok (local; set SONGSELECTOR_VERIFY_DOWNLOAD=1 to fetch from GitHub too)'
 
 

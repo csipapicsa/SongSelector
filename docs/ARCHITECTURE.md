@@ -256,14 +256,18 @@ use) are set in the *Analysis* menu.
 
 ### Model download
 
-`core/model_download.py` fetches model files from the GitHub release `models-v1` (`BASE_URL`); `FILES` holds each
-file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
+The model weights are not redistributed (decided 2026-11-17), so there is no public model release and `BASE_URL`
+in `core/model_download.py` is empty: *Analysis -> Get models...* (`ui/model_download_dialog.py`) then lists which
+models are installed and explains how to build the missing ones with the export scripts. If the setting
+`Model download URL` points to a web folder serving the files, the same window downloads them as below.
+
+`core/model_download.py` fetches model files from that folder; `FILES` holds each file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
 the server ignores the range), and renames it only when the hash matches; a mismatch deletes the part file, so bad
 data is never resumed. `ui/model_download_dialog.py` runs it in a thread (one checkbox per model, progress, Stop)
 and reports the complete models; the main window switches them on and restarts the analysis. The window is offered
 once at the first start without any model, except when `SONGSELECTOR_EMBEDDING_MODEL=none` (tests, verification).
-`scripts/publish_models.ps1` checks exported files against `FILES` before publishing, so the app can never download
-a file it would reject.
+`scripts/publish_models.ps1` checks exported files against `FILES` (its `-DryRun` is useful on its own to check a
+local export); it can publish them as a release, which is not done for this project.
 
 ### Free-text search
 

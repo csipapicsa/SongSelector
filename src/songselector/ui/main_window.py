@@ -76,6 +76,7 @@ from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, OnnxEm
 from songselector.core.key_calculator import KeyCalculator
 from songselector.core.key_formats import parse_bpm, parse_key
 from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
+from songselector.core.model_download import BASE_URL
 from songselector.core.rekordbox_library import RekordboxLibrary, discover_library
 from songselector.core.rekordbox_library import signature as rekordbox_signature
 from songselector.core.search_filters import active_filters, matches_condition
@@ -1692,7 +1693,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.embedding_toggle.setCheckable(True)
         self.embedding_toggle.setChecked(self.settings.get('Embedding analysis', True))
         self.embedding_toggle.toggled.connect(self.set_embedding_analysis_enabled)
-        menu.addAction('Download models...').triggered.connect(self.open_model_download)
+        menu.addAction('Get models...').triggered.connect(self.open_model_download)
 
         # Which models are kept up to date, and which one the map, closest matches and groups use.
         self.model_menu = menu.addMenu('Embedding models')
@@ -1772,7 +1773,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             action.setText(spec.name + coverage if present else f'{spec.name} (model files missing)')
             tip = spec.description
             if not present:
-                tip += f' Missing in the models folder: {missing}. Get them with Analysis -> Download models...'
+                tip += f' Missing in the models folder: {missing}. Get them with Analysis -> Get models...'
             action.setToolTip(tip)
             self.similarity_actions[spec.id].setChecked(spec.id == similarity)
             self.similarity_actions[spec.id].setText(spec.name + coverage)
@@ -1868,7 +1869,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
                 continue
             counted = f'{spec.name} has analysed {analysed:,} of {total:,} tracks'
             if self.model_file(spec) is None:
-                messages.append(f'{counted}; its model files are missing (Analysis -> Download models...)')
+                messages.append(f'{counted}; its model files are missing (Analysis -> Get models...)')
                 level = 'warning'
             elif not self.settings.get('Embedding analysis', True):
                 messages.append(f'{counted}; background analysis is paused (Analysis -> Analyse embeddings '
@@ -1917,8 +1918,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
             QMessageBox.information(
                 self, 'Search by description',
                 'Searching by description needs a CLAP model (LAION CLAP or Microsoft CLAP).\n\n'
-                'Download it with Analysis -> Download models...; it is then switched on and your tracks get '
-                'analysed with it in the background.')
+                'Analysis -> Get models... shows how to get one; switched on, it analyses your tracks in the '
+                'background.')
             return
         if self.text_search_dialog is None:
             self.text_search_dialog = TextSearchDialog(
@@ -1933,7 +1934,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def open_model_download(self):
         if self.model_download_dialog is None:
-            self.model_download_dialog = ModelDownloadDialog(list(MODELS.values()), self.models_folder(), parent=self)
+            self.model_download_dialog = ModelDownloadDialog(
+                list(MODELS.values()), self.models_folder(),
+                base_url=self.settings.get('Model download URL', '') or BASE_URL, parent=self)
             self.model_download_dialog.downloaded.connect(self._models_downloaded)
         self.model_download_dialog.show()
         self.model_download_dialog.raise_()
@@ -2032,7 +2035,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.description_box.setEnabled(bool(models))
         if not models:
             self.description_box.lineEdit().setPlaceholderText(
-                'needs a CLAP model: Analysis -> Download models...')
+                'needs a CLAP model: Analysis -> Get models...')
 
     def _description_model_changed(self):
         model_id = self.description_model.currentData()
@@ -2171,7 +2174,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         models = [(MODELS[model_id], self.model_file(MODELS[model_id])) for model_id in self.enabled_model_ids()]
         models = [(spec, path) for spec, path in models if path is not None]
         if not models:
-            self.embedding_label.setText('Embeddings: no model (Analysis -> Download models...)')
+            self.embedding_label.setText('Embeddings: no model (Analysis -> Get models...)')
             return
         stores = [(self.model_stores[spec.id], path) for spec, path in models]
         configuration = tuple((store.spec.id, str(path)) for store, path in stores)

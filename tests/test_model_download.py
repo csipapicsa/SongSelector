@@ -129,6 +129,24 @@ class DownloadWindowTests(ServerCase):
     def setUpClass(cls):
         cls.application = QApplication.instance() or QApplication([])
 
+    def test_without_a_download_source_the_window_explains_how_to_get_the_models(self):
+        # 2026-11-17: the model release never existed (the weights are not redistributed); the download got a 404.
+        from songselector.core.model_download import BASE_URL, BUILD_HELP
+        from songselector.ui.model_download_dialog import ModelDownloadDialog
+        self.assertEqual(BASE_URL, '')
+        dialog = ModelDownloadDialog([LAION_CLAP], self.folder, '', FILES)
+        try:
+            self.assertEqual(dialog.windowTitle(), 'Get models')
+            self.assertTrue(dialog.download_button.isHidden())
+            self.assertFalse(dialog.boxes[LAION_CLAP.id].isEnabled())
+            self.assertIn('(missing)', dialog.boxes[LAION_CLAP.id].text())
+            intro = dialog.findChildren(type(dialog.status))[0].text()
+            self.assertIn('not distributed', intro)
+            self.assertIn(BUILD_HELP, intro)
+            self.assertFalse(dialog.folder_button.isHidden())
+        finally:
+            dialog.close()
+
     def test_window_downloads_the_checked_models_and_reports_them(self):
         from songselector.ui.model_download_dialog import ModelDownloadDialog
         contents = {name: os.urandom(1500) for name in LAION_CLAP.files()}

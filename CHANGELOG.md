@@ -25,7 +25,7 @@ from that period still mention 4.x numbers.
   above the List says so.
 - **Speed change column.** How much faster (+) or slower (-) each track plays at the master tempo, in percent with
   one decimal (`+6.2%`, `-13.0%`), next to *Original BPM*; it follows the tempo slider and sorts as a number.
-- **Complex Search on the speed change.** *Speed change* is a Complex Search column with two extra conditions:
+- **Advanced Search on the speed change.** *Speed change* is an Advanced Search column with two extra conditions:
   *within ± (%)* (e.g. 8: tracks that need at most 8 % faster or slower at the master tempo) and *outside ± (%)*;
   the usual comparisons work on the signed value. Smartlists with such a rule follow the master tempo.
 - **Sorting by Group sorts by Match within each group** (the best match of a description search first), in both
@@ -56,6 +56,11 @@ from that period still mention 4.x numbers.
   and content). It first shows each group and which row stays: the one whose file exists, then the one with the most
   information (comment, colour, rating, key, BPM...), then the one in the Traktor / Rekordbox collection, then the
   first. Untick a row to keep it too. Only list rows are removed, never files.
+- **Models: no broken download.** *Analysis -> Download models...* fetched from a model release that was never
+  published, so it failed with "404 Not Found". The model weights are not redistributed, so the window is now
+  *Analysis -> Get models...*: it shows which models are installed, explains how to build the others with the
+  export scripts, and opens the models folder. (A `Model download URL` setting re-enables downloading from your own
+  server.)
 - **Saving the library writes only what changed.** Every save (an import, a removal, a refresh) used to rewrite
   all tracks and the whole list order of `library.sqlite`. Now unchanged tracks and list positions are not written
   at all, and the file uses SQLite's WAL journal (fewer disk syncs; still one file between saves). On a 3,400-track

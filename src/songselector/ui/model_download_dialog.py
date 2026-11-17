@@ -1,6 +1,8 @@
-"""Analysis -> Download models: fetch the model files into the models folder (core/model_download.py)."""
+"""Analysis -> Get models: which model files are installed; how to get the missing ones (built locally with the
+export scripts, or downloaded from a server set in the settings, core/model_download.py)."""
 import threading
 import time
+from pathlib import Path
 
 from PyQt5.QtCore import QObject, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -14,7 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 from songselector.core import model_download
-from songselector.core.model_download import BASE_URL, FILES, LICENCES, RELEASE_PAGE
+from songselector.core.model_download import BASE_URL, BUILD_HELP, FILES, LICENCES
 
 
 class _Events(QObject):
@@ -27,7 +29,7 @@ class ModelDownloadDialog(QDialog):
 
     def __init__(self, models, folder, base_url=BASE_URL, files=FILES, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Download models')
+        self.setWindowTitle('Get models' if not base_url else 'Download models')
         self.setAttribute(Qt.WA_QuitOnClose, False)  # never keeps the app running after the main window closes
         self.models, self.folder, self.base_url, self.files = models, folder, base_url, files
         self._stop = threading.Event()
@@ -38,12 +40,15 @@ class ModelDownloadDialog(QDialog):
         self._events.finished.connect(self._finished)
 
         layout = QVBoxLayout(self)
-        intro = QLabel(
-            'The models turn your tracks into embeddings (similarity map, closest matches, groups); the CLAP '
-            'models also enable <b>Search by description</b>. They are downloaded once into<br>'
-            f'<code>{folder}</code><br>from the project\'s '
-            f'<a href="{RELEASE_PAGE}">model release</a> (sources and licences are listed there) '
-            'and checked before use.')
+        purpose = ('The models turn your tracks into embeddings (similarity map, closest matches, groups); the CLAP '
+                   'models also enable <b>Search by description</b>. ')
+        if base_url:
+            text = purpose + f'They are downloaded once into<br><code>{folder}</code><br>and checked before use.'
+        else:  # no public model release: the files are built with the export scripts
+            text = (purpose + 'The model files are not distributed with the app. Build them with the export scripts '
+                    f'(<a href="{BUILD_HELP}">how</a>) or copy them from another installation into<br>'
+                    f'<code>{folder}</code><br>then switch them on under <i>Analysis -> Embedding models</i>.')
+        intro = QLabel(text)
         intro.setWordWrap(True)
         intro.setTextFormat(Qt.RichText)
         intro.setOpenExternalLinks(True)
@@ -53,10 +58,10 @@ class ModelDownloadDialog(QDialog):
             installed = model_download.installed(spec, folder, files)
             size = model_download.download_size(spec, files) / 1e6
             box = QCheckBox(f'{spec.name}: {size:,.0f} MB, {LICENCES.get(spec.id, "")}'
-                            + (' (installed)' if installed else ''))
+                            + (' (installed)' if installed else '' if base_url else ' (missing)'))
             box.setToolTip(spec.description)
-            box.setChecked(not installed)
-            box.setEnabled(not installed)
+            box.setChecked(not installed and bool(base_url))
+            box.setEnabled(not installed and bool(base_url))
             self.boxes[spec.id] = box
             layout.addWidget(box)
         self.bar = QProgressBar()
@@ -75,15 +80,26 @@ class ModelDownloadDialog(QDialog):
         self.stop_button.clicked.connect(self._stop.set)
         close = QPushButton('Close')
         close.clicked.connect(self.close)
+        self.folder_button = QPushButton('Open models folder')
+        self.folder_button.clicked.connect(self._open_folder)
+        buttons.addWidget(self.folder_button)
         buttons.addStretch(1)
         buttons.addWidget(self.download_button)
         buttons.addWidget(self.stop_button)
+        for widget in (self.download_button, self.stop_button, self.bar):
+            widget.setVisible(bool(base_url))  # nothing to download from
         buttons.addWidget(close)
         layout.addLayout(buttons)
         self._update_button()
         for box in self.boxes.values():
             box.toggled.connect(self._update_button)
         self.resize(560, self.sizeHint().height())
+
+    def _open_folder(self):
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+        Path(self.folder).mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
 
     def chosen(self):
         return [spec for spec in self.models if self.boxes[spec.id].isEnabled() and self.boxes[spec.id].isChecked()]

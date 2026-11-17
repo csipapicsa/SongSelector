@@ -34,25 +34,28 @@ their libraries automatically, and answers three questions:
   listed; prompts can be saved, results dragged onto Traktor
 - Similarity map (t-SNE, 2D or 3D, implemented in numpy to keep scikit-learn out of the exe) with
   closest matches, drag and drop into Traktor's decks
-- Unsupervised groups (k-means, neighbour communities, map density) as a sortable List column
+- Unsupervised groups (k-means, neighbour communities, map density) as a sortable List column, numbered along
+  the map (neighbouring groups get neighbouring numbers) and optionally as row colours (*Cluster group colours*)
 - On the developer's library the map separated breakbeat and drum & bass with about 93 % purity,
   from audio alone
 
 **Library integration, without export steps**
-- Traktor: reads `collection.nml` (key, BPM, colour, rating, playlists and smartlists) and re-reads it when
-  Traktor saves; never writes to it
+- Traktor: reads `collection.nml` (key, BPM, colour, rating, playlists) and re-reads it when Traktor saves;
+  never writes to it. Traktor's **smartlists** work too: their queries are evaluated on Traktor's own data
 - Rekordbox: reads playlists directly from its encrypted `master.db` (from a temporary copy);
   nothing to export, Rekordbox does not have to be closed
 - Drag and drop MP3, WAV and FLAC files or whole folders; reads their tags, writes edited
-  Artist / Title / Genre / Comment back to the file
+  Artist / Title / Genre / Comment back to the file (in the background: the window does not freeze)
 
 **Organising**
 - Playlist panel for building a set in order; saved playlists and smartlists (stored search rules)
-- Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons
+- Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons and the speed
+  change (*within ± 8 %* of the master tempo)
 - Own *Rating* and *Color* per track, independent of Traktor
-- Cover art in the List and Playlist (embedded, or cover.jpg / folder.jpg next to the file), cropped to the row or in square rows
-- Speed change to the master tempo per track (+6.2%); *View -> Always on top*
-- Dark and light theme
+- *Speed change* column: how much faster or slower each track plays at the master tempo (`+6.2%`)
+- Cover art in the List, the Playlist and on the map (embedded, or `cover.jpg` / `folder.jpg` next to the file)
+- *Delete duplicates*: same path, same Artist - Title or the same file in another folder, with a preview
+- *View → Always on top* (above Traktor), dark and light theme
 
 ## Engineering
 
@@ -64,7 +67,7 @@ What is behind the features, and where to look:
 | ML inference | Three models exported to ONNX, every one taking raw audio (LAION's spectrogram built into the graph); DirectML / CUDA / CPU chosen at runtime, batch sizes measured per model. Text encoders run in their own process with the `tokenizers` library, no PyTorch in the app | [core/embeddings.py](src/songselector/core/embeddings.py), [core/text_search.py](src/songselector/core/text_search.py), [research note](docs/research/text_search_clap.md) |
 | Model choice by measurement | CPU and GPU cost of LAION vs Microsoft CLAP measured before any app work; a broken model (collapsed embeddings) caught and excluded | [docs/research/text_search_clap.md](docs/research/text_search_clap.md) |
 | Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
-| Testing | About 200 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
+| Testing | About 320 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
 | Release verification | Every exe runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real GPU inference) and a native-window smoke test before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1) |
 | CI/CD | GitHub Actions: ruff, pytest on Windows, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe with a SHA-256 checksum | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
 | Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
@@ -74,9 +77,10 @@ What is behind the features, and where to look:
 1. Download `SongSelector-<version>.exe` from the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest)
    and put it in its own folder. It is self-contained (no Python needed). Windows SmartScreen will
    warn because the exe is not code-signed; check it against `SHA256SUMS.txt` from the same release.
-2. On the first start the app offers to download the embedding models (*Analysis → Download models…*,
-   1.6 GB in all, or just the ones you want). They are switched on and your tracks are analysed in the
-   background. Everything else works without them.
+2. The embedding models (similarity map, closest matches, groups, search by description) are **not
+   distributed** with the app: build them with the export scripts ([below](#getting-the-embedding-models)) and
+   put them in the `models` folder; *Analysis → Get models…* shows which are there and opens the folder.
+   Everything else works without them.
 
 The exe stores its data **next to itself**:
 
@@ -93,15 +97,14 @@ To upgrade, put the new exe in the same folder. Settings from versions before 1.
 
 ## Getting the embedding models
 
-**The app downloads them:** *Analysis → Download models…* fetches the files from the project's
-[`models-v1` release](https://github.com/csipapicsa/SongSelector/releases/tag/models-v1) into the `models`
-folder next to the app's data, resumes an interrupted download, and checks each file's SHA-256 before using it.
+The model files are ONNX exports of published weights. They are **not redistributed** with the app: build them
+with the export scripts below (every export is checked against the original PyTorch model), in a separate
+environment, since the exports need PyTorch and the app does not. Copy them into the `models` folder next to the
+app's data (*Analysis → Get models…* → *Open models folder*); when run from source the app looks in
+`.appdata\models\`. The app checks each file's size and SHA-256 against the expected export.
 
-The files are ONNX exports of published weights; the release lists sources and licences. To rebuild them
-yourself (every export is checked against the original PyTorch model), use a separate environment, since
-the exports need PyTorch and the app does not. They go to `.appdata\models\`, where the app looks when run
-from source; `scripts\publish_models.ps1 -Folder <folder>` checks them against the app's checksums and
-publishes the release.
+If you host the files yourself (a web folder serving them under their names), set `"Model download URL"` in
+`SongSelector_settings.json`: *Get models…* then downloads them (resumable, checksum-checked).
 
 | Model | Files | Weights | Export |
 |---|---|---|---|
@@ -137,7 +140,7 @@ filtered now, so narrow the List first to explore one style.
 | Double-click a dot | Add to the playlist |
 | Scroll / drag | Zoom / move |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour or same rating, optionally only to the N most similar |
-| *Groups* | Colour dots by unsupervised groups |
+| *Groups* | Colour dots by unsupervised groups (numbered along the map) |
 | Ctrl+click a dot | Compare it with the selected track (card, mix type, similarity); Ctrl+click it again or on empty space to stop |
 | Esc | First stops the comparison, then clears the selection |
 | *Closest matches* | *all*; *harmonic only* (plus tracks without a key); or *Edges selection*: only the relations checked under *Edges* |
@@ -157,6 +160,7 @@ percentage, higher is closer; compare within one search). ★ saves the prompt, 
 many tracks are shown without searching again (*All* lists every analysed track). *No search: show all
 tracks* at the top of the dropdown (or Enter in an empty field, or *Show all tracks*) goes back. Choosing a model
 that has not analysed the whole library yet switches it on and analyses the rest in the background.
+With a playlist, smartlist or other Browser entry shown, the search ranks only its tracks.
 *Analysis → Search by description…* (Ctrl+Shift+F) opens the same search in its own window, with scores.
 Describe the sound (instruments, textures, energy, mood: *"warm pads, slow and dreamy"*, *"distorted
 acid line, hypnotic"*); *"This audio is a drum and bass song."* style sentences also work well. Save
@@ -176,6 +180,10 @@ high-performance one, and each model's batch size is measured once on your machi
   **Traktor Playlists** / **Rekordbox Playlists** (read-only, kept up to date). Click an entry to
   filter the List, double-click to load it into the Playlist tab.
 - A **smartlist** stores search rules, not tracks; it always shows what matches now.
+- **Traktor smartlists** are evaluated on Traktor's own data (BPM, colour, rating, genre, comment, key, length,
+  play count, import date...). Two assumptions, as Traktor does not store them: `~` means within 1 BPM, and `&`
+  binds tighter than `|`. A smartlist on *played in this session* cannot be evaluated outside Traktor; the bar above
+  the List says so. Rekordbox smartlists are listed but not evaluated yet.
 
 ### Search syntax
 
@@ -185,8 +193,18 @@ high-performance one, and each model's batch size is measured once on your machi
 | `color:blue`, `color:red,orange`, `-color:blue`, `color:none` | Traktor colour |
 | `sscolor:blue`, `-sscolor:none` | Your own colour |
 
-*Advanced Search* adds numeric comparisons (e.g. own rating at least 4). Setting a row's column to
-*None* switches that row off without losing it.
+*Advanced Search* adds numeric comparisons (e.g. own rating at least 4) and, on *Speed change*, *within ± (%)* /
+*outside ± (%)*: e.g. tracks that play at most 8 % faster or slower at the master tempo (it follows the tempo
+slider). Setting a row's column to *None* switches that row off without losing it.
+
+### List view
+
+| Setting | How |
+|---|---|
+| Cover art | *View → Cover art*: off, cropped to the row height, or square rows; 48 / 72 / 96 px |
+| Always on top | *View → Always on top*: SongSelector (and the map in its own window) stays above other windows |
+| Columns | Right-click a column header: show or hide columns (*Speed change*, *Match*, *Group*, *Cover*...) |
+| Sorting by *Group* | Within each group, the best *Match* of a description search comes first |
 
 ### Configuration
 
