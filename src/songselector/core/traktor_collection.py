@@ -121,6 +121,11 @@ class TraktorCollection:
         except (TypeError, ValueError):
             return None
 
+    def keys(self):
+        """path_keys of every track in the collection (loads it first if needed)."""
+        self._load()
+        return set(self.by_path)
+
     def find(self, filepath):
         self._load()
         exact = self.by_path.get(canonical_path(filepath))

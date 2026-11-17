@@ -30,7 +30,7 @@ One PR per block below, in this order; each with tests (a failing test first for
 - [x] **C. Playlist selection on the map.** Selected Playlist tracks are shown on the map even if the List filters
       them out, in a distinct style; several at once; tracks not on a *Map the List only* map are placed near
       their most similar tracks (`place_new`). Field lookup by a dict instead of scanning the trees.
-- [ ] **G. Delete duplicates, three ways:** same path (today), same Artist - Title (case and spaces ignored), same
+- [x] **G. Delete duplicates, three ways:** same path (today), same Artist - Title (case and spaces ignored), same
       file (same size, then same content hash; e.g. a copy in another folder). Which row stays: 1) the file still
       exists, 2) the richest row (count of filled fields: comment, colour, rating, key, BPM, genre, Song Selector
       rating / colour...), 3) on a tie the one in the Traktor / Rekordbox collection, 4) else the first. Preview

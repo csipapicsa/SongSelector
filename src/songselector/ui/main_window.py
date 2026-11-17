@@ -67,6 +67,7 @@ from songselector.core.color_search import (
     replace_color_filter,
 )
 from songselector.core.data_manager import DataManager
+from songselector.core.duplicates import ARTIST_TITLE, MODES, PATH, SAME_FILE, find_duplicates
 from songselector.core.embedding_models import CNN14, DEFAULT_MODEL_IDS, MODELS, store_path
 from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, OnnxEmbedder, file_fingerprint
 from songselector.core.key_calculator import KeyCalculator
@@ -79,7 +80,6 @@ from songselector.core.tag_writer import EDITABLE_TAGS, write_tags
 from songselector.core.track_import import (
     ImportedTrackStore,
     TrackImporter,
-    drop_duplicate_paths,
     enrich_ratings,
     merge_tracks,
 )
@@ -91,6 +91,7 @@ from songselector.ui.background import BackgroundWriter
 from songselector.ui.busy_spinner import BusySpinner
 from songselector.ui.coloring_dialog import ColoringDialog
 from songselector.ui.delegates import ColorDotDelegate
+from songselector.ui.duplicates_dialog import DuplicatesDialog
 from songselector.ui.elided_label import ElidedLabel
 from songselector.ui.embedding_worker import EmbeddingAnalyzer
 from songselector.ui.list_browser import DESCRIPTION, ORDERED_KINDS, ListBrowser, node_label
@@ -119,6 +120,7 @@ IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the p
 GROUPING_MESSAGE = 'Grouping tracks for the List...'
 # Reasons the status bar's spinners turn (shown in their tooltips).
 SAVING, SEARCHING, ANALYSING = 'Saving to the file', 'Searching by description', 'Analysing tracks'
+FINDING_DUPLICATES = 'Looking for duplicates'
 ALL_RESULTS, MAX_RESULTS = 0, 100000
 # An import of up to this many tracks updates the List row by row; more rebuild it (then about as fast).
 INCREMENTAL_IMPORT_LIMIT = 200   # Top N of the description search: 0 is All
@@ -1029,19 +1031,70 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._renumber_playlist()
         return self._save_list(PLAYLIST_LIST, self._playlist_records())
 
-    def delete_duplicate_tracks(self):
-        """Remove library rows whose path repeats an earlier row. Files on disk are untouched."""
-        self.table, removed = drop_duplicate_paths(self.table)
-        error = ''
-        if removed:
-            self.data_manager.table = self.table
-            error = self._save_library()
-            self.populate_tree()
-        message = (f'Removed {removed} duplicate row(s) from the list; files on disk were not changed'
-                   if removed else 'No duplicate paths in the list')
-        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
-        self.status_label.setText(error or message)
-        return removed
+    def delete_duplicate_tracks(self, mode=PATH, confirm=False):
+        """Remove duplicate library rows (core.duplicates: same path, same Artist - Title or same file content); in each
+        group the row with the existing file / most information / in a collection / first stays. confirm: show the
+        groups first and remove the rows the user leaves ticked. Files on disk are untouched. Returns the number of
+        rows removed (for "same file" with confirm, the search runs in the background: 0)."""
+        snapshot = self.table.copy() if self.table is not None else None
+        collection = self._collection_keys()
+
+        def in_collection(path):
+            return canonical_path(path) in collection
+
+        def found(groups):
+            self.activity_spinner.set_busy(FINDING_DUPLICATES, False)
+            return self._remove_duplicates(mode, groups, snapshot, confirm)
+
+        if mode == SAME_FILE and confirm:  # reads (and maybe hashes) the files: off the UI thread
+            self.activity_spinner.set_busy(FINDING_DUPLICATES)
+            self._edit_status('Looking for copies of the same file...', 'info')
+            self.background.submit(lambda: find_duplicates(snapshot, mode, in_collection), found,
+                                   lambda error: (self.activity_spinner.set_busy(FINDING_DUPLICATES, False),
+                                                  self._edit_status(f'Could not look for duplicates: {error}', 'error')))
+            return 0
+        return found(find_duplicates(snapshot, mode, in_collection))
+
+    def _collection_keys(self):
+        """path_keys of the tracks in the Traktor collection and on Rekordbox playlists (for the duplicate rule)."""
+        keys = set()
+        try:
+            keys |= self.importer.collection.keys()
+        except Exception:  # no collection, or it cannot be read: the rule just skips this step
+            pass
+
+        def walk(entries):
+            for entry in entries or []:
+                keys.update(canonical_path(path) for path in entry.get('tracks', []) or [])
+                walk(entry.get('children'))
+        walk(getattr(self.rekordbox_library, 'playlists', []))
+        return keys
+
+    def _remove_duplicates(self, mode, groups, snapshot, confirm):
+        what = MODES[mode]
+        if not groups:
+            self._edit_status('No duplicate paths in the list' if mode == PATH else f'No duplicates ({what}) in the list',
+                              'ok')
+            return 0
+        indexes = [index for group in groups for index in group.remove]
+        if confirm:
+            dialog = DuplicatesDialog(mode, groups, snapshot.to_dict('index'), self)
+            if dialog.exec_() != QDialog.Accepted:
+                return 0
+            indexes = dialog.removed_indexes()
+        if not indexes:
+            return 0
+        # The rows are those of the snapshot: if the list changed meanwhile, its indexes may mean other rows.
+        if self.table is None or self.table['File_Path'].tolist() != snapshot['File_Path'].tolist():
+            self._edit_status('The list changed while looking for duplicates: please run it again', 'error')
+            return 0
+        self.table = self.table.drop(index=indexes).reset_index(drop=True)
+        self.data_manager.table = self.table
+        error = self._save_library()
+        self.populate_tree()
+        self._edit_status(error or f'Removed {len(indexes)} duplicate row(s) from the list ({what}); '
+                                   'files on disk were not changed', 'error' if error else 'ok')
+        return len(indexes)
 
     def track_context_menu(self, tree):
         """Right-click menu for the selected rows of the library or playlist panel."""
@@ -1083,9 +1136,15 @@ class MainWindow(SavedListsMixin, QMainWindow):
         remove_missing.setToolTip('Removes every row whose file no longer exists on disk.')
         remove_missing.triggered.connect(lambda: self.remove_missing_tracks(tree))
         if tree is self.candidate_tree:
-            delete_duplicates = menu.addAction('Delete duplicates from the list')
-            delete_duplicates.setToolTip('Remove rows with the same file path. Files on disk are not deleted.')
-            delete_duplicates.triggered.connect(self.delete_duplicate_tracks)
+            duplicates = menu.addMenu('Delete duplicates from the list')
+            duplicates.setToolTipsVisible(True)
+            for mode, label in MODES.items():
+                action = duplicates.addAction(label + '...')
+                action.setToolTip({PATH: 'Rows of the same file path, e.g. a file listed twice.',
+                                   ARTIST_TITLE: 'Rows with the same artist and title (case and spaces ignored).',
+                                   SAME_FILE: 'Different paths, same content: e.g. a copy in another folder.'}[mode]
+                                  + '\nShows what would be removed first. Files on disk are not deleted.')
+                action.triggered.connect(lambda _checked, mode=mode: self.delete_duplicate_tracks(mode, confirm=True))
         return menu
 
     def remove_selected_tracks(self, tree, confirm=True):

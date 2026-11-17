@@ -49,6 +49,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
+| `duplicates.py` | `find_duplicates(table, mode)`: duplicate rows by path, Artist - Title or file content (size, then SHA-256), each group ranked by the keep rule (file exists, richest, in a collection, first) |
 | `placement.py` | `place_box`: the first corner next to a point where a box (map label, info card) covers no other box and stays in view; plain pixel rectangles, no Qt |
 | `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
@@ -72,6 +73,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `music_paths_dialog.py` | Music path settings dialog |
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
 | `busy_spinner.py` | `BusySpinner`: small turning arc while any of its reasons is on (`set_busy(reason, on)`); hidden, timer stopped when idle. In the status bar (saving, description search; analysis) and the map (arranging, grouping) |
+| `duplicates_dialog.py` | Preview of a duplicate search: per group the row that stays (bold) and the rows to remove (checkable) |
 | `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
 | `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
 | `map_settings_dialog.py` | Choose the map's hover details |
@@ -112,10 +114,14 @@ Dropped audio file ──> TrackImporter.read()
   per tempo.
 - **Duplicates:** rows are matched by `canonical_path()` (normalised, case-folded
   Windows path). Dropping a file again updates its row instead of adding one.
-  Rows with a repeated path can still come from a loaded CSV. *Right-click →
-  Delete duplicates from the list* removes them (`drop_duplicate_paths`), keeping
-  the first row. Wherever a path occurs more than once, the **first row wins**:
-  `_rows_by_path`, `LibraryStore.upsert_tracks` and dedupe all follow this rule.
+  Rows with a repeated path can still come from a loaded CSV. Wherever a path
+  occurs more than once, the **first row wins** in `_rows_by_path` and
+  `LibraryStore.upsert_tracks`. *Right-click → Delete duplicates from the list*
+  (`core/duplicates.py`, 1.2.0) finds rows with the same path, the same
+  Artist - Title or the same file content and keeps, per group, the row whose
+  file exists, then the richest, then the one in a Traktor / Rekordbox
+  collection, then the first; a preview (`ui/duplicates_dialog.py`) shows it
+  first. `drop_duplicate_paths` is the older path-only helper.
 
 ## Persistence
 

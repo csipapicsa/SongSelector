@@ -17,6 +17,11 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Delete duplicates, three ways.** *Right-click -> Delete duplicates from the list* now offers *Same file path*
+  (as before), *Same Artist - Title* (case and spaces ignored) and *Same file* (a copy in another folder: same size
+  and content). It first shows each group and which row stays: the one whose file exists, then the one with the most
+  information (comment, colour, rating, key, BPM...), then the one in the Traktor / Rekordbox collection, then the
+  first. Untick a row to keep it too. Only list rows are removed, never files.
 - **Saving the library writes only what changed.** Every save (an import, a removal, a refresh) used to rewrite
   all tracks and the whole list order of `library.sqlite`. Now unchanged tracks and list positions are not written
   at all, and the file uses SQLite's WAL journal (fewer disk syncs; still one file between saves). On a 3,400-track
