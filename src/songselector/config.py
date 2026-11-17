@@ -190,6 +190,8 @@ HEADER_INDEX[COVER_COLUMN] = len(HEADER_LABELS) - 1
 SPEED_COLUMN = 'Speed change'
 HEADER_LABELS += [SPEED_COLUMN]
 HEADER_INDEX[SPEED_COLUMN] = len(HEADER_LABELS) - 1
+# Columns Complex Search (and smartlists) can filter on: the track fields, and the speed change at the master tempo.
+COMPLEX_SEARCH_COLUMNS = FIELD_LABELS + [SPEED_COLUMN]
 
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,

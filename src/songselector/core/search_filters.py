@@ -2,10 +2,11 @@
 import math
 import operator
 
-from songselector.config import SS_COLOR_COLUMN, SS_RATING_COLUMN
+from songselector.config import SPEED_COLUMN, SS_COLOR_COLUMN, SS_RATING_COLUMN
 from songselector.core.color_search import color_id, parse_color_values
 
-NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color', SS_RATING_COLUMN, SS_COLOR_COLUMN}
+NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color', SS_RATING_COLUMN, SS_COLOR_COLUMN,
+                   SPEED_COLUMN}
 # Columns holding a category color number; they also accept color names (blue, red,orange).
 COLOR_COLUMNS = {'Color', SS_COLOR_COLUMN}
 TEXT_CONDITIONS = ['contains', 'does not contain', 'is', 'is not']
@@ -14,6 +15,11 @@ NUMERIC_COMPARISONS = {
     'less than': operator.lt,
     'at least (>=)': operator.ge,
     'at most (<=)': operator.le,
+}
+# Speed change to the master tempo (asked 2026-11-17): "no more than X % faster or slower", or more than that.
+SPEED_CONDITIONS = {
+    'within ± (%)': lambda actual, limit: abs(actual) <= abs(limit),
+    'outside ± (%)': lambda actual, limit: abs(actual) > abs(limit),
 }
 # A row set to this column keeps its condition and value but does not filter.
 NO_COLUMN = 'None'
@@ -25,14 +31,19 @@ def active_filters(filters):
 
 
 def parse_number(value):
+    """128.5, '128,5', '+6.2%' (the Speed change column) -> float; None if it is not a number."""
     try:
-        number = float(str(value).strip().replace(',', '.'))
+        number = float(str(value).strip().rstrip('%').strip().replace(',', '.'))
     except (ValueError, TypeError):
         return None
     return number if math.isfinite(number) else None
 
 
 def matches_condition(cell, condition, value, column):
+    if condition in SPEED_CONDITIONS:
+        actual, limit = parse_number(cell), parse_number(value)
+        return (column == SPEED_COLUMN and actual is not None and limit is not None
+                and SPEED_CONDITIONS[condition](actual, limit))
     if condition in NUMERIC_COMPARISONS:
         if column not in NUMERIC_COLUMNS:
             return False

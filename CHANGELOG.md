@@ -19,6 +19,9 @@ from that period still mention 4.x numbers.
   the new List. *Re-arrange map* still arranges the List again from scratch.
 - **Speed change column.** How much faster (+) or slower (-) each track plays at the master tempo, in percent with
   one decimal (`+6.2%`, `-13.0%`), next to *Original BPM*; it follows the tempo slider and sorts as a number.
+- **Complex Search on the speed change.** *Speed change* is a Complex Search column with two extra conditions:
+  *within ± (%)* (e.g. 8: tracks that need at most 8 % faster or slower at the master tempo) and *outside ± (%)*;
+  the usual comparisons work on the signed value. Smartlists with such a rule follow the master tempo.
 - **Sorting by Group sorts by Match within each group** (the best match of a description search first), in both
   directions.
 - **View -> Always on top** keeps SongSelector (and the map in its own window) above every other window, e.g. above

@@ -60,6 +60,40 @@ class ListColumnGuiTests(GuiTestBase):
         window.update_tree_after_slider()
         self.assertEqual(self.column(window, SPEED)['fast'], '+0.0%')
 
+    def test_complex_search_on_the_speed_change_follows_the_master_tempo(self):
+        window = self.window()
+        window.bpm_slider.setValue(128)
+        window.update_tree_after_slider()
+        window.current_advanced_search = {'enabled': True, 'filters': [
+            {'column': SPEED_COLUMN, 'condition': 'within ± (%)', 'value': '8'}]}
+        window.advanced_filters = window.current_advanced_search['filters']
+        window.filter_items()
+        shown = lambda: sorted(title for title, _speed in self.column(window, SPEED).items()  # noqa: E731
+                               if not self.item_hidden(window, title))
+        self.assertEqual(shown(), ['even', 'near'])          # 0 % and +2.4 %; fast -8.6 %, slow +28 %
+        window.bpm_slider.setValue(140)
+        window.update_tree_after_slider()
+        self.assertEqual(shown(), ['fast'])                  # now near is +12 %, even +9.4 %
+
+    def test_the_dialog_offers_the_speed_conditions(self):
+        from songselector.config import COMPLEX_SEARCH_COLUMNS
+        from songselector.ui.advanced_search_dialog import AdvancedSearchRow
+        self.assertIn(SPEED_COLUMN, COMPLEX_SEARCH_COLUMNS)
+        row = AdvancedSearchRow(COMPLEX_SEARCH_COLUMNS)
+        row.column_combo.setCurrentText(SPEED_COLUMN)
+        conditions = [row.condition_combo.itemText(i) for i in range(row.condition_combo.count())]
+        self.assertIn('within ± (%)', conditions)
+        self.assertIn('at most (<=)', conditions)
+        row.condition_combo.setCurrentText('within ± (%)')
+        self.assertIn('percent', row.value_edit.placeholderText())
+        row.column_combo.setCurrentText('Genre')
+        self.assertNotIn('within ± (%)', [row.condition_combo.itemText(i) for i in range(row.condition_combo.count())])
+
+    def item_hidden(self, window, title):
+        tree = window.candidate_tree
+        return next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                    if tree.topLevelItem(i).text(TITLE) == title).isHidden()
+
     def test_sorting_by_group_puts_the_best_match_first_within_each_group(self):
         window = self.window()
         tree = window.candidate_tree
@@ -72,6 +106,22 @@ class ListColumnGuiTests(GuiTestBase):
         self.assertEqual(self.order(window), ['fast', 'slow', 'near', 'even'])  # group 1: 33%, 20%, none; group 2
         window.sort_by_column(GROUP, False)
         self.assertEqual(self.order(window), ['even', 'fast', 'slow', 'near'])  # groups reversed, matches still best first
+
+
+class SpeedSearchTests(unittest.TestCase):
+    def test_within_and_outside_a_speed_change(self):
+        from songselector.core.search_filters import matches_condition, parse_number
+        self.assertEqual(parse_number('+6.2%'), 6.2)
+        self.assertEqual(parse_number('-13,0 %'), -13.0)
+        within, outside = 'within ± (%)', 'outside ± (%)'
+        self.assertTrue(matches_condition('+6.2%', within, '8', SPEED_COLUMN))
+        self.assertTrue(matches_condition('-8.0%', within, '8', SPEED_COLUMN))
+        self.assertFalse(matches_condition('-9.0%', within, '8', SPEED_COLUMN))
+        self.assertTrue(matches_condition('-9.0%', outside, '8', SPEED_COLUMN))
+        self.assertTrue(matches_condition('+3.0%', within, '-8', SPEED_COLUMN))  # the sign of the limit does not matter
+        self.assertFalse(matches_condition('', within, '8', SPEED_COLUMN))       # unknown BPM
+        self.assertFalse(matches_condition('120', within, '8', 'Original BPM'))  # only for the speed change
+        self.assertTrue(matches_condition('-5.0%', 'at least (>=)', '-6', SPEED_COLUMN))  # signed comparisons too
 
 
 class AlwaysOnTopTests(GuiTestBase):

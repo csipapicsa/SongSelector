@@ -17,12 +17,14 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from songselector.config import SPEED_COLUMN
 from songselector.core.color_search import COLOR_HELP, COLOR_NAMES, parse_color_values
 from songselector.core.search_filters import (
     COLOR_COLUMNS,
     NO_COLUMN,
     NUMERIC_COLUMNS,
     NUMERIC_COMPARISONS,
+    SPEED_CONDITIONS,
     TEXT_CONDITIONS,
     active_filters,
     parse_number,
@@ -60,6 +62,8 @@ class AdvancedSearchRow(QWidget):
         # None offers every condition, so a numeric one is kept while the row is switched off.
         if self.column_combo.currentText() in NUMERIC_COLUMNS | {NO_COLUMN}:
             conditions += list(NUMERIC_COMPARISONS)
+        if self.column_combo.currentText() in (SPEED_COLUMN, NO_COLUMN):
+            conditions += list(SPEED_CONDITIONS)
         self.condition_combo.blockSignals(True)
         self.condition_combo.clear()
         self.condition_combo.addItems(conditions)
@@ -70,6 +74,11 @@ class AdvancedSearchRow(QWidget):
 
     def update_value_hint(self, _condition=None):
         numeric = self.condition_combo.currentText() in NUMERIC_COMPARISONS
+        if self.condition_combo.currentText() in SPEED_CONDITIONS:
+            self.value_edit.setCompleter(None)
+            self.value_edit.setPlaceholderText('e.g. 8 (percent)')
+            self.value_edit.setToolTip('Speed change to the master tempo, without the sign: 8 = from -8 % to +8 %.')
+            return
         color = self.column_combo.currentText() in COLOR_COLUMNS
         self.value_edit.setCompleter(self.color_completer if color and not numeric else None)
         self.value_edit.setPlaceholderText('e.g. 5' if color and numeric else 'e.g. blue or red,orange' if color else 'e.g. 128.5' if numeric else '')
@@ -148,7 +157,7 @@ class AdvancedSearchDialog(QDialog):
                     QMessageBox.warning(self, 'Invalid color filter', error)
                     row.value_edit.setFocus()
                     return False
-            if value and row.condition_combo.currentText() in NUMERIC_COMPARISONS and parse_number(value) is None:
+            if value and row.condition_combo.currentText() in {**NUMERIC_COMPARISONS, **SPEED_CONDITIONS} and parse_number(value) is None:
                 QMessageBox.warning(self, 'Invalid numeric filter',
                                     f'Enter a number for {row.column_combo.currentText()}, for example 128.5.')
                 row.value_edit.setFocus()
