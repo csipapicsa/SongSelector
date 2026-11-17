@@ -214,6 +214,7 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         from songselector.config import HEADER_INDEX
         settings = json.loads(self.settings_path.read_text())
         settings['Visible column left'] = ['Artist', 'Title', 'Camelot Key New']
+        settings['Speed column version'] = 1  # columns chosen after 1.2.0: the new column is not added
         self.settings_path.write_text(json.dumps(settings))
         tree = self.window().playlist_tree
         header = tree.header()

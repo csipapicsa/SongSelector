@@ -57,6 +57,7 @@ from songselector.config import (
     OPEN_KEY_COLOR_MAPPING,
     POSITION_COLUMN,
     SETTINGS_FILE,
+    SPEED_COLUMN,
     SS_COLOR_COLUMN,
     SS_RATING_COLUMN,
     WINDOW_SIZE,
@@ -130,6 +131,13 @@ ALL_RESULTS, MAX_RESULTS = 0, 100000
 INCREMENTAL_IMPORT_LIMIT = 200   # Top N of the description search: 0 is All
 NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
 
+
+
+def speed_change_text(bpm, master):
+    """'+6.2%': how much faster (+) or slower (-) a track of `bpm` plays at the `master` tempo; '' if unknown."""
+    if not bpm or not master:
+        return ''
+    return f'{(master / bpm - 1) * 100:+.1f}%'
 
 class MainWindow(SavedListsMixin, QMainWindow):
     """Main application window"""
@@ -235,6 +243,17 @@ class MainWindow(SavedListsMixin, QMainWindow):
                     sizes[GROUP_COLUMN] = 50
             self.settings['Group column version'] = 1
 
+        # 1.2.0: the speed change to the master tempo, shown in both panels.
+        if not self.settings.get('Speed column version'):
+            for side in ('left', 'right'):
+                visible = self.settings.setdefault('Visible column ' + side, list(HEADER_LABELS))
+                if SPEED_COLUMN not in visible:
+                    visible.append(SPEED_COLUMN)
+                sizes = self.settings.setdefault('Column sizes ' + side, {})
+                if sizes.get(SPEED_COLUMN, 0) <= 0:
+                    sizes[SPEED_COLUMN] = 70
+            self.settings['Speed column version'] = 1
+
         # 1.1.4: the description search's similarity column, shown in the List only.
         if not self.settings.get('Match column version'):
             visible = self.settings.setdefault('Visible column right', list(HEADER_LABELS))
@@ -328,6 +347,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
         for tree in (self.candidate_tree, self.playlist_tree):
             tree.setItemDelegateForColumn(HEADER_INDEX[COVER_COLUMN], self.cover_delegate)
             tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[COVER_COLUMN]), 1)  # after #
+            header = tree.header()  # the speed change next to the BPM it is computed from
+            header.moveSection(header.visualIndex(HEADER_INDEX[SPEED_COLUMN]),
+                               header.visualIndex(HEADER_INDEX['Original BPM']) + 1)
+            tree.headerItem().setToolTip(HEADER_INDEX[SPEED_COLUMN], 'How much faster (+) or slower (-) the track '
+                                         'plays at the master tempo, in percent (as on the pitch fader).')
         self._init_cover_menu()
         self.apply_cover_style()
         self.similarity_map.set_covers(self.covers)  # covers in the map's cards and closest matches too
@@ -1429,6 +1453,15 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def _init_view_menu(self):
         menu = self.menuBar().addMenu('View')
         self.view_menu = menu
+        self.on_top_action = menu.addAction('Always on top')
+        self.on_top_action.setCheckable(True)
+        self.on_top_action.setToolTip('Keep SongSelector (and the map in its own window) above every other window,\n'
+                                      'e.g. on top of Traktor.')
+        self.on_top_action.setChecked(bool(self.settings.get('Always on top', False)))
+        self.on_top_action.toggled.connect(self.set_always_on_top)
+        if self.on_top_action.isChecked():
+            self.setWindowFlag(Qt.WindowStaysOnTopHint, True)  # before the window is first shown: no re-show needed
+        menu.addSeparator()
         self.dark_theme_action = menu.addAction('Dark theme')
         self.dark_theme_action.setCheckable(True)
         self.dark_theme_action.setChecked(self.settings.get('Theme', DEFAULT_THEME) == 'dark')
@@ -1469,6 +1502,17 @@ class MainWindow(SavedListsMixin, QMainWindow):
             return self.map_window.isVisible()
         return hasattr(self, 'similarity_map') and self.library_tabs.currentWidget() is self.similarity_map
 
+    def set_always_on_top(self, on):
+        """View -> Always on top: this window and the map's own window stay above other apps' windows."""
+        self.settings['Always on top'] = bool(on)
+        for window in (self, self.map_window):
+            if window is None:
+                continue
+            visible = window.isVisible()
+            window.setWindowFlag(Qt.WindowStaysOnTopHint, bool(on))  # changing the flag hides the window
+            if visible:
+                window.show()
+
     def show_map(self):
         """Ctrl+2: the map's tab, or its own window brought to the front."""
         if self.map_window is not None:
@@ -1488,6 +1532,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if detached:
             self.library_tabs.insertTab(MAP_TAB, self.map_placeholder, 'Similarity map')
             self.map_window = MapWindow(self.similarity_map, self.settings, self.windowIcon())
+            self.map_window.setWindowFlag(Qt.WindowStaysOnTopHint, bool(self.settings.get('Always on top', False)))
             self.map_window.closed.connect(lambda: self.set_map_detached(False))
         else:
             window, self.map_window = self.map_window, None
@@ -2651,7 +2696,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
                   'Album': self._text(row.get('Album')), 'Rating': self._rating_text(row.get('Rating')),
                   SS_RATING_COLUMN: self._rating_text(row.get('SS_Rating')),
                   SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color')),
-                  GROUP_COLUMN: self._group_text(self._text(row.get('File_Path')))}
+                  GROUP_COLUMN: self._group_text(self._text(row.get('File_Path'))),
+                  SPEED_COLUMN: speed_change_text(bpm, self.bpm_slider.value())}
         key_source = self._text(row.get('Key_Source')) or ('Loaded CSV' if key else 'Not available')
         bpm_source = self._text(row.get('BPM_Source')) or ('Loaded CSV' if bpm else 'Not available')
         color_source = self._text(row.get('Color_Source')) or ('Saved import' if self._text(row.get('Imported')) else 'Loaded CSV')
