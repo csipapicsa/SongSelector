@@ -546,6 +546,7 @@ class SimilarityMapWidget(QWidget):
     request_add_to_playlist = pyqtSignal(str)          # path_key
     selected = pyqtSignal(str)                         # path_key
     groups_changed = pyqtSignal()                      # self.groups was recomputed or cleared
+    detach_requested = pyqtSignal(bool)                # True: show the map in its own window, False: back in its tab
 
     def __init__(self, store, settings, parent=None):
         super().__init__(parent)
@@ -670,6 +671,11 @@ class SimilarityMapWidget(QWidget):
         self.view_3d_button.toggled.connect(self.set_3d)
         self.rearrange_button = QPushButton('Re-arrange map')
         self.rearrange_button.clicked.connect(self._rearrange)
+        self.detach_button = QPushButton('Own window')
+        self.detach_button.setCheckable(True)
+        self.detach_button.setToolTip('Show the map in a window of its own (move it to another screen, resize it\n'
+                                      'freely); it keeps following the List. Close that window to get it back here.')
+        self.detach_button.toggled.connect(self.detach_requested.emit)
         self.only_button = QPushButton(ONLY_LIST_TEXT)
         self.only_button.setCheckable(True)
         self.only_button.toggled.connect(self.set_only_listed)
@@ -711,6 +717,7 @@ class SimilarityMapWidget(QWidget):
         bar.addWidget(fit)
         bar.addWidget(self.only_button)
         bar.addWidget(self.rearrange_button)
+        bar.addWidget(self.detach_button)
         group_bar = QHBoxLayout()
         for widget in (QLabel('Groups:'), self.grouping, self.grouping_parameter, self.grouping_summary):
             group_bar.addWidget(widget)

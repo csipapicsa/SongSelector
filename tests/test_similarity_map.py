@@ -788,6 +788,66 @@ class FieldHtmlTests(unittest.TestCase):
         self.assertEqual(field_html('Title', 'A & B'), 'A &amp; B')
 
 
+class MapWindowTests(MapWindowTestBase):
+    """Asked 2026-11-17: the map in a window of its own (easier to resize and move, e.g. to a second screen)."""
+
+    def test_own_window_and_back_to_the_tab(self):
+        from songselector.ui.map_window import MapPlaceholder
+        self.window.show()
+        self.map.detach_button.click()
+        self.application.processEvents()
+        window = self.window.map_window
+        self.assertIsNotNone(window)
+        self.assertIs(self.map.window(), window)
+        self.assertTrue(window.isVisible())
+        self.assertIsInstance(self.window.library_tabs.widget(1), MapPlaceholder)
+        self.assertTrue(self.window.map_visible())
+        self.assertEqual(self.map.detach_button.text(), 'Back to the tab')
+        self.assertTrue(self.window.settings['Map detached'])
+        self.window.search_bar.setText('dnb')  # the map keeps following the List
+        self.assertEqual(self.visible(), {self.key(i) for i in range(12, 24)})
+        window.close()                          # closing the window docks the map again
+        self.application.processEvents()
+        self.assertIsNone(self.window.map_window)
+        self.assertIs(self.window.library_tabs.widget(1), self.map)
+        self.assertFalse(self.map.detach_button.isChecked())
+        self.assertFalse(self.window.settings['Map detached'])
+
+    def test_window_geometry_and_state_are_remembered(self):
+        self.window.show()
+        self.window.set_map_detached(True)
+        self.window.map_window.resize(640, 480)
+        self.application.processEvents()
+        self.window.set_map_detached(False)
+        self.assertIn('Map window geometry', self.window.settings)
+        self.window.set_map_detached(True)
+        self.application.processEvents()
+        self.assertEqual(self.window.map_window.size().width(), 640)
+        # Closing the app with the map detached: it opens detached next time.
+        self.window.close()
+        self.application.processEvents()
+        self.assertTrue(self.window.settings['Map detached'])
+        from songselector.ui.main_window import MainWindow
+        restarted = MainWindow()
+        try:
+            self.application.processEvents()
+            self.assertIsNotNone(restarted.map_window)
+        finally:
+            restarted.close()
+            self.application.processEvents()
+
+    def test_ctrl_2_brings_the_detached_map_to_the_front(self):
+        self.window.show()
+        self.window.set_map_detached(True)
+        with patch.object(self.window.map_window, 'raise_') as raised:
+            self.window.show_map()
+        raised.assert_called_once()
+        self.window.set_map_detached(False)
+        self.window.library_tabs.setCurrentIndex(0)
+        self.window.show_map()
+        self.assertIs(self.window.library_tabs.currentWidget(), self.map)
+
+
 class MapDataPlaceTests(unittest.TestCase):
     def test_a_placed_track_lands_among_its_own_style_in_the_same_vector_space(self):
         from songselector.core.similarity import centred_unit, raw_vectors
