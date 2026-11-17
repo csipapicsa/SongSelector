@@ -50,6 +50,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
 | `duplicates.py` | `find_duplicates(table, mode)`: duplicate rows by path, Artist - Title or file content (size, then SHA-256), each group ranked by the keep rule (file exists, richest, in a collection, first) |
+| `cover_art.py` | `find_cover(path)`: embedded picture (front cover first; ID3, FLAC, MP4), else cover.jpg / folder.jpg next to the file; `cache_keys` for the thumbnail cache. No Qt |
 | `placement.py` | `place_box`: the first corner next to a point where a box (map label, info card) covers no other box and stays in view; plain pixel rectangles, no Qt |
 | `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
@@ -75,6 +76,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `busy_spinner.py` | `BusySpinner`: small turning arc while any of its reasons is on (`set_busy(reason, on)`); hidden, timer stopped when idle. In the status bar (saving, description search; analysis) and the map (arranging, grouping) |
 | `duplicates_dialog.py` | Preview of a duplicate search: per group the row that stays (bold) and the rows to remove (checkable) |
 | `map_window.py` | `MapWindow`: the map widget in a top-level window of its own (geometry in the settings); `MapPlaceholder` in the map's tab meanwhile. `MainWindow.set_map_detached` moves the widget |
+| `covers.py` | `CoverProvider`: cover thumbnails (128 px) loaded by a worker thread with QImage and cached on disk (`covers/`, plus "no cover" markers), requested by painting; `CoverDelegate` paints the Cover column (cropped or square rows) |
 | `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
 | `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
 | `map_settings_dialog.py` | Choose the map's hover details |

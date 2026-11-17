@@ -44,6 +44,7 @@ from songselector import __version__
 from songselector.config import (
     COLOR_COLUMN_INDEX,
     COLOR_MAPPING_CATEGORY,
+    COVER_COLUMN,
     DEFAULT_BPM,
     DEFAULT_EMBEDDING_MODEL,
     FIELD_LABELS,
@@ -90,6 +91,7 @@ from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.background import BackgroundWriter
 from songselector.ui.busy_spinner import BusySpinner
 from songselector.ui.coloring_dialog import ColoringDialog
+from songselector.ui.covers import OFF, SIZES, STYLES, CoverDelegate, CoverProvider
 from songselector.ui.delegates import ColorDotDelegate
 from songselector.ui.duplicates_dialog import DuplicatesDialog
 from songselector.ui.elided_label import ElidedLabel
@@ -314,6 +316,20 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.map_window = None
         self.map_placeholder = MapPlaceholder(self.show_map, lambda: self.set_map_detached(False))
         self.similarity_map.detach_requested.connect(self.set_map_detached)
+
+        # Cover art (View -> Cover art): thumbnails loaded in the background, only for rows that are painted.
+        self.covers = CoverProvider(Path(SETTINGS_FILE).parent / 'covers', self)
+        self.cover_delegate = CoverDelegate(self.covers, self.settings, self)
+        self._cover_timer = QTimer(self)  # many covers arrive at once: one repaint for them
+        self._cover_timer.setSingleShot(True)
+        self._cover_timer.setInterval(60)
+        self._cover_timer.timeout.connect(self._repaint_covers)
+        self.covers.ready.connect(lambda _key: self._cover_timer.start())
+        for tree in (self.candidate_tree, self.playlist_tree):
+            tree.setItemDelegateForColumn(HEADER_INDEX[COVER_COLUMN], self.cover_delegate)
+            tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[COVER_COLUMN]), 1)  # after #
+        self._init_cover_menu()
+        self.apply_cover_style()
         if self.settings.get('Map detached', False):
             QTimer.singleShot(0, lambda: self.set_map_detached(True))  # as it was when the app was closed
         self._map_stale = True
@@ -1359,8 +1375,46 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     # -- embeddings ---------------------------------------------------------
 
+    def _init_cover_menu(self):
+        menu = self.view_menu.addMenu('Cover art')
+        menu.setToolTipsVisible(True)
+        self.cover_style_actions, self.cover_size_actions = {}, {}
+        for actions, setting, choices, default in (
+                (self.cover_style_actions, 'Cover art', STYLES, OFF),
+                (self.cover_size_actions, 'Cover size', {size: f'{size} px' for size in SIZES}, SIZES[0])):
+            group = QActionGroup(menu)
+            for value, label in choices.items():
+                action = menu.addAction(label)
+                action.setCheckable(True)
+                action.setChecked(self.settings.get(setting, default) == value)
+                action.triggered.connect(lambda _checked, setting=setting, value=value: self.set_cover_option(setting, value))
+                group.addAction(action)
+                actions[value] = action
+            menu.addSeparator()
+        menu.actions()[0].setToolTip('The picture in the file, else cover.jpg / folder.jpg next to it.')
+
+    def set_cover_option(self, setting, value):
+        self.settings[setting] = value
+        self.apply_cover_style()
+
+    def apply_cover_style(self):
+        """Show the Cover column in the chosen style and size (Off hides it); square rows take the size as height."""
+        style, size = self.settings.get('Cover art', OFF), int(self.settings.get('Cover size', SIZES[0]))
+        column = HEADER_INDEX[COVER_COLUMN]
+        for tree in (self.candidate_tree, self.playlist_tree):
+            tree.setColumnHidden(column, style == OFF)
+            if style != OFF:
+                tree.setColumnWidth(column, size + 4)
+            tree.doItemsLayout()  # uniform row heights are measured again from the delegate
+            tree.viewport().update()
+
+    def _repaint_covers(self):
+        for tree in (self.candidate_tree, self.playlist_tree):
+            tree.viewport().update()
+
     def _init_view_menu(self):
         menu = self.menuBar().addMenu('View')
+        self.view_menu = menu
         self.dark_theme_action = menu.addAction('Dark theme')
         self.dark_theme_action.setCheckable(True)
         self.dark_theme_action.setChecked(self.settings.get('Theme', DEFAULT_THEME) == 'dark')
@@ -2293,6 +2347,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         """Save settings before closing the app"""
         self.background.flush(timeout=30)  # a tag edit or row save still running finishes first
         self.background.stop()
+        self.covers.stop()
         if self.map_window is not None:  # stays detached for the next start
             self.map_window.closing_with_app = True
             self.map_window.close()

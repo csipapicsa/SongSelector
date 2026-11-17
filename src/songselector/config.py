@@ -182,6 +182,10 @@ HEADER_INDEX[GROUP_COLUMN] = len(HEADER_LABELS) - 1
 MATCH_COLUMN = 'Match'
 HEADER_LABELS += [MATCH_COLUMN]
 HEADER_INDEX[MATCH_COLUMN] = len(HEADER_LABELS) - 1
+# The track's cover art (View -> Cover art; shown only when a style is chosen). Not a track field.
+COVER_COLUMN = 'Cover'
+HEADER_LABELS += [COVER_COLUMN]
+HEADER_INDEX[COVER_COLUMN] = len(HEADER_LABELS) - 1
 
 SETTINGS_DEFAULT = {
     "Visible column left": HEADER_LABELS,
