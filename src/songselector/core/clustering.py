@@ -9,7 +9,8 @@ Three methods to compare (numpy only; the exe has no scikit-learn). Each has one
   thin areas and tiny clumps stay ungrouped (-1). Parameter: share of tracks (%) that count
   as dense.
 
-group_tracks() numbers groups by size: 0 is the largest.
+group_tracks() numbers groups by their place on the map: neighbouring groups get neighbouring numbers
+(by_position; before 1.2.0 by size, 0 the largest).
 
 Measured on the developer's library (2026-10-28, 3,489 tracks; style from genre/folder:
 DnB 1,262, breaks 1,057, house 380): each method takes about 1 s. Style purity of the groups
@@ -213,6 +214,27 @@ def _by_size(labels):
     return np.array([mapping.get(label, -1) for label in labels.tolist()])
 
 
+def by_position(labels, points):
+    """Renumber groups along a path through their centres on the map, so that groups next to each other get numbers
+    next to each other (asked 2026-11-17: groups 3 and 14 touched while group 4 was on the other side). The path
+    starts at the group farthest from the middle and always goes on to the nearest group not visited yet. -1
+    (ungrouped) stays -1. Without usable positions: by size."""
+    labels, points = np.asarray(labels), np.asarray(points, dtype=np.float64)
+    groups = sorted(set(labels[labels >= 0].tolist()))
+    if len(groups) < 2 or points.ndim != 2 or len(points) != len(labels):
+        return _by_size(labels)
+    centres = np.array([points[labels == group].mean(0) for group in groups])
+    current = int(np.argmax(np.linalg.norm(centres - centres.mean(0), axis=1)))
+    order, left = [current], set(range(len(groups))) - {current}
+    while left:
+        rest = sorted(left)
+        current = rest[int(np.argmin(np.linalg.norm(centres[rest] - centres[current], axis=1)))]
+        order.append(current)
+        left.remove(current)
+    mapping = {groups[index]: number for number, index in enumerate(order)}
+    return np.array([mapping.get(label, -1) for label in labels.tolist()])
+
+
 def group_tracks(method, vectors, points, parameter, should_stop=lambda: False):
     """Group per track (array aligned with vectors and points); -1 = no group. Slow for
     thousands of tracks (seconds): run in a thread."""
@@ -229,4 +251,4 @@ def group_tracks(method, vectors, points, parameter, should_stop=lambda: False):
         labels = density_groups(points, float(parameter) / 100)
     else:
         raise ValueError(f'unknown grouping method: {method}')
-    return _by_size(labels)
+    return by_position(labels, points)

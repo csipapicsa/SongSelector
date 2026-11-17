@@ -113,6 +113,30 @@ class ClusteringTests(unittest.TestCase):
         from songselector.core.clustering import _by_size
         self.assertEqual(list(_by_size([5, 7, 7, -1, 7, 5, 2])), [1, 0, 0, -1, 0, 1, 2])
 
+    def test_groups_are_numbered_along_the_map(self):
+        # Asked 2026-11-17: neighbouring groups got far-apart numbers (by size). Centres on a line at x = 0, 10, 1,
+        # 11 (two pairs of neighbours): the path starts at the outermost centre and steps to the nearest.
+        from songselector.core.clustering import by_position
+        labels = [0, 0, 1, 1, 2, 2, 3, 3, -1]
+        points = [(0, 0), (0, 1), (10, 0), (10, 1), (1, 0), (1, 1), (11, 0), (11, 1), (5, 5)]
+        numbers = by_position(labels, points)
+        self.assertEqual(numbers[-1], -1)
+        by_x = {x: numbers[labels.index(group)] for group, x in ((0, 0), (1, 10), (2, 1), (3, 11))}
+        self.assertEqual(sorted(by_x.values()), [0, 1, 2, 3])
+        # neighbours on the map have neighbouring numbers
+        self.assertEqual(abs(by_x[0] - by_x[1]), 1)
+        self.assertEqual(abs(by_x[10] - by_x[11]), 1)
+        self.assertEqual(list(by_position([1, 0, 0], [(0, 0)])), [1, 0, 0])  # positions do not fit: by size
+        self.assertEqual(list(by_position([4, 4, -1], [(0, 0), (1, 1), (2, 2)])), [0, 0, -1])
+
+    def test_group_colours_repeat_instead_of_turning_grey(self):
+        from PyQt5.QtGui import QColor
+
+        from songselector.ui.similarity_map import GROUP_COLOURS, UNGROUPED, group_colour
+        self.assertEqual(group_colour(len(GROUP_COLOURS)).name(), group_colour(0).name())
+        self.assertEqual(group_colour(30).name(), QColor(GROUP_COLOURS[30 % len(GROUP_COLOURS)]).name())
+        self.assertEqual(group_colour(-1), UNGROUPED)
+
 
 class LayoutStoreTests(unittest.TestCase):
     def test_load_many_and_layout_round_trip(self):
