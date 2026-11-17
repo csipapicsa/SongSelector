@@ -39,7 +39,7 @@ their libraries automatically, and answers three questions:
   from audio alone
 
 **Library integration, without export steps**
-- Traktor: reads `collection.nml` (key, BPM, colour, rating, playlists) and re-reads it when
+- Traktor: reads `collection.nml` (key, BPM, colour, rating, playlists and smartlists) and re-reads it when
   Traktor saves; never writes to it
 - Rekordbox: reads playlists directly from its encrypted `master.db` (from a temporary copy);
   nothing to export, Rekordbox does not have to be closed

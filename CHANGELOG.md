@@ -17,6 +17,12 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Traktor's smartlists work.** Under *Traktor Playlists* in the Browser, a smartlist now shows its tracks like a
+  playlist (and can be loaded into the Playlist tab or copied). Its query is evaluated on Traktor's own collection:
+  BPM, colour, rating, genre, comment, artist, title, file path, key (Open Key, e.g. `1m`), length, play count and
+  import date (`MONTHS_AGO(1)`), with `== <> < <= > >= % !% ~`, `&` and `|`. Two assumptions: `~` means within 1 BPM,
+  and `&` binds tighter than `|`. A smartlist on *played in this session* cannot be evaluated outside Traktor; the bar
+  above the List says so.
 - **Speed change column.** How much faster (+) or slower (-) each track plays at the master tempo, in percent with
   one decimal (`+6.2%`, `-13.0%`), next to *Original BPM*; it follows the tempo slider and sorts as a number.
 - **Sorting by Group sorts by Match within each group** (the best match of a description search first), in both

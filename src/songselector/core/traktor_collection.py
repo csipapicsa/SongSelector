@@ -99,7 +99,11 @@ class TraktorCollection:
                           'genre': info.get('GENRE'), 'comment': info.get('COMMENT'),
                           'bpm': parse_bpm(tempo.get('BPM')) if tempo is not None else None,
                           'key': parsed_key, 'color': info.get('COLOR'),
-                          'rating': self._ranking(info.get('RANKING')), 'size_kb': info.get('FILESIZE')}
+                          'rating': self._ranking(info.get('RANKING')), 'size_kb': info.get('FILESIZE'),
+                          # for Traktor smartlists (core.traktor_smartlist)
+                          'playcount': info.get('PLAYCOUNT'), 'playtime': info.get('PLAYTIME'),
+                          'import_date': info.get('IMPORT_DATE'), 'label': info.get('LABEL'),
+                          'remixer': info.get('REMIXER')}
                 paths[canonical_path(path)] = record
                 names.setdefault(filename.casefold(), []).append(record)
                 entry.clear()

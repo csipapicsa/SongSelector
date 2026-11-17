@@ -76,7 +76,7 @@ One PR per block below, in this order; each with tests (a failing test first for
 - [ ] "Remove from list" for selected rows in both panels (the collection keeps them; only the list changes).
 - [x] More than one playlist: Browser tab with saved playlists and smartlists (4.21.0).
 - [x] Traktor's playlists in the Browser (*Traktor Playlists*, read-only, 4.23.0).
-- [ ] Traktor's smartlists: evaluate their queries (`$BPM > 126 & $GENRE % "break" | ...`; operators
+- [x] (1.2.0) Traktor's smartlists: evaluate their queries (`$BPM > 126 & $GENRE % "break" | ...`; operators
       `== <> < <= > >= % !% ~`, `&` and `|`). Fields the app lacks: `$PLAYCOUNT`, `$TIME`
       (track length); they would have to be read from the NML. 43 in the user's collection.
 - [x] Rekordbox's playlists in the Browser (*Rekordbox Playlists*, read directly from `master.db`, read-only, 4.25.0).

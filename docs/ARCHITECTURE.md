@@ -51,6 +51,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
 | `duplicates.py` | `find_duplicates(table, mode)`: duplicate rows by path, Artist - Title or file content (size, then SHA-256), each group ranked by the keep rule (file exists, richest, in a collection, first) |
 | `cover_art.py` | `find_cover(path)`: embedded picture (front cover first; ID3, FLAC, MP4), else cover.jpg / folder.jpg next to the file; `cache_keys` for the thumbnail cache. No Qt |
+| `traktor_smartlist.py` | Traktor smartlist queries (`$BPM > 126 & $GENRE % "break"`): tokenizer, parser (`&` before `\|`, parentheses), evaluation on `TraktorCollection` records; `SmartlistError` says why a query cannot be evaluated |
 | `placement.py` | `place_box`: the first corner next to a point where a box (map label, info card) covers no other box and stays in view; plain pixel rectangles, no Qt |
 | `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
