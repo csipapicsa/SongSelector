@@ -626,7 +626,7 @@ class DescriptionBarTests(WindowCase):
 
     def test_without_a_clap_model_the_bar_says_how_to_get_one(self):
         self.assertFalse(self.window.description_box.isEnabled())
-        self.assertIn('Download models', self.window.description_box.lineEdit().placeholderText())
+        self.assertIn('Get models', self.window.description_box.lineEdit().placeholderText())
 
 
 class SearchEngineTests(unittest.TestCase):

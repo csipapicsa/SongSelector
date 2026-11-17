@@ -1,4 +1,8 @@
-"""Downloads the model files from the project's GitHub release `models-v1` into the models folder.
+"""Downloads the model files into the models folder, from a web folder that serves them under their names.
+
+There is no public model release (decided 2026-11-17: the weights are not redistributed), so BASE_URL is empty and
+the app explains how to build the models instead (ui/model_download_dialog.py). A team that hosts the files can set
+`Model download URL` in the settings; the download then works as before.
 
 The files are the ONNX exports made by scripts/export_cnn14_onnx.py and scripts/export_clap_onnx.py (see MODELS.md
 in the release for sources and licences). Each download goes to `<name>.part` first, resumes where it stopped
@@ -12,8 +16,8 @@ import os
 import urllib.request
 from pathlib import Path
 
-BASE_URL = 'https://github.com/csipapicsa/SongSelector/releases/download/models-v1/'
-RELEASE_PAGE = 'https://github.com/csipapicsa/SongSelector/releases/tag/models-v1'
+BASE_URL = ''   # no public source; see the module docstring
+BUILD_HELP = 'https://github.com/csipapicsa/SongSelector#getting-the-embedding-models'
 
 # name: (size in bytes, SHA-256); the same values as SHA256SUMS.txt in the release.
 FILES = {
