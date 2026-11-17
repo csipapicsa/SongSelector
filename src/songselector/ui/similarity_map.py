@@ -319,10 +319,11 @@ class MapLabel(QGraphicsRectItem):
 
 
 def group_colour(group):
-    """Colour of a group as on the map (0 = largest; -1 = in no group)."""
+    """Colour of a group as on the map (-1 = in no group). Groups are numbered along the map, so the colours repeat
+    after the palette, for groups far apart, instead of making every later group grey."""
     if group < 0:
         return UNGROUPED
-    return QColor(GROUP_COLOURS[group]) if group < len(GROUP_COLOURS) else NO_COLOR
+    return QColor(GROUP_COLOURS[group % len(GROUP_COLOURS)])
 
 
 class _Loader(QObject):
@@ -948,11 +949,9 @@ class SimilarityMapWidget(QWidget):
         summary = f'{len(sizes)} groups of ' + (f'all {len(labels)} analysed tracks' if self.only is None
                                                 else f'the {len(labels)} mapped tracks')
         if len(sizes):
-            summary += f'; largest {sizes[0] / len(labels):.0%}'
+            summary += f'; largest {sizes.max() / len(labels):.0%}; numbered along the map'
         if (labels < 0).any():
             summary += f'; {np.mean(labels < 0):.0%} in no group (dark grey)'
-        if len(sizes) > len(GROUP_COLOURS):
-            summary += f'; groups after {len(GROUP_COLOURS)} are light grey'
         self.grouping_summary.setText(summary)
         self._refresh()
         self.groups_changed.emit()
