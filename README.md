@@ -50,6 +50,7 @@ their libraries automatically, and answers three questions:
 - Playlist panel for building a set in order; saved playlists and smartlists (stored search rules)
 - Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons
 - Own *Rating* and *Color* per track, independent of Traktor
+- Cover art in the List and Playlist (embedded, or cover.jpg / folder.jpg next to the file), cropped to the row or in square rows
 - Dark and light theme
 
 ## Engineering

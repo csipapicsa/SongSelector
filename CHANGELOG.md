@@ -17,6 +17,11 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Cover art in the List and the Playlist.** *View -> Cover art*: a *Cover* column (after `#`) with each track's
+  picture: the one embedded in the file, else `cover.jpg` / `folder.jpg` next to it. Two styles: *cropped to the row
+  height* (normal rows, the top of the picture) or *square rows* (every row as tall as the picture, also those
+  without one), in 48, 72 or 96 px. Off by default. Covers load in the background, only for the rows you see, and
+  are kept as small thumbnails in a `covers` folder next to the library, so they are read from the files once.
 - **The map in its own window.** *Own window* on the map moves it into a separate window (another screen, any
   size); it keeps following the List, and Ctrl+2 brings it to the front. Close that window (or *Back to the tab*)
   to get it back in its tab. Its size and position, and whether it was in its own window, are remembered.
