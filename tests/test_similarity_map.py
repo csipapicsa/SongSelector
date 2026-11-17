@@ -788,6 +788,121 @@ class FieldHtmlTests(unittest.TestCase):
         self.assertEqual(field_html('Title', 'A & B'), 'A &amp; B')
 
 
+class MapDataPlaceTests(unittest.TestCase):
+    def test_a_placed_track_lands_among_its_own_style_in_the_same_vector_space(self):
+        from songselector.core.similarity import centred_unit, raw_vectors
+        from songselector.ui.similarity_map import MapData
+        matrices = two_styles(per_style=10)
+        mapped = matrices[:9] + matrices[10:19]   # one track of each style held back
+        keys = [f'k{index}' for index in range(len(mapped))]
+        vectors, centre = track_vectors(mapped, with_centre=True)
+        points = tsne_layout(vectors, iterations=400)
+        data = MapData(list(keys), vectors, {key: tuple(point) for key, point in zip(keys, points)}, {}, centre)
+        self.assertEqual(data.place({'new0': matrices[9], 'new1': matrices[19], 'k0': matrices[0]}), ['new0', 'new1'])
+        self.assertEqual(len(data.vectors), 20)
+        np.testing.assert_allclose(data.vectors[data.row['new1']],
+                                   centred_unit(raw_vectors([matrices[19]]), centre)[0], rtol=1e-5)
+        styles = (range(0, 9), range(9, 18))
+        for new, own, other in (('new0', *styles), ('new1', *styles[::-1])):
+            row = data.row[new]
+            similar = [data.keys[index] for index, _score in nearest(data.vectors, row, count=5, among=range(18))]
+            self.assertTrue(all(int(key[1:]) in own for key in similar), (new, similar))  # same vector space
+            centroid = lambda indexes: np.mean([data.positions[f'k{i}'] for i in indexes], axis=0)  # noqa: E731
+            position = np.array(data.positions[new])
+            self.assertLess(np.linalg.norm(position - centroid(own)), np.linalg.norm(position - centroid(other)))
+
+
+class PlaylistOnMapTests(MapWindowTestBase):
+    """Asked 2026-11-17: tracks selected in the Playlist are shown on the map, also when the List filters them out."""
+
+    def wait_for_map(self):
+        deadline = time.monotonic() + 60
+        timer = lambda: self.map._follow_timer is not None and self.map._follow_timer.isActive()  # noqa: E731
+        while (self.map._loading or self.map._again or timer()) and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.01)
+        self.application.processEvents()
+
+    def add_to_playlist(self, *indexes):
+        for index in indexes:
+            self.map.request_add_to_playlist.emit(self.key(index))
+
+    def select_in_playlist(self, *indexes):
+        from PyQt5.QtCore import QItemSelectionModel
+        tree = self.window.playlist_tree
+        tree.clearSelection()
+        wanted = {self.key(index) for index in indexes}
+        for row in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(row)
+            if canonical_path(item.text(self.path_column())) in wanted:
+                tree.selectionModel().select(tree.indexFromItem(item), QItemSelectionModel.Select | QItemSelectionModel.Rows)
+        self.application.processEvents()
+
+    def path_column(self):
+        from songselector.config import HEADER_INDEX
+        return HEADER_INDEX['Path']
+
+    def pen(self, index):
+        return self.map.dots[self.key(index)].pen()
+
+    def test_selected_playlist_tracks_get_an_amber_ring(self):
+        self.add_to_playlist(1, 13)
+        self.select_in_playlist(1, 13)
+        self.assertEqual(set(self.map.highlighted), {self.key(1), self.key(13)})
+        for index in (1, 13):
+            self.assertEqual(self.pen(index).color().name(), '#ffb000')
+            self.assertEqual(self.pen(index).style(), 1)  # solid: the List shows them
+        self.assertIn('2 of 2 selected Playlist tracks shown', self.map._base_status)
+        self.select_in_playlist()  # nothing selected: the rings go
+        self.assertEqual(self.map.highlighted, {})
+        self.assertNotEqual(self.pen(1).color().name(), '#ffb000')
+
+    def test_a_playlist_track_the_list_filters_out_is_shown_but_not_matched(self):
+        from PyQt5.QtCore import Qt
+        self.add_to_playlist(1)
+        self.window.search_bar.setText('dnb')       # track 1 is breaks: not in the List
+        self.assertNotIn(self.key(1), self.visible())
+        self.select_in_playlist(1)
+        self.assertIn(self.key(1), self.visible())  # shown anyway
+        self.assertEqual(self.pen(1).style(), Qt.DashLine)
+        self.assertLess(self.map.dots[self.key(1)].brush().color().alpha(), 255)
+        self.map.select(self.key(13))
+        matched = {self.map.suggestions.topLevelItem(i).data(0, Qt.UserRole)
+                   for i in range(self.map.suggestions.topLevelItemCount())}
+        self.assertNotIn(self.key(1), matched)      # not a closest match of a listed track
+        self.assertFalse(any(self.key(1) in (source, target) for source, target, *_ in self.map._edges(self.map.criteria())))
+        self.map.select(self.key(1))                # its own closest matches come from the List
+        matched = {self.map.suggestions.topLevelItem(i).data(0, Qt.UserRole)
+                   for i in range(self.map.suggestions.topLevelItemCount())}
+        self.assertTrue(matched)
+        self.assertTrue(all(int(key.split('track')[-1].split('.')[0]) >= 12 for key in matched))
+        self.select_in_playlist()
+        self.assertNotIn(self.key(1), self.visible())
+
+    def test_on_a_map_of_the_list_only_a_playlist_track_is_placed_near_similar_tracks(self):
+        self.add_to_playlist(1)
+        self.window.search_bar.setText('dnb')
+        self.map.only_button.setChecked(True)
+        self.wait_for_map()
+        self.assertNotIn(self.key(1), self.map.data.row)
+        self.select_in_playlist(1)
+        self.assertIn(self.key(1), self.map.data.row)  # placed, no new layout
+        self.assertIn(self.key(1), self.visible())
+        self.assertEqual(len(self.map.data.vectors), len(self.map.data.keys))
+        # Placed with the map's own centring: as similar to the mapped tracks as a fresh map of all of them says.
+        self.map.select(self.key(1))
+        self.assertTrue(self.map.suggestions.topLevelItemCount())
+        self.window.search_bar.setText('dnb 1')        # the List changes: the new map gets the track again
+        self.wait_for_map()
+        self.assertIn(self.key(1), self.map.data.row)
+        self.assertIn(self.key(1), self.visible())
+
+    def test_an_unanalysed_playlist_track_is_reported(self):
+        self.add_to_playlist(24)                      # track 24 has no embedding
+        self.select_in_playlist(24)
+        self.assertIn('0 of 1 selected Playlist tracks shown', self.map._base_status)
+
+
 class MapDropTests(MapWindowTestBase):
     """Dropping a track on the map (e.g. from the playlist) selects it there."""
 

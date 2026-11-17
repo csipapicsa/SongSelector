@@ -27,7 +27,7 @@ One PR per block below, in this order; each with tests (a failing test first for
       `BackgroundWriter`: append / delete only the changed rows, coalesce a burst of saves into one.
 - [x] **E. Busy indicator.** One `BusySpinner` widget (runs only while busy) next to: analysis progress, map
       arranging / grouping, description search, model download, tag saving.
-- [ ] **C. Playlist selection on the map.** Selected Playlist tracks are shown on the map even if the List filters
+- [x] **C. Playlist selection on the map.** Selected Playlist tracks are shown on the map even if the List filters
       them out, in a distinct style; several at once; tracks not on a *Map the List only* map are placed near
       their most similar tracks (`place_new`). Field lookup by a dict instead of scanning the trees.
 - [ ] **G. Delete duplicates, three ways:** same path (today), same Artist - Title (case and spaces ignored), same
