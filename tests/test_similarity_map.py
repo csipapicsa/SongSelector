@@ -848,6 +848,46 @@ class MapWindowTests(MapWindowTestBase):
         self.assertIs(self.window.library_tabs.currentWidget(), self.map)
 
 
+class MapCoverTests(MapWindowTestBase):
+    """Asked 2026-11-17: cover art in the map's cards and its closest matches, when a track has one."""
+
+    def setUp(self):
+        super().setUp()
+        from test_cover_art import add_pictures, image_bytes
+        from test_imports import tagged_file
+        for index in (0, 3):  # two tracks with a cover; the others have no file at all
+            add_pictures(tagged_file(self.root / f'track{index}.mp3'), (3, image_bytes('red')))
+        self.path = lambda index: str(self.root / f'track{index}.mp3')
+
+    def wait_for_cover(self, index):
+        deadline = time.monotonic() + 10
+        while not self.window.covers.known(self.path(index)) and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.01)
+        self.application.processEvents()
+
+    def test_cards_and_details_show_the_cover_once_it_is_loaded(self):
+        self.map.hover(self.key(0))
+        self.assertNotIn('<img', self.map.card_html(self.key(0)).split('<b>')[0])  # requested, not there yet
+        self.wait_for_cover(0)
+        self.assertIn('<img', self.map.hover_card.text.toHtml())  # the open card was drawn again
+        self.map.select(self.key(0))
+        self.assertIn('<img', self.map.details.text())
+        self.map.hover(self.key(1))                                # no cover: no picture
+        self.assertNotIn('<img', self.map.hover_card.text.toHtml())
+
+    def test_closest_matches_get_the_cover_as_an_icon(self):
+        from PyQt5.QtCore import Qt
+        self.map.select(self.key(6))  # same style and key group as tracks 0 and 3
+        self.wait_for_cover(0)
+        self.wait_for_cover(3)
+        items = {self.map.suggestions.topLevelItem(i).data(0, Qt.UserRole): self.map.suggestions.topLevelItem(i)
+                 for i in range(self.map.suggestions.topLevelItemCount())}
+        self.assertFalse(items[self.key(0)].icon(0).isNull())
+        self.assertFalse(items[self.key(3)].icon(0).isNull())
+        self.assertTrue(items[self.key(9)].icon(0).isNull())
+
+
 class MapDataPlaceTests(unittest.TestCase):
     def test_a_placed_track_lands_among_its_own_style_in_the_same_vector_space(self):
         from songselector.core.similarity import centred_unit, raw_vectors

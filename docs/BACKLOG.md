@@ -36,7 +36,7 @@ One PR per block below, in this order; each with tests (a failing test first for
       rating / colour...), 3) on a tie the one in the Traktor / Rekordbox collection, 4) else the first. Preview
       dialog before removing; only list rows are removed, never files.
 - [x] **D. Map in its own window.** Detach / Attach; closing the window docks it again; geometry saved.
-- [ ] **H. Cover art.** H1 (List / Playlist column, cache) done; H2 (map cards, closest matches) to do. Embedded pictures (ID3 APIC, FLAC, MP4), else `cover.jpg` / `folder.jpg` (also .png) next
+- [x] **H. Cover art.** H1 (List / Playlist column, cache) and H2 (map cards, details, closest matches). Embedded pictures (ID3 APIC, FLAC, MP4), else `cover.jpg` / `folder.jpg` (also .png) next
       to the file. Thumbnails cached on disk, loaded in the background for visible rows. *Cover* column, size
       setting, two styles: cropped to the normal row height (top of the image) or square rows (rows without a
       cover keep the same height). Also in the map cards and the closest matches. No new dependency (Qt scales).
