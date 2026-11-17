@@ -293,11 +293,17 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         self.assertIn(canonical_path(dropped), window.saved_imports)
         self.assertTrue(legacy.exists())
 
+    def duplicate_action(self, window, label):
+        menu = next(action.menu() for action in window.library_context_menu().actions()
+                    if action.text() == 'Delete duplicates from the list')
+        return next(action for action in menu.actions() if action.text().startswith(label))
+
     def test_delete_duplicates_menu_removes_rows_persists_and_keeps_files(self):
+        from PyQt5.QtWidgets import QDialog
         window = self.window()
-        action = next(action for action in window.library_context_menu().actions()
-                      if action.text() == 'Delete duplicates from the list')
-        action.trigger()
+        with patch('songselector.ui.main_window.DuplicatesDialog.exec_', return_value=QDialog.Accepted) as shown:
+            self.duplicate_action(window, 'Same file path').trigger()
+        shown.assert_called_once()  # the groups are shown before anything is removed
         self.assertEqual(sorted(window.table['Title']), ['one', 'three', 'two'])
         self.assertEqual(window.candidate_tree.topLevelItemCount(), 3)
         self.assertIn('Removed 1 duplicate', window.status_label.text())
@@ -307,3 +313,57 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
         self.assertEqual(sorted(restored.table['Title']), ['one', 'three', 'two'])
         self.assertEqual(restored.delete_duplicate_tracks(), 0)
         self.assertEqual(restored.status_label.text(), 'No duplicate paths in the list')
+
+    def test_cancelled_preview_removes_nothing(self):
+        from PyQt5.QtWidgets import QDialog
+        window = self.window()
+        with patch('songselector.ui.main_window.DuplicatesDialog.exec_', return_value=QDialog.Rejected):
+            self.duplicate_action(window, 'Same file path').trigger()
+        self.assertEqual(len(window.table), 4)
+
+    def test_same_artist_title_keeps_the_richest_row(self):
+        window = self.window()
+        extra = self.root / 'copy of two.mp3'
+        extra.write_bytes(b'')
+        window.table = pd.concat([window.table, pd.DataFrame([track(extra, ' TWO ', Comment='peak time', Rating=4)])],
+                                 ignore_index=True)
+        window.populate_tree()
+        # 'one' and 'one again' share a path, not a title: only 'two' and ' TWO ' are duplicates here.
+        self.assertEqual(window.delete_duplicate_tracks(mode='artist_title'), 1)
+        rows = window.table.set_index('Title')
+        self.assertNotIn('two', rows.index)  # the poorer row went
+        self.assertEqual(rows.loc[' TWO ', 'Comment'], 'peak time')
+        self.assertIn('(Same Artist - Title)', window.status_label.text())
+        restored = self.restart(window)
+        self.assertEqual(len(restored.table), 4)
+
+    def test_same_file_finds_copies_in_the_background(self):
+        from PyQt5.QtWidgets import QDialog
+        window = self.window()
+        for index, path in enumerate(self.files):
+            path.write_bytes(bytes([index]) * 100)  # distinct content
+        copy = self.root / 'elsewhere' / 'two.mp3'
+        copy.parent.mkdir()
+        copy.write_bytes(self.files[1].read_bytes())
+        window.table = pd.concat([window.table, pd.DataFrame([track(copy, 'two (copy)')])], ignore_index=True)
+        window.populate_tree()
+        with patch('songselector.ui.main_window.DuplicatesDialog.exec_', return_value=QDialog.Accepted):
+            self.assertEqual(window.delete_duplicate_tracks(mode='same_file', confirm=True), 0)  # started
+            self.assertIn('Looking for duplicates', window.activity_spinner.reasons())
+            self.assertTrue(window.background.flush())
+        self.assertFalse(window.activity_spinner.busy())
+        # 'one' listed twice is the same file too; of 'two' and its copy the first stays.
+        self.assertEqual(sorted(window.table['Title']), ['one', 'three', 'two'])
+
+    def test_a_list_changed_during_the_search_is_not_touched(self):
+        from PyQt5.QtWidgets import QDialog
+        window = self.window()
+
+        def change_the_list(*_args):
+            window.table = window.table.iloc[:-1].reset_index(drop=True)  # e.g. a removal meanwhile
+            return QDialog.Accepted
+
+        with patch('songselector.ui.main_window.DuplicatesDialog.exec_', side_effect=change_the_list):
+            self.assertEqual(window.delete_duplicate_tracks(confirm=True), 0)
+        self.assertIn('please run it again', window.status_label.text())
+        self.assertEqual(len(window.table), 3)
