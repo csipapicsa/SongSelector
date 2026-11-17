@@ -457,16 +457,17 @@ class BrowserGuiTests(unittest.TestCase):
         window = self.window()
         node = self.traktor_playlists(window)
         browser = window.list_browser
-        self.assertEqual(browser.traktor_root.text(0), 'Traktor Playlists (1)')
+        self.assertEqual(browser.traktor_root.text(0), 'Traktor Playlists (2)')  # the smartlist counts too
         folder = browser.traktor_root.child(0)
         self.assertEqual((folder.text(0), folder.child(0).text(0)), ('Sets', 'Breakbeat'))
-        self.assertIn('not supported yet', browser.traktor_root.child(1).toolTip(0))
+        self.assertIn('Traktor smartlist: $BPM > 165.000000', browser.traktor_root.child(1).toolTip(0))
         browser.setCurrentItem(folder.child(0))
         self.assertEqual(window.list_source, node)
         self.assertEqual(self.shown(window), ['three', 'one'])  # Traktor's order, by #
         self.assertIn('2 of its tracks are not in the library list', window.source_label.text())
-        browser.setCurrentItem(browser.traktor_root.child(1))  # a Traktor smartlist: nothing happens
-        self.assertEqual(window.list_source, node)
+        browser.setCurrentItem(browser.traktor_root.child(1))  # a Traktor smartlist is shown too (since 1.2.0)
+        self.assertEqual(window.list_source['name'], 'Fast')
+        window.show_list_source(node)
 
         browser.node_activated.emit(node)  # double-click: into the Playlist tab
         self.assertEqual(self.playlist(window), ['three', 'one'])
@@ -487,6 +488,32 @@ class BrowserGuiTests(unittest.TestCase):
         self.assertEqual(window.list_source, copy)
         window.show_list_source(node)
         self.assertIsNone(window.list_source)
+
+    def test_traktor_smartlists_are_evaluated_on_traktors_collection(self):
+        # Asked 2026-11-17: Traktor's smartlists were listed but did nothing.
+        window = self.window()
+        collection = window.importer.collection
+        collection.by_path = {canonical_path(self.paths[title]): {'path': str(self.paths[title]), 'bpm': bpm,
+                                                                    'genre': genre, 'rating': rating, 'color': '5'}
+                              for title, bpm, genre, rating in (('one', 128, 'Breakbeat', 4), ('two', 122, 'House', None),
+                                                                ('three', 125, 'House', 2), ('four', 118, 'Deep House', 5))}
+        collection._load = lambda: None  # the test's collection is set by hand
+        collection.playlists = [
+            {'type': 'SMARTLIST', 'name': 'House 120+', 'query': '$BPM >= 120.000000 & $GENRE % "house"'},
+            {'type': 'SMARTLIST', 'name': 'Rated or fast', 'query': '$RATING >= 4 | $BPM ~ 125.5'},
+            {'type': 'SMARTLIST', 'name': 'Played', 'query': '$PLAYED == TRUE'}]
+        window.refresh_traktor_playlists()
+        browser = window.list_browser
+        browser.setCurrentItem(browser.traktor_root.child(0))
+        self.assertEqual(sorted(self.shown(window)), ['three', 'two'])
+        browser.setCurrentItem(browser.traktor_root.child(1))
+        self.assertEqual(sorted(self.shown(window)), ['four', 'one', 'three'])  # 4 and 5 stars; 125 is about 125.5
+        browser.setCurrentItem(browser.traktor_root.child(2))  # cannot be evaluated outside Traktor: says why
+        self.assertEqual(self.shown(window), [])
+        self.assertIn('only Traktor knows', window.source_label.text())  # stays visible above the List
+        self.assertIn('Traktor smartlist: Played', window.source_label.text())
+        browser.node_activated.emit({'kind': 'traktor', 'name': 'House 120+', 'path': ['House 120+']})
+        self.assertEqual(sorted(self.playlist(window)), ['three', 'two'])  # double-click: into the Playlist tab
 
     def test_rekordbox_playlists_are_listed_shown_loaded_and_copied_like_traktors(self):
         from songselector.core.rekordbox_library import RekordboxLibrary

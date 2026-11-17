@@ -16,6 +16,7 @@ from songselector.config import FIELD_LABELS, HEADER_INDEX, MATCH_COLUMN, POSITI
 from songselector.core.library_store import PLAYLIST, SMARTLIST
 from songselector.core.search_filters import active_filters
 from songselector.core.traktor_collection import canonical_path
+from songselector.core.traktor_smartlist import SmartlistError, smartlist_paths
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.list_browser import (
     COLLECTION_GROUPS,
@@ -91,6 +92,7 @@ class SavedListsMixin:
     def _resolve_source(self):
         node = self.list_source
         self._source_positions, self._source_rules, self._source_column = {}, (), None
+        self._source_note = ''  # why the entry shows no tracks, if it cannot be evaluated
         self._source_scores = {}
         if node is None:
             return
@@ -165,6 +167,8 @@ class SavedListsMixin:
         if node['kind'] == SMARTLIST:
             rules = '; '.join(f"{rule['column']} {rule['condition']} {rule['value']}" for rule in self._source_rules)
             text += f' ({rules or "no rules: all tracks"})'
+        if getattr(self, '_source_note', ''):
+            text += f' - {self._source_note}'
         missing = len(self._source_positions) - shown
         if missing > 0:
             text += f'; {missing} of its tracks are not in the library list'
@@ -284,20 +288,38 @@ class SavedListsMixin:
             if found is None:
                 return None
             entries = found.get('children', [])
-        return found if found is not None and found['type'] == 'PLAYLIST' else None
+        if found is None:
+            return None
+        if found['type'] == 'PLAYLIST' or (found['type'] == 'SMARTLIST' and node['kind'] == TRAKTOR):
+            return found
+        return None
+
+    def _foreign_tracks(self, entry):
+        """File paths of a Traktor / Rekordbox playlist, or of a Traktor smartlist (its query evaluated on Traktor's
+        collection; a query that cannot be evaluated gives no tracks and says why)."""
+        if entry['type'] != 'SMARTLIST':
+            return entry['tracks']
+        try:
+            return smartlist_paths(self.importer.collection.by_path.values(), entry.get('query', ''))
+        except SmartlistError as error:
+            # Also in the bar above the List: the status line is soon overwritten by the List's counts.
+            self._source_note = f'cannot be shown here: {error}'
+            self._report(f"Traktor smartlist {entry['name']}: {error}", 'error')
+            return []
 
     def _foreign_keys(self, node):
         """Canonical paths of a Traktor or Rekordbox playlist's tracks in order (each once), or None if it is gone."""
         entry = self._foreign_entry(node)
         if entry is None:
             return None
-        return list(dict.fromkeys(key for key in map(canonical_path, entry['tracks']) if key))
+        return list(dict.fromkeys(key for key in map(canonical_path, self._foreign_tracks(entry)) if key))
 
     def _foreign_missing(self, node):
         """Files of a Traktor or Rekordbox playlist that are not in the library list but exist on disk."""
-        entry = self._foreign_entry(node) or {'tracks': []}
+        entry = self._foreign_entry(node)
+        tracks = self._foreign_tracks(entry) if entry is not None else []
         rows = self._rows_by_path()
-        return [path for path in dict.fromkeys(entry['tracks'])
+        return [path for path in dict.fromkeys(tracks)
                 if canonical_path(path) not in rows and os.path.isfile(path)]
 
     def import_foreign_missing(self, node):
