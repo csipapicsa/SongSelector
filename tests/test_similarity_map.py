@@ -618,6 +618,20 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
             self.wait_for_map()
         build.assert_not_called()
 
+    def test_the_map_spinner_turns_while_arranging_and_grouping(self):
+        spinner = self.map.spinner
+        self.assertFalse(spinner.busy())
+        self.map.load(rearrange=True)
+        self.assertEqual(spinner.reasons(), ['Arranging the map'])
+        self.wait_for_map()
+        self.assertFalse(spinner.busy())
+        self.map.grouping.setCurrentIndex(self.map.grouping.findData('kmeans'))
+        self.assertIn('Grouping', spinner.reasons())
+        self.wait_for_groups()
+        self.assertFalse(spinner.busy())
+        self.map.grouping.setCurrentIndex(0)  # off
+        self.assertFalse(spinner.busy())
+
     def test_every_grouping_method_runs_on_the_map(self):
         for method in ('kmeans', 'communities', 'density'):
             self.map.grouping.setCurrentIndex(self.map.grouping.findData(method))

@@ -74,6 +74,7 @@ from songselector.core.similarity import (
     tsne_layout,
 )
 from songselector.core.traktor_collection import canonical_path
+from songselector.ui.busy_spinner import BusySpinner
 from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
 
 DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Selector',
@@ -105,6 +106,7 @@ EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clic
 # length) beside its middle. Edges from one track then fan out in one direction of turn.
 CURVE_BEND = 0.18
 ONLY_LIST_TEXT = 'Map the List only'
+ARRANGING, GROUPING = 'Arranging the map', 'Grouping'   # reasons the map's spinner turns
 # The selected track's label prefers the top of its dot, the cards the bottom: they rarely collide to begin with.
 LABEL_CORNERS = (ABOVE_RIGHT, ABOVE_LEFT, BELOW_RIGHT, BELOW_LEFT)
 # Closest matches: all similar tracks, only harmonic partners, or only the relations checked under Edges.
@@ -585,6 +587,7 @@ class SimilarityMapWidget(QWidget):
             self.scene.addItem(card)
 
         self.status = QLabel('')
+        self.spinner = BusySpinner()  # turns while the map is arranged or grouped
         self.edges_button = QToolButton()
         self.edges_button.setText('Edges')
         self.edges_button.setPopupMode(QToolButton.InstantPopup)
@@ -724,7 +727,10 @@ class SimilarityMapWidget(QWidget):
         layout.addLayout(bar)
         layout.addLayout(group_bar)
         layout.addWidget(self.splitter, 1)  # the map gets all spare space
-        layout.addWidget(self.status)
+        status_bar = QHBoxLayout()
+        status_bar.addWidget(self.spinner, 0, Qt.AlignTop)
+        status_bar.addWidget(self.status, 1)
+        layout.addLayout(status_bar)
 
     # -- data ---------------------------------------------------------------
 
@@ -774,6 +780,7 @@ class SimilarityMapWidget(QWidget):
         if self._loading:
             return
         self._loading = True
+        self.spinner.set_busy(ARRANGING)
         self.rearrange_button.setEnabled(False)
         first_3d = self.view_3d and (self.data is None or not self.data.positions3d)
         self.status.setText('Arranging the map... (similar tracks are being placed close together)'
@@ -807,6 +814,7 @@ class SimilarityMapWidget(QWidget):
 
     def _loaded(self, result):
         self._loading = False
+        self.spinner.set_busy(ARRANGING, False)  # load() below turns it on again
         self.rearrange_button.setEnabled(True)
         if self._again:  # the mode changed while this was computed: this result is for the other one
             self._again = False
@@ -854,6 +862,7 @@ class SimilarityMapWidget(QWidget):
         self._group_request += 1
         if method is None or self.data is None:
             self.grouping_summary.setText('')
+            self.spinner.set_busy(GROUPING, False)
             if self.groups:
                 self.groups = {}
                 self._refresh()
@@ -863,6 +872,7 @@ class SimilarityMapWidget(QWidget):
         self.settings.setdefault('Map grouping parameters', {})[method] = parameter
         request, data = self._group_request, self.data
         self.grouping_summary.setText('Grouping...')
+        self.spinner.set_busy(GROUPING)
 
         def work():
             try:
@@ -878,6 +888,7 @@ class SimilarityMapWidget(QWidget):
         request, result = answer
         if request != self._group_request:
             return  # the method or parameter changed meanwhile
+        self.spinner.set_busy(GROUPING, False)
         if isinstance(result, Exception):
             self.grouping_summary.setText(f'Could not group: {result}')
             return
