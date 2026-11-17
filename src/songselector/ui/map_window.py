@@ -22,6 +22,9 @@ class MapWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(map_widget)
+        # The tab widget hides the pages that are not current, and a hidden widget stays hidden when it moves: e.g.
+        # at a start that reopens the map detached while the List tab is current, the window was empty (grey).
+        map_widget.show()
         self.resize(1100, 750)
         saved = settings.get(GEOMETRY_SETTING)
         if saved:

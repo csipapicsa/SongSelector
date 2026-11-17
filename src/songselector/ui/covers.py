@@ -110,18 +110,29 @@ class CoverProvider(QObject):
         self.ready.emit(key)
 
 
-class CoverDelegate(QStyledItemDelegate):
-    """Paints the Cover column: the thumbnail cropped to the row height (top of the picture), or in square rows."""
+def list_path(index):
+    """The track's file path in a List / Playlist row."""
+    return index.sibling(index.row(), HEADER_INDEX['Path']).data()
 
-    def __init__(self, provider, settings, parent=None):
+
+class CoverDelegate(QStyledItemDelegate):
+    """Paints a Cover column: the thumbnail cropped to the row height (top of the picture), or in square rows.
+
+    settings: the List's (View -> Cover art) style and size, or fixed values (style=, size=) for another list;
+    path_of(index): the row's file path. A visible Cover column always shows covers: with the style "Off" (e.g. the
+    column switched on from the header menu) it draws them cropped."""
+
+    def __init__(self, provider, settings=None, parent=None, style=None, size=None, path_of=list_path):
         super().__init__(parent)
-        self.provider, self.settings = provider, settings
+        self.provider, self.settings = provider, settings or {}
+        self._style, self._size, self.path_of = style, size, path_of
 
     def style(self):
-        return self.settings.get('Cover art', OFF)
+        style = self._style or self.settings.get('Cover art', OFF)
+        return CROPPED if style == OFF else style
 
     def size(self):
-        return int(self.settings.get('Cover size', SIZES[0]))
+        return int(self._size or self.settings.get('Cover size', SIZES[0]))
 
     def sizeHint(self, option, index):
         size = self.size()
@@ -135,9 +146,7 @@ class CoverDelegate(QStyledItemDelegate):
         styled.text = ''
         style = styled.widget.style() if styled.widget is not None else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, styled, painter, styled.widget)
-        if self.style() == OFF:
-            return
-        path = index.sibling(index.row(), HEADER_INDEX['Path']).data()
+        path = self.path_of(index)
         pixmap = self.provider.pixmap(path) if path else None
         if pixmap is None or pixmap.isNull():
             return
