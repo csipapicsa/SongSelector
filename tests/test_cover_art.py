@@ -197,5 +197,45 @@ class CoverColumnTests(GuiTestBase):
         self.assertTrue(window.playlist_tree.isColumnHidden(column))
 
 
+class CoverColumnFromHeaderTests(CoverColumnTests):
+    def test_cover_column_switched_on_in_the_header_menu_shows_covers(self):
+        # Reported 2026-11-17: the Cover column was shown (header right-click) but stayed empty, because the style
+        # under View -> Cover art was still "Off". The column itself is now enough.
+        from songselector.config import HEADER_INDEX
+        add_pictures(self.song, (3, image_bytes('red')))
+        window = self.window()
+        window.resize(1200, 600)
+        window.show()
+        tree, column = window.candidate_tree, HEADER_INDEX['Cover']
+        normal = tree.visualItemRect(tree.topLevelItem(0)).height()
+        window.toggle_column_visibility(True, column, tree)  # what the header menu's "Cover" entry does
+        self.application.processEvents()
+        self.assertEqual(window.settings['Cover art'], 'cropped')
+        self.assertTrue(window.cover_style_actions['cropped'].isChecked())
+        self.assertEqual(tree.columnWidth(column), 52)
+        self.assertEqual(tree.visualItemRect(tree.topLevelItem(0)).height(), normal)  # rows keep their height
+        self.wait_for_covers(window)
+        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                    if tree.topLevelItem(i).text(HEADER_INDEX['Path']) == str(self.song))
+        cell = tree.visualRect(tree.indexFromItem(item, column))
+        shot = tree.viewport().grab().toImage()
+        self.assertEqual(QColor(shot.pixel(cell.center())).name(), '#ff0000')  # the top of the cover, cropped
+
+    def test_even_with_the_style_off_a_visible_cover_column_paints_covers(self):
+        from songselector.config import HEADER_INDEX
+        add_pictures(self.song, (3, image_bytes('red')))
+        window = self.window()
+        window.resize(1200, 600)
+        window.show()
+        tree, column = window.candidate_tree, HEADER_INDEX['Cover']
+        tree.setColumnHidden(column, False)  # e.g. restored from saved column settings
+        tree.setColumnWidth(column, 60)
+        self.wait_for_covers(window)
+        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                    if tree.topLevelItem(i).text(HEADER_INDEX['Path']) == str(self.song))
+        cell = tree.visualRect(tree.indexFromItem(item, column))
+        self.assertEqual(QColor(tree.viewport().grab().toImage().pixel(cell.center())).name(), '#ff0000')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -701,7 +701,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         tree.show_column(color, True)
         tree.show_column(MATCH_COLUMNS.index('Mix'), False)
         self.assertEqual(self.window.settings['Map match columns'],
-                         ['Similarity', 'Artist', 'Title', 'Original BPM', 'Color'])
+                         ['Similarity', 'Artist', 'Title', 'Original BPM', 'Color', 'Cover'])
         self.map.select(self.key(0))
         self.assertEqual(self.matches()[0].text(bpm), '128')
         self.assertEqual(self.matches()[0].data(bpm, 0x0102), 128.0)
@@ -816,13 +816,15 @@ class MapWindowTests(MapWindowTestBase):
     def test_window_geometry_and_state_are_remembered(self):
         self.window.show()
         self.window.set_map_detached(True)
-        self.window.map_window.resize(640, 480)
+        # A size the window can take (its minimum depends on the fonts; the offscreen test platform's are wide).
+        width = max(640, self.window.map_window.minimumSizeHint().width() + 50)
+        self.window.map_window.resize(width, 480)
         self.application.processEvents()
         self.window.set_map_detached(False)
         self.assertIn('Map window geometry', self.window.settings)
         self.window.set_map_detached(True)
         self.application.processEvents()
-        self.assertEqual(self.window.map_window.size().width(), 640)
+        self.assertEqual(self.window.map_window.size().width(), width)
         # Closing the app with the map detached: it opens detached next time.
         self.window.close()
         self.application.processEvents()
@@ -835,6 +837,32 @@ class MapWindowTests(MapWindowTestBase):
         finally:
             restarted.close()
             self.application.processEvents()
+
+    def test_the_map_window_can_be_much_narrower_than_the_main_window(self):
+        # The map's controls are in two rows: one row of all of them made the map at least the whole row wide.
+        self.window.show()
+        self.window.set_map_detached(True)
+        self.application.processEvents()
+        controls = (self.map.edges_button, self.map.lines_per_track, self.map.all_edges, self.map.match_filter,
+                    self.map.view_3d_button, self.map.only_button, self.map.rearrange_button, self.map.detach_button)
+        one_row = sum(widget.minimumSizeHint().width() for widget in controls)
+        self.assertLess(self.map.minimumSizeHint().width(), 0.75 * one_row)
+
+    def test_detaching_while_the_list_tab_is_current_shows_the_map(self):
+        # Reported 2026-11-17: the map's own window was grey. Qt hides the tab pages that are not current, and the
+        # map stayed hidden in its new window (e.g. when the app starts with the map detached).
+        self.window.show()
+        self.window.library_tabs.setCurrentIndex(0)
+        self.application.processEvents()
+        self.assertFalse(self.map.isVisible())
+        self.window.set_map_detached(True)
+        self.application.processEvents()
+        self.assertTrue(self.map.isVisible())
+        self.assertTrue(self.map.view.isVisible())
+        self.window.set_map_detached(False)  # back in its tab (not the current one): hidden there, as tabs are
+        self.window.library_tabs.setCurrentIndex(1)
+        self.application.processEvents()
+        self.assertTrue(self.map.isVisible())
 
     def test_ctrl_2_brings_the_detached_map_to_the_front(self):
         self.window.show()
@@ -876,16 +904,35 @@ class MapCoverTests(MapWindowTestBase):
         self.map.hover(self.key(1))                                # no cover: no picture
         self.assertNotIn('<img', self.map.hover_card.text.toHtml())
 
-    def test_closest_matches_get_the_cover_as_an_icon(self):
+    def test_closest_matches_have_a_cover_column(self):
+        # Reported 2026-11-17: covers as icons in the first column looked messy; they get a column of their own.
         from PyQt5.QtCore import Qt
+        from PyQt5.QtGui import QColor
+
+        from songselector.ui.similarity_map import MATCH_COVER_COLUMN
+        tree = self.map.suggestions
+        self.window.resize(1400, 900)
+        self.window.show()
         self.map.select(self.key(6))  # same style and key group as tracks 0 and 3
         self.wait_for_cover(0)
-        self.wait_for_cover(3)
-        items = {self.map.suggestions.topLevelItem(i).data(0, Qt.UserRole): self.map.suggestions.topLevelItem(i)
-                 for i in range(self.map.suggestions.topLevelItemCount())}
-        self.assertFalse(items[self.key(0)].icon(0).isNull())
-        self.assertFalse(items[self.key(3)].icon(0).isNull())
-        self.assertTrue(items[self.key(9)].icon(0).isNull())
+        self.application.processEvents()
+        self.assertFalse(tree.isColumnHidden(MATCH_COVER_COLUMN))
+        self.assertEqual(tree.header().visualIndex(MATCH_COVER_COLUMN), 0)  # first on screen
+        items = {tree.topLevelItem(i).data(0, Qt.UserRole): tree.topLevelItem(i) for i in range(tree.topLevelItemCount())}
+        self.assertTrue(all(item.icon(0).isNull() for item in items.values()))  # no icons next to the similarity
+        tree.scrollToItem(items[self.key(0)])
+        self.application.processEvents()
+        cell = tree.visualRect(tree.indexFromItem(items[self.key(0)], MATCH_COVER_COLUMN))
+        self.assertEqual(QColor(tree.viewport().grab().toImage().pixel(cell.center())).name(), '#ff0000')
+
+    def test_an_old_match_column_choice_gets_the_cover_column_once(self):
+        from songselector.ui.similarity_map import MATCH_COVER_COLUMN, MatchList
+        settings = {'Map match columns': ['Similarity', 'Artist']}
+        tree = MatchList(settings)
+        self.assertFalse(tree.isColumnHidden(MATCH_COVER_COLUMN))
+        self.assertEqual(settings['Map match columns'], ['Similarity', 'Artist', 'Cover'])
+        tree.show_column(MATCH_COVER_COLUMN, False)  # hidden on purpose: stays hidden
+        self.assertTrue(MatchList(settings).isColumnHidden(MATCH_COVER_COLUMN))
 
 
 class MapDataPlaceTests(unittest.TestCase):
