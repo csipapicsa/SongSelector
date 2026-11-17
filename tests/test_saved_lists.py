@@ -150,6 +150,56 @@ class BrowserGuiTests(unittest.TestCase):
         tree = window.playlist_tree
         return [tree.topLevelItem(i).text(HEADER_INDEX[column]) for i in range(tree.topLevelItemCount())]
 
+    def describe(self, window, ranked_titles, prompt='warm pads'):
+        """A description search as the bar starts it, answered with this ranking (best first)."""
+        from songselector.core.embedding_models import LAION_CLAP
+        from songselector.core.traktor_collection import canonical_path
+        window.text_search_engine = type('Engine', (), {'search': lambda _self, *args: None,
+                                                        'stop': lambda _self: None})()
+        window.description_box.setEditText(prompt)
+        with patch.object(window.description_model, 'currentData', return_value=LAION_CLAP.id):
+            window.describe()
+        ranked = [(canonical_path(self.paths[title]), 0.5 - index / 100) for index, title in enumerate(ranked_titles)]
+        window.show_description_results(prompt, ranked, 0.01)
+
+    def test_description_search_ranks_the_tracks_of_the_shown_smartlist(self):
+        # Reported 2026-11-17: with a smartlist shown, "Describe a sound" listed tracks of the whole library and the
+        # smartlist was no longer selected in the Browser.
+        window = self.window()
+        window.library_store.save_smartlist('House', [{'column': 'Genre', 'condition': 'contains', 'value': 'house'}])
+        window.refresh_saved_lists()
+        smartlist = {'kind': SMARTLIST, 'name': 'House'}
+        window.show_list_source(smartlist)
+        self.assertEqual(sorted(self.shown(window)), ['four', 'three', 'two'])
+        self.describe(window, ['one', 'three', 'two', 'four'])  # 'one' (Breakbeat) ranks best but is not House
+        self.assertEqual(self.shown(window), ['three', 'two', 'four'])
+        self.assertEqual(window.list_source['within']['name'], 'House')
+        selected = window.list_browser.current_node()
+        self.assertEqual((selected['kind'], selected['name']), (SMARTLIST, 'House'))  # still selected
+        self.assertIn('within Smartlist: House', window.status_label.text())
+        self.assertIn('within Smartlist: House', window.source_label.text())
+        window.description_count.setValue(1)                      # Top N re-cuts within the smartlist
+        self.assertEqual(self.shown(window), ['three'])
+        window.description_count.setValue(0)
+        self.describe(window, ['one', 'four', 'two', 'three'])    # e.g. another model: same smartlist
+        self.assertEqual(self.shown(window), ['four', 'two', 'three'])
+        window.clear_description()                                 # back to the smartlist, not to all tracks
+        self.assertEqual(window.list_source, smartlist)
+        self.assertEqual(sorted(self.shown(window)), ['four', 'three', 'two'])
+        self.assertIn('showing Smartlist: House', window.status_label.text())
+
+    def test_description_search_within_a_playlist_and_without_one(self):
+        window = self.window()
+        window.library_store.save_playlist('Set', [track(self.paths['four'], 'four'), track(self.paths['one'], 'one')])
+        window.refresh_saved_lists()
+        window.show_list_source({'kind': PLAYLIST, 'name': 'Set'})
+        self.describe(window, ['two', 'one', 'three', 'four'])
+        self.assertEqual(self.shown(window), ['one', 'four'])
+        window.show_list_source(None)                              # All tracks: the whole library is ranked
+        self.describe(window, ['two', 'one', 'three', 'four'])
+        self.assertEqual(self.shown(window), ['two', 'one', 'three', 'four'])
+        self.assertNotIn('within', window.list_source)
+
     def add(self, window, *titles):
         window.add_paths_to_playlist([str(self.paths[title]) for title in titles])
 
