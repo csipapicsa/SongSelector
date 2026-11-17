@@ -1,4 +1,5 @@
 """Dialog to edit the Artist / Title / Genre / Comment tags of one audio file."""
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout
 
 from songselector.core.tag_writer import EDITABLE_TAGS
@@ -13,8 +14,10 @@ class TrackInfoDialog(QDialog):
         self.fields = {}
 
         layout = QVBoxLayout(self)
-        location = QLabel(str(path))
+        self.location = location = QLabel(str(path))
         location.setWordWrap(True)
+        # The path can be selected and copied (mouse or keyboard), e.g. to find the file in Explorer.
+        location.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
         layout.addWidget(location)
         form = QFormLayout()
         for name in EDITABLE_TAGS:

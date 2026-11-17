@@ -179,6 +179,12 @@ class GuiTestBase(TempDirTest):
         self.windows.append(window)
         return window
 
+    def wait(self, window):
+        """Until the window's background jobs (tag edits, row saves) are done."""
+        background = getattr(window, 'background', None)
+        if background is not None:
+            self.assertTrue(background.flush())
+
     def restart(self, window):
         window.close()
         self.windows.remove(window)
@@ -246,6 +252,7 @@ class SongSelectorGuiTests(GuiTestBase):
     def test_edit_tags_writes_file_updates_library_and_survives_refresh(self):
         window = self.window()
         self.assertTrue(window.edit_track_tags(str(self.song), Artist='Edited', Genre='Tribal'))
+        self.wait(window)
         metadata = extract_audio_metadata(self.song)
         self.assertEqual((metadata.artist, metadata.genre, metadata.title), ('Edited', 'Tribal', 'Test title'))
         self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Artist']), 'Edited')
@@ -259,8 +266,10 @@ class SongSelectorGuiTests(GuiTestBase):
         missing = self.root / 'gone.mp3'
         window.table = pd.concat([window.table, pd.DataFrame([track(missing, 'Gone')])], ignore_index=True)
         with patch('songselector.ui.main_window.QMessageBox.warning') as warning:
-            self.assertFalse(window.edit_track_tags(str(missing), Artist='x'))
+            window.edit_track_tags(str(missing), Artist='x')
+            self.wait(window)
         warning.assert_called_once()
+        self.assertIn('Could not write the tags of gone.mp3', window.status_label.text())
         self.assertEqual(window.table.loc[window.table['Title'] == 'Gone', 'Artist'].iloc[0], 'Test')
 
     def test_tag_edit_keeps_existing_embedding_current(self):
@@ -270,7 +279,84 @@ class SongSelectorGuiTests(GuiTestBase):
         key = canonical_path(self.song)
         window.embedding_store.save(key, file_fingerprint(self.song), np.ones((1, 2048)))
         window.edit_track_tags(str(self.song), Title='Renamed')
+        self.wait(window)
         self.assertEqual(window.embedding_store.fingerprints()[key], file_fingerprint(self.song))
+
+    def test_tag_edit_keeps_every_models_embedding_current(self):
+        # Until 1.2.0 only CNN14's was kept: a tag edit made LAION and Microsoft CLAP analyse the file again.
+        from songselector.core.embeddings import file_fingerprint
+        from songselector.core.traktor_collection import canonical_path
+        window = self.window()
+        key = canonical_path(self.song)
+        before = file_fingerprint(self.song)
+        for store in window.model_stores.values():
+            store.save(key, before, np.ones((1, 512)))
+        window.edit_track_tags(str(self.song), Title='Renamed')
+        self.wait(window)
+        after = file_fingerprint(self.song)
+        self.assertNotEqual(after, before)
+        for model_id, store in window.model_stores.items():
+            self.assertEqual(store.fingerprint(key), after, model_id)
+
+    def test_tag_edit_does_not_block_the_window(self):
+        # Reported 2026-11-17: editing Artist/Title froze the app for ~10 s (a slow disk under the analysis's load).
+        import time
+
+        from songselector.core import tag_writer
+        window = self.window()
+        real_write = tag_writer.write_tags
+
+        def slow_write(path, **values):
+            time.sleep(0.8)
+            real_write(path, **values)
+
+        with patch('songselector.ui.main_window.write_tags', side_effect=slow_write):
+            start = time.monotonic()
+            self.assertTrue(window.edit_track_tags(str(self.song), Artist='Edited'))
+            self.assertLess(time.monotonic() - start, 0.3)  # returns at once
+            self.assertTrue(window.background.busy())
+            self.assertIn('Saving Artist to song.mp3', window.status_label.text())
+            self.wait(window)
+        self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Artist']), 'Edited')
+        self.assertIn('Saved Artist to song.mp3', window.status_label.text())
+
+    def test_tag_edit_saves_only_the_changed_row(self):
+        window = self.window()
+        with patch.object(window.library_store, 'save_list', side_effect=AssertionError('whole library saved')), \
+                patch.object(window.library_store, 'upsert_tracks', wraps=window.library_store.upsert_tracks) as upsert:
+            window.edit_track_tags(str(self.song), Genre='Tribal')
+            self.wait(window)
+        [records], _ = upsert.call_args
+        self.assertEqual([record['Genre'] for record in records], ['Tribal'])
+        restored = self.restart(window)
+        self.assertEqual(self.item(restored.candidate_tree, 'Test title').text(HEADER_INDEX['Genre']), 'Tribal')
+
+    def test_two_quick_edits_of_one_file_end_with_the_second(self):
+        window = self.window()
+        window.edit_track_tags(str(self.song), Title='First')
+        window.edit_track_tags(str(self.song), Title='Second')
+        self.wait(window)
+        self.assertEqual(extract_audio_metadata(self.song).title, 'Second')
+        self.assertEqual(window.table.loc[window.table['File_Path'] == str(self.song), 'Title'].tolist(), ['Second'])
+        restored = self.restart(window)
+        self.assertEqual(restored.library_store.load_list(LIBRARY_LIST)[0]['Title'], 'Second')
+
+    def test_track_removed_during_the_write_is_not_added_back(self):
+        window = self.window()
+        window.edit_track_tags(str(self.song), Title='Renamed')
+        # Removed before the write's result arrives (the callback runs on the next event-loop pass).
+        window.table = window.table[window.table['File_Path'] != str(self.song)].reset_index(drop=True)
+        self.wait(window)
+        self.assertEqual(window.table['File_Path'].tolist(), [str(self.other)])
+        self.assertIn('no longer in the library', window.status_label.text())
+        self.assertEqual(extract_audio_metadata(self.song).title, 'Renamed')  # the file was still written
+
+    def test_track_info_dialog_path_is_selectable(self):
+        from PyQt5.QtCore import Qt
+
+        from songselector.ui.track_info_dialog import TrackInfoDialog
+        dialog = TrackInfoDialog(str(self.song), {'Artist': 'a'})
+        self.assertTrue(dialog.location.textInteractionFlags() & Qt.TextSelectableByMouse)
 
 
 class CommentTagTests(TempDirTest):
@@ -369,6 +455,7 @@ class MultiSelectionGuiTests(GuiTestBase):
         menu = window.library_context_menu()
         self.assertTrue(any(action.text().startswith('Edit track info') for action in menu.actions()))
         self.assertTrue(window.edit_track_tags(str(self.other), Comment='Big room'))
+        self.wait(window)
         self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Comment']), 'Big room')
         self.assertEqual(extract_audio_metadata(self.other).comment, 'Big room')
         with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):

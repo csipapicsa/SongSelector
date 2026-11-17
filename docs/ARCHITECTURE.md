@@ -71,6 +71,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
+| `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
 | `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
 | `map_settings_dialog.py` | Choose the map's hover details |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |

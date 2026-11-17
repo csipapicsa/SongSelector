@@ -87,6 +87,7 @@ from songselector.core.traktor_collection import canonical_path, discover_collec
 from songselector.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 from songselector.env import getenv
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
+from songselector.ui.background import BackgroundWriter
 from songselector.ui.coloring_dialog import ColoringDialog
 from songselector.ui.delegates import ColorDotDelegate
 from songselector.ui.elided_label import ElidedLabel
@@ -272,6 +273,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
         # Embeddings of every library track, analysed in the background: one cache per model
         # (core/embedding_models.py); CNN14's is embeddings.sqlite, as before.
         data_dir = Path(SETTINGS_FILE).parent
+        # Small updates (tag edits, single-row saves) run here, off the UI thread, in order.
+        self.background = BackgroundWriter(self)
         self.embedding_store = EmbeddingStore(data_dir / 'embeddings.sqlite')
         self.model_stores = {spec.id: (self.embedding_store if spec is CNN14 else
                                        EmbeddingStore(store_path(data_dir, spec), spec=spec))
@@ -1216,39 +1219,64 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.edit_track_tags(path, **dialog.changed_values())
 
     def edit_track_tags(self, path, **values):
-        """Write Artist/Title/Genre/Comment into the audio file, then update the library to match."""
+        """Write Artist/Title/Genre/Comment into the audio file, then update the library to match.
+
+        The file write runs on the background writer (it used to freeze the window for seconds on a busy disk);
+        the row updates when it is done, and only that row is saved. Returns at once: True if the edit was started.
+        """
         if not values:
             return True
         key = canonical_path(path)
-        try:
-            before = file_fingerprint(path)
-            embedding_current = self.embedding_store.fingerprints().get(key) == before
-        except (OSError, sqlite3.Error):
-            embedding_current = False
-        try:
+        stores = list({id(store): store for store in self.model_stores.values()}.values())
+        name = Path(path).name
+
+        def write():
+            before = file_fingerprint(path)  # OSError: the file is gone
+            current = []
+            for store in stores:  # models whose embedding of this file is up to date
+                try:
+                    if store.fingerprint(key) == before:
+                        current.append(store)
+                except sqlite3.Error:
+                    pass
             write_tags(path, **values)
-        except (ValueError, OSError, MutagenError) as error:
-            QMessageBox.warning(self, 'Cannot write tags', f'{path}\n\n{error}')
-            return False
-        # Re-read the file like a fresh import (so the edit also survives Refresh / Load CSV),
-        # keeping exactly the values the user entered.
-        mask = self._rows_mask([path])
-        existing = self.table.loc[mask].iloc[0] if mask is not None and mask.any() else None
-        record = self.importer.read(path, existing=existing)
-        record.update(values)
-        self.saved_imports[canonical_path(record['File_Path'])] = record
-        self.table = merge_tracks(self.table, [record])
-        self.data_manager.table = self.table
-        error = self._save_library()
-        if embedding_current:  # only tags changed, the audio did not
-            try:
-                self.embedding_store.update_fingerprint(key, file_fingerprint(path))
-            except (OSError, sqlite3.Error):
-                pass
-        self._rerender([path])
-        self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
-        self.status_label.setText(error or f'Saved {", ".join(values)} to {Path(path).name}')
-        return not error
+            after = file_fingerprint(path)
+            for store in current:  # only the tags changed, not the audio: no model has to analyse it again
+                try:
+                    store.update_fingerprint(key, after)
+                except sqlite3.Error:
+                    pass
+
+        def written(_result):
+            mask = self._rows_mask([path])
+            if mask is None or not mask.any():  # removed from the library meanwhile: the file has the new tags
+                self._edit_status(f'Saved {", ".join(values)} to {name} (no longer in the library)', 'ok')
+                return
+            # Re-read the file like a fresh import (so the edit also survives Refresh / Load CSV),
+            # keeping exactly the values the user entered.
+            record = self.importer.read(path, existing=self.table.loc[mask].iloc[0])
+            record.update(values)
+            self.saved_imports[canonical_path(record['File_Path'])] = record
+            self.table = merge_tracks(self.table, [record])
+            self.data_manager.table = self.table
+            self.background.submit(partial(self.library_store.upsert_tracks, [record]),  # this row only
+                                   on_error=lambda error: self._edit_status(f'Could not save the library: {error}',
+                                                                            'error'))
+            self._rerender([path])
+            self._edit_status(f'Saved {", ".join(values)} to {name}', 'ok')
+
+        def failed(error):
+            self._edit_status(f'Could not write the tags of {name}: {error}', 'error')
+            if isinstance(error, (ValueError, OSError, MutagenError)):
+                QMessageBox.warning(self, 'Cannot write tags', f'{path}\n\n{error}')
+
+        self._edit_status(f'Saving {", ".join(values)} to {name}...', 'info')
+        self.background.submit(write, written, failed)
+        return True
+
+    def _edit_status(self, text, level):
+        self.status_label.setStyleSheet(status_style(level))
+        self.status_label.setText(text)
 
     # -- embeddings ---------------------------------------------------------
 
@@ -2075,6 +2103,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def closeEvent(self, event):
         """Save settings before closing the app"""
+        self.background.flush(timeout=30)  # a tag edit or row save still running finishes first
+        self.background.stop()
         self.collection_watcher.stop()
         self.rekordbox_watcher.stop()
         if self.embedding_analyzer is not None:

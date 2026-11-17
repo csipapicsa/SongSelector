@@ -421,6 +421,14 @@ class EmbeddingStore:
                                      'AND error IS NOT NULL', (path_key, model)).fetchone()
         return row[0] if row else None
 
+    def fingerprint(self, path_key, model=None):
+        """(size, mtime_ns) stored for one track, or None if it has no result for the model."""
+        model = model or self.spec.id
+        with self._open() as connection:
+            row = connection.execute('SELECT file_size, file_mtime_ns FROM embeddings WHERE path_key = ? AND model = ?',
+                                     (path_key, model)).fetchone()
+        return tuple(row) if row else None
+
     def update_fingerprint(self, path_key, fingerprint):
         """After a tag-only edit the audio is unchanged: keep the embedding current."""
         with self._open() as connection, connection:

@@ -17,6 +17,13 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Editing a track's tags no longer freezes the app.** *Edit track info* used to save the whole library for one
+  changed track, on the window's own thread: 2.5 s on the library's SSD, 4-5 s and more while the analysis kept the
+  disk busy. The file is now written in the background, only the changed track is saved, and the window keeps
+  working (longest pause under 0.1 s in the same test). The status line says "Saving..." until it is done.
+- **A tag edit no longer makes the CLAP models analyse the track again.** Only CNN14's analysis was marked as
+  still current after a tag-only change; LAION and Microsoft CLAP saw a changed file and analysed it again.
+- *Edit track info*: the file path can be selected and copied.
 - **Closest matches can follow the Edges menu.** The *harmonic only* checkbox is now a choice: *all*, *harmonic
   only*, or *Edges selection*, which lists only tracks with a relation checked under *Edges* (mix types, same
   colour, same rating) and updates when the menu changes. A saved *harmonic only* carries over.

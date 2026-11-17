@@ -18,10 +18,13 @@ One PR per block below, in this order; each with tests (a failing test first for
       (compared track first, then the selection); hover / compare cards and the label never overlap (try four
       corners, unit-tested on rectangles); *Closest matches* becomes a choice: *All*, *Harmonic*, *Edge selection*
       (only the relations checked under Edges); the old "harmonic only" setting carries over.
-- [ ] **F. Tag edits without freezing.** Profile first (suspect: `_save_library` rewrites every track for one
+- [x] **F. Tag edits without freezing.** Profile first (suspect: `_save_library` rewrites every track for one
       edit). Save only the changed row; file write + re-read on a worker thread; row shows "Saving..." and reverts
       with an error if it fails; edits of one file run in order. Reusable "small background update" helper.
       *Edit track info*: the path is selectable.
+- [ ] **F2 (follow-up, not required for 1.2.0).** Imports, *Remove from library* and *Delete duplicates* still save
+      the whole library on the UI thread (2.5-5 s on the library's SSD under load, measured 2026-11-17). Move them to
+      `BackgroundWriter`: append / delete only the changed rows, coalesce a burst of saves into one.
 - [ ] **E. Busy indicator.** One `BusySpinner` widget (runs only while busy) next to: analysis progress, map
       arranging / grouping, description search, model download, tag saving.
 - [ ] **C. Playlist selection on the map.** Selected Playlist tracks are shown on the map even if the List filters
