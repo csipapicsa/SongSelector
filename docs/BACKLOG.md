@@ -49,6 +49,20 @@ One PR per block below, in this order; each with tests (a failing test first for
   - [ ] Each block A-H above, as described.
   - [ ] Tag `v1.2.0`; the workflow publishes the exe.
 
+## Diagnostics (to do; asked 2026-11-17, after 1.2.0)
+
+- [ ] **Local error log**, for when other people use the app. Today nothing is recorded: the exe has no console
+      (`console=False`), so an exception in a Qt slot or override makes PyQt5 abort the app without a message, and
+      errors in worker threads go to a stderr nobody sees. Industry-standard minimum, no telemetry, nothing sent:
+      - `logging` to `<app data>/logs/songselector.log`, `RotatingFileHandler` (e.g. 1 MB x 3 files), level
+        WARNING by default; each run starts with app version, Windows version, GPU / ONNX provider.
+      - Catch what is uncaught: `sys.excepthook` (log + "something went wrong, details in the log" dialog instead
+        of the silent abort), `threading.excepthook`, `qInstallMessageHandler` (Qt warnings), `faulthandler` into
+        the log for native crashes (onnxruntime, DirectML).
+      - The analysis and text search processes log to the same folder (own file each).
+      - *Help -> Open log folder* (and maybe *Copy diagnostics*), so a user can attach the file to a bug report.
+      - Not wanted: recording user interaction / usage monitoring.
+
 ## Product
 
 - [ ] Show file details outside the main window (noted as "next step" in the v4 source `info.txt`).
