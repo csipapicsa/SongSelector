@@ -91,7 +91,7 @@ from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.background import BackgroundWriter
 from songselector.ui.busy_spinner import BusySpinner
 from songselector.ui.coloring_dialog import ColoringDialog
-from songselector.ui.covers import OFF, SIZES, STYLES, CoverDelegate, CoverProvider
+from songselector.ui.covers import CROPPED, OFF, SIZES, STYLES, CoverDelegate, CoverProvider
 from songselector.ui.delegates import ColorDotDelegate
 from songselector.ui.duplicates_dialog import DuplicatesDialog
 from songselector.ui.elided_label import ElidedLabel
@@ -755,10 +755,23 @@ class MainWindow(SavedListsMixin, QMainWindow):
         """Show all columns in the tree widget"""
         for i in range(tree_widget.columnCount()):
             tree_widget.setColumnHidden(i, False)
+        self._cover_column_shown(tree_widget)
 
     def toggle_column_visibility(self, checked, column, tree_widget):
         """Toggle visibility of a column"""
         tree_widget.setColumnHidden(column, not checked)
+        if checked and column == HEADER_INDEX[COVER_COLUMN]:
+            self._cover_column_shown(tree_widget)
+
+    def _cover_column_shown(self, tree):
+        """The Cover column was switched on from the header menu: it shows covers (cropped, unless a style was
+        chosen under View -> Cover art), at the chosen size."""
+        if self.settings.get('Cover art', OFF) == OFF:
+            self.settings['Cover art'] = CROPPED
+            self.cover_style_actions[CROPPED].setChecked(True)
+        column = HEADER_INDEX[COVER_COLUMN]
+        tree.setColumnWidth(column, int(self.settings.get('Cover size', SIZES[0])) + 4)
+        tree.doItemsLayout()
 
     def add_selected_to_playlist(self):
         items = self.candidate_tree.selectedItems()

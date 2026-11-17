@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from html import escape
 
 import numpy as np
-from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, QVariantAnimation, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QDrag, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
+from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QTimer, QUrl, QVariantAnimation, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QDrag, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -77,6 +77,7 @@ from songselector.core.similarity import (
 )
 from songselector.core.traktor_collection import canonical_path
 from songselector.ui.busy_spinner import BusySpinner
+from songselector.ui.covers import SQUARE, CoverDelegate
 from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate, stars
 
 DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Selector',
@@ -91,8 +92,10 @@ STRENGTH_LEVELS = 6          # edge opacity steps, weakest to strongest similari
 MATCH_COUNT = 50             # default number of closest matches listed
 RINGED_MATCHES = 15          # of those, the most similar get a ring on the map (more would cover it)
 # Closest-match columns: the two of the map, then the library list's (chosen by right-clicking the header).
-MATCH_COLUMNS = ['Similarity', 'Mix'] + FIELD_LABELS
-DEFAULT_MATCH_COLUMNS = ['Similarity', 'Mix', 'Artist', 'Title']
+# 'Cover' comes last here (the other columns keep their indexes) and is moved to the front on screen.
+MATCH_COLUMNS = ['Similarity', 'Mix'] + FIELD_LABELS + ['Cover']
+MATCH_COVER_COLUMN = MATCH_COLUMNS.index('Cover')
+DEFAULT_MATCH_COLUMNS = ['Similarity', 'Mix', 'Artist', 'Title', 'Cover']
 SIDE_MIN_WIDTH = 220         # pixels: the details and closest matches never collapse
 NO_COLOR = QColor('#8a8f98')
 UNGROUPED = QColor('#4a4e55')  # "Map density" leaves tracks in thin areas without a group
@@ -424,8 +427,14 @@ class MatchList(QTreeWidget):
         for name in ('Rating', SS_RATING_COLUMN):
             self.setItemDelegateForColumn(MATCH_COLUMNS.index(name), self.star_delegate)
         shown = settings.get('Map match columns', DEFAULT_MATCH_COLUMNS)
+        if not settings.get('Map match cover column version'):  # 1.2.0: the Cover column, shown once
+            if 'Cover' not in shown:
+                shown = list(shown) + ['Cover']
+                settings['Map match columns'] = shown
+            settings['Map match cover column version'] = 1
         for column, name in enumerate(MATCH_COLUMNS):
             self.setColumnHidden(column, name not in shown)
+        self.header().moveSection(self.header().visualIndex(MATCH_COVER_COLUMN), 0)
         self.header().setContextMenuPolicy(Qt.CustomContextMenu)
         self.header().customContextMenuRequested.connect(self._column_menu)
         self.setDragEnabled(True)
@@ -687,7 +696,6 @@ class SimilarityMapWidget(QWidget):
         self.details.setWordWrap(True)
         self.details.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.suggestions = MatchList(settings)
-        self.suggestions.setIconSize(QSize(MATCH_COVER, MATCH_COVER))  # covers in the first column, when known
         self.suggestions.setRootIsDecorated(False)
         # A click highlights the match on the map (the selected track stays); a double-click makes
         # it the selected track. Dragging a match adds it to the playlist or Traktor.
@@ -712,19 +720,17 @@ class SimilarityMapWidget(QWidget):
         self.grouping.currentIndexChanged.connect(self._grouping_method_changed)
         self.grouping_parameter.valueChanged.connect(self._update_groups)
 
+        # Two rows: one row of all these controls made the map (and its own window) at least ~1,100 px wide.
         bar = QHBoxLayout()
         for widget in (self.edges_button, self.lines_per_track, self.all_edges, self.match_filter):
             bar.addWidget(widget)
         bar.addStretch()
-        bar.addWidget(self.view_3d_button)
-        bar.addWidget(fit)
-        bar.addWidget(self.only_button)
-        bar.addWidget(self.rearrange_button)
-        bar.addWidget(self.detach_button)
         group_bar = QHBoxLayout()
         for widget in (QLabel('Groups:'), self.grouping, self.grouping_parameter, self.grouping_summary):
             group_bar.addWidget(widget)
         group_bar.addStretch()
+        for widget in (self.view_3d_button, fit, self.only_button, self.rearrange_button, self.detach_button):
+            group_bar.addWidget(widget)
         side = QWidget()
         side.setMinimumWidth(SIDE_MIN_WIDTH)
         side_layout = QVBoxLayout(side)
@@ -1377,20 +1383,16 @@ class SimilarityMapWidget(QWidget):
             self._show_halos()
         if key == self.selected_key:
             self._show_selected_details()
-        for index in range(self.suggestions.topLevelItemCount()):
-            item = self.suggestions.topLevelItem(index)
-            if item.data(0, Qt.UserRole) == key:
-                self._set_match_cover(item)
-
-    def _set_match_cover(self, item):
-        pixmap = self.covers.pixmap(item.data(0, PATH_ROLE)) if self.covers is not None else None
-        if pixmap is not None and not pixmap.isNull():
-            item.setIcon(0, QIcon(pixmap))
+        self.suggestions.viewport().update()  # the Cover column paints what it now has
 
     def set_covers(self, provider):
         """Show cover thumbnails (ui.covers.CoverProvider) in the cards, the details and the closest matches."""
         self.covers = provider
         provider.ready.connect(self._cover_ready)
+        self.cover_delegate = CoverDelegate(provider, style=SQUARE, size=MATCH_COVER, parent=self.suggestions,
+                                            path_of=lambda index: index.sibling(index.row(), 0).data(PATH_ROLE))
+        self.suggestions.setItemDelegateForColumn(MATCH_COVER_COLUMN, self.cover_delegate)
+        self.suggestions.resizeColumnToContents(MATCH_COVER_COLUMN)
 
     def select_and_show(self, key):
         """Select a track and scroll the map to it (double-click in the closest matches)."""
@@ -1654,7 +1656,6 @@ class SimilarityMapWidget(QWidget):
                 item.setData(column, SORT_ROLE, _sort_value(name, target.get(name, '')))
             item.setData(0, Qt.UserRole, key)
             item.setData(0, PATH_ROLE, target.get('Path', ''))
-            self._set_match_cover(item)
             if mix is not None:
                 item.setForeground(1, QBrush(QColor(EDGE_COLORS[mix.name])))
             elif not keys_known:
