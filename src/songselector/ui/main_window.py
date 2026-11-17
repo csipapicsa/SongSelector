@@ -330,6 +330,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             tree.header().moveSection(tree.header().visualIndex(HEADER_INDEX[COVER_COLUMN]), 1)  # after #
         self._init_cover_menu()
         self.apply_cover_style()
+        self.similarity_map.set_covers(self.covers)  # covers in the map's cards and closest matches too
         if self.settings.get('Map detached', False):
             QTimer.singleShot(0, lambda: self.set_map_detached(True))  # as it was when the app was closed
         self._map_stale = True

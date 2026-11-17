@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from html import escape
 
 import numpy as np
-from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QTimer, QUrl, QVariantAnimation, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QDrag, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
+from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, QVariantAnimation, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QDrag, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -108,6 +108,7 @@ EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clic
 # length) beside its middle. Edges from one track then fan out in one direction of turn.
 CURVE_BEND = 0.18
 ONLY_LIST_TEXT = 'Map the List only'
+CARD_COVER, DETAILS_COVER, MATCH_COVER = 64, 96, 28   # px: cover thumbnails in the cards, details, closest matches
 # Tracks selected in the Playlist: amber ring; those the List does not show also get a paler dot.
 PLAYLIST_RING, MARKER_ALPHA = '#ffb000', 120
 ARRANGING, GROUPING = 'Arranging the map', 'Grouping'   # reasons the map's spinner turns
@@ -561,6 +562,7 @@ class SimilarityMapWidget(QWidget):
         # (markers) are shown anyway, dimmed with a dashed ring, but take no part in closest matches and edges.
         self.highlighted = {}
         self._markers = set()
+        self.covers = None        # ui.covers.CoverProvider, set by the main window (set_covers)
         # key -> {column: text} for any library or playlist track; set by the main window.
         self.fields_provider = lambda key: None
         # path_keys of the playlist tracks (set by the main window): italic in the closest matches.
@@ -685,6 +687,7 @@ class SimilarityMapWidget(QWidget):
         self.details.setWordWrap(True)
         self.details.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.suggestions = MatchList(settings)
+        self.suggestions.setIconSize(QSize(MATCH_COVER, MATCH_COVER))  # covers in the first column, when known
         self.suggestions.setRootIsDecorated(False)
         # A click highlights the match on the map (the selected track stays); a double-click makes
         # it the selected track. Dragging a match adds it to the playlist or Traktor.
@@ -1348,10 +1351,46 @@ class SimilarityMapWidget(QWidget):
         key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
         relation = self._relation_html(key)
         group = f'<br>{self._group_text(key)}' if self.groups else ''
-        return (f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+        return (self._cover_html(fields, CARD_COVER)
+                + f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
                 f'<span style="color:#9aa0a6">{escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM</span>'
                 + (f'<br>{relation}' if relation else '') + group
                 + fields_table(fields, self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)))
+
+    def _cover_html(self, fields, size):
+        """<img> of the track's cached cover thumbnail, above the text; '' without one. A cover that is not loaded
+        yet is requested: the card is drawn again when it arrives (_cover_ready)."""
+        path = fields.get('Path')
+        if self.covers is None or not path:
+            return ''
+        file = self.covers.cached_file(path)
+        if file is None:
+            self.covers.pixmap(path)  # request it
+            return ''
+        return f'<img src="{escape(QUrl.fromLocalFile(str(file)).toString())}" width="{size}"><br>'
+
+    def _cover_ready(self, key):
+        """A cover arrived: the cards, the details and the closest matches that show this track get it."""
+        if key == self.hover_key:
+            self.hover(key)
+        if key == self.preview_key:
+            self._show_halos()
+        if key == self.selected_key:
+            self._show_selected_details()
+        for index in range(self.suggestions.topLevelItemCount()):
+            item = self.suggestions.topLevelItem(index)
+            if item.data(0, Qt.UserRole) == key:
+                self._set_match_cover(item)
+
+    def _set_match_cover(self, item):
+        pixmap = self.covers.pixmap(item.data(0, PATH_ROLE)) if self.covers is not None else None
+        if pixmap is not None and not pixmap.isNull():
+            item.setIcon(0, QIcon(pixmap))
+
+    def set_covers(self, provider):
+        """Show cover thumbnails (ui.covers.CoverProvider) in the cards, the details and the closest matches."""
+        self.covers = provider
+        provider.ready.connect(self._cover_ready)
 
     def select_and_show(self, key):
         """Select a track and scroll the map to it (double-click in the closest matches)."""
@@ -1379,7 +1418,8 @@ class SimilarityMapWidget(QWidget):
         note = ('<i>Not in the list view (e.g. a playlist track); its matches come from the list.</i><br>'
                 if self.reference is not None and self.reference[0] == self.selected_key else '')
         group = f'<br>{self._group_text(self.selected_key)}' if self.groups else ''
-        self.details.setText(f'{note}<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
+        self.details.setText(f'{note}{self._cover_html(fields, DETAILS_COVER)}'
+                             f'<b>{escape(fields.get("Artist", ""))} - {escape(fields.get("Title", ""))}</b><br>'
                              f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM{group}'
                              f'<table cellspacing="4">{rows}</table>')
 
@@ -1614,6 +1654,7 @@ class SimilarityMapWidget(QWidget):
                 item.setData(column, SORT_ROLE, _sort_value(name, target.get(name, '')))
             item.setData(0, Qt.UserRole, key)
             item.setData(0, PATH_ROLE, target.get('Path', ''))
+            self._set_match_cover(item)
             if mix is not None:
                 item.setForeground(1, QBrush(QColor(EDGE_COLORS[mix.name])))
             elif not keys_known:
