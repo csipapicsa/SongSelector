@@ -83,7 +83,9 @@ class SavedListsMixin:
             self.sort_by_column(POSITION, True)  # the set order
         elif was_playlist and not is_playlist and self._sort_before_source:
             self.sort_by_column(*self._sort_before_source)
-        self.list_browser.select_node(self.list_source)
+        # A description search keeps the entry it searched within selected in the Browser.
+        shown = self.list_source
+        self.list_browser.select_node(shown.get('within') if shown and shown['kind'] == DESCRIPTION else shown)
         self.filter_items()
 
     def _resolve_source(self):
@@ -118,6 +120,17 @@ class SavedListsMixin:
         except sqlite3.Error as error:
             self.list_source = None
             self._report(f'Could not read {node_label(node)}: {error}', 'error')
+
+    def source_keys(self):
+        """path_keys of the library tracks the current Browser entry contains (None: no entry, all tracks)."""
+        if self.list_source is None:
+            return None
+        keys = set()
+        for item in self.all_items:
+            key = canonical_path(item.text(PATH))
+            if self._in_source(item, key):
+                keys.add(key)
+        return keys
 
     def _in_source(self, item, key):
         node = self.list_source

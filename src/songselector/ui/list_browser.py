@@ -39,7 +39,8 @@ def node_label(node):
     if node['kind'] in FOREIGN_KINDS:
         return f"{FOREIGN_KINDS[node['kind']]} playlist: {node['name']}"
     if node['kind'] == DESCRIPTION:
-        return f'tracks that sound like "{node["name"]}"'
+        within = node.get('within')
+        return f'tracks that sound like "{node["name"]}"' + (f' within {node_label(within)}' if within else '')
     return f"{node['kind'].title()}: {node['name']}"
 
 

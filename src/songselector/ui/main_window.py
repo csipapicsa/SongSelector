@@ -635,7 +635,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.library_tabs.addTab(self.candidate_tree, 'List')
         self.list_count_label = QLabel('')
         self.list_count_label.setToolTip('Tracks the List view shows (after search and filters) and how many of them are selected')
-        self.group_colours_switch = QCheckBox('Group colours')
+        self.group_colours_switch = QCheckBox('Cluster group colours')
         self.group_colours_switch.setToolTip(
             "Colour the List's rows by their group on the similarity map, as the map colours its dots,\n"
             "instead of the Traktor colour. Uses the map's Groups setting (Neighbour communities if it\n"
@@ -1953,6 +1953,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.description_scores = {}     # path_key -> similarity to the description (the Match column)
         # The whole ranking of the last search (library tracks only), so a new Top N needs no new search.
         self._description_ranked, self._description_prompt, self._description_seconds = [], '', 0.0
+        self._description_scope = (None, None)  # (Browser entry searched within, its path_keys); None: all tracks
         return layout
 
     def _refresh_description_models(self):
@@ -1989,12 +1990,16 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.describe()
 
     def clear_description(self):
-        """No description search: empty field, and the List shows all tracks if it showed the results."""
+        """No description search: empty field; the List shows again what it showed before the search (the Browser
+        entry searched within, or all tracks)."""
         self.description_box.setCurrentIndex(-1)
         self.description_box.setEditText('')
         if self.list_source and self.list_source['kind'] == DESCRIPTION:
-            self.show_list_source(None)
-            self._description_status('No description search: showing all tracks.', 'info')
+            scope = self.list_source.get('within')
+            self._description_scope = (None, None)
+            self.show_list_source(scope)
+            self._description_status('No description search: showing '
+                                     + (node_label(scope) if scope else 'all tracks') + '.', 'info')
 
     def describe(self):
         prompt = self.description_box.currentText().strip()
@@ -2010,6 +2015,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.text_search_engine.status.connect(self._description_status)
             self.text_search_engine.failed.connect(self._description_failed)
         self._description_model_id = model_id
+        # The search ranks the tracks of the Browser entry the List shows (a smartlist, a playlist, a genre...), and
+        # keeps that entry: a new prompt, another model or Top N searches the same tracks again.
+        if not (self.list_source and self.list_source['kind'] == DESCRIPTION):
+            self._description_scope = (self.list_source, self.source_keys())
         self.activity_spinner.set_busy(SEARCHING)
         self.text_search_engine.search(model_id, prompt)
 
@@ -2027,7 +2036,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         ranking is kept: changing Top N re-cuts it without searching again."""
         self.activity_spinner.set_busy(SEARCHING, False)
         library = self.library_keys()
-        self._description_ranked = [(key, score) for key, score in ranked if key in library]
+        _scope, keys = self._description_scope
+        self._description_ranked = [(key, score) for key, score in ranked
+                                    if key in library and (keys is None or key in keys)]
         self._description_prompt, self._description_seconds = prompt, seconds
         self._show_description_top()
 
@@ -2042,7 +2053,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
         top = self._description_ranked[:count] if count != ALL_RESULTS else list(self._description_ranked)
         self.description_positions = {key: position for position, (key, _score) in enumerate(top, start=1)}
         self.description_scores = dict(top)
-        self.show_list_source({'kind': DESCRIPTION, 'name': prompt})
+        scope = self._description_scope[0]
+        node = {'kind': DESCRIPTION, 'name': prompt}
+        if scope is not None:
+            node['within'] = scope
+        self.show_list_source(node)
         spec = MODELS[self._description_model_id]
         analysed, total = self.analysis_coverage(self.model_stores[spec.id])
         note = ''
@@ -2053,7 +2068,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
                     f'{"; the rest are being analysed" if busy else ""})')
         best = f'; match {match_text(top[0][1])} to {match_text(top[-1][1])}' if top else ''
         shown = f'all {len(top):,}' if count == ALL_RESULTS else f'top {len(top):,}'
-        self._description_status(f'{spec.name}: {shown} for "{prompt}"{best}{note}. '
+        within = f' within {node_label(scope)}' if scope else ''
+        self._description_status(f'{spec.name}: {shown} for "{prompt}"{within}{best}{note}. '
                                  f'Text encoded in {seconds * 1000:.0f} ms.', 'ok')
 
     def save_description_prompt(self):

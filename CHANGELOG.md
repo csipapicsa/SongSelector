@@ -17,6 +17,11 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Describe a sound searches the shown playlist or smartlist.** With a playlist, smartlist or other Browser entry
+  in the List, the description search now ranks only its tracks (before: the whole library) and the entry stays
+  selected in the Browser; a new prompt, another model or *Top* keep it, and clearing the search shows the entry
+  again. The status line says "... within Smartlist: ...".
+- The List's *Group colours* switch is now called **Cluster group colours**.
 - **Cover art in the List and the Playlist.** *View -> Cover art*: a *Cover* column (after `#`) with each track's
   picture: the one embedded in the file, else `cover.jpg` / `folder.jpg` next to it. Two styles: *cropped to the row
   height* (normal rows, the top of the picture) or *square rows* (every row as tall as the picture, also those
