@@ -17,6 +17,13 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Speed change column.** How much faster (+) or slower (-) each track plays at the master tempo, in percent with
+  one decimal (`+6.2%`, `-13.0%`), next to *Original BPM*; it follows the tempo slider and sorts as a number.
+- **Sorting by Group sorts by Match within each group** (the best match of a description search first), in both
+  directions.
+- **View -> Always on top** keeps SongSelector (and the map in its own window) above every other window, e.g. above
+  Traktor. Remembered.
+- The map's labels and cards no longer show " - Title" for tracks without an artist.
 - **Describe a sound searches the shown playlist or smartlist.** With a playlist, smartlist or other Browser entry
   in the List, the description search now ranks only its tracks (before: the whole library) and the entry stays
   selected in the Browser; a new prompt, another model or *Top* keep it, and clearing the search shows the entry

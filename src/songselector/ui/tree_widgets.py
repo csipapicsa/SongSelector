@@ -16,6 +16,7 @@ from songselector.config import (
     HEADER_INDEX,
     MATCH_COLUMN,
     POSITION_COLUMN,
+    SPEED_COLUMN,
     SS_COLOR_COLUMN,
     SS_RATING_COLUMN,
 )
@@ -24,7 +25,8 @@ from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate
 from songselector.ui.theme import status_style
 
 _NUMBER_COLUMNS = {HEADER_INDEX[name] for name in ('Original BPM', 'Rating', SS_RATING_COLUMN, 'Color', SS_COLOR_COLUMN,
-                                                   POSITION_COLUMN, GROUP_COLUMN, MATCH_COLUMN)}
+                                                   POSITION_COLUMN, GROUP_COLUMN, MATCH_COLUMN, SPEED_COLUMN)}
+GROUP, MATCH = HEADER_INDEX[GROUP_COLUMN], HEADER_INDEX[MATCH_COLUMN]
 # Paths of tracks dragged inside the app (one per line), next to the file URLs other apps use.
 # Also carries tracks whose file is missing.
 TRACKS_MIME = 'application/x-songselector-tracks'
@@ -69,8 +71,19 @@ class TrackItem(QTreeWidgetItem):
     the rows in place: taking out and re-adding thousands of rows froze the window for seconds."""
 
     def __lt__(self, other):
-        column = self.treeWidget().sortColumn() if self.treeWidget() else 0
-        return track_sort_key(column, self.text(column)) < track_sort_key(column, other.text(column))
+        tree = self.treeWidget()
+        column = tree.sortColumn() if tree else 0
+        mine, theirs = track_sort_key(column, self.text(column)), track_sort_key(column, other.text(column))
+        if mine != theirs or column != GROUP:
+            return mine < theirs
+        # The same group: the best Match (description search) first, whichever way the groups are sorted. Qt sorts
+        # descending by asking other < self, so then the question is turned around.
+        def rank(item):  # best match first; no match last
+            empty, value = track_sort_key(MATCH, item.text(MATCH))
+            return empty, -value
+        if tree is None or tree.header().sortIndicatorOrder() == Qt.AscendingOrder:
+            return rank(self) < rank(other)
+        return rank(other) < rank(self)
 
 
 class DraggableTreeWidget(QTreeWidget):
