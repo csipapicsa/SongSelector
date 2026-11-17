@@ -17,6 +17,13 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **Closest matches can follow the Edges menu.** The *harmonic only* checkbox is now a choice: *all*, *harmonic
+  only*, or *Edges selection*, which lists only tracks with a relation checked under *Edges* (mix types, same
+  colour, same rating) and updates when the menu changes. A saved *harmonic only* carries over.
+- **Ending a comparison is easier.** Esc first ends the comparison (the Ctrl+clicked dot or clicked match) and
+  keeps the selected track; a second Esc clears the selection. Ctrl+click on empty map space also ends it.
+- **Labels and cards no longer cover each other.** The selected track's label, the comparison card and the hover
+  card each move to a free corner of their dot (and stay inside the map if they can), also after zooming.
 - The tooltips of the map's edge settings explain that "to the N most similar" is relative: every track keeps its
   N most similar partners among the tracks on the map.
 

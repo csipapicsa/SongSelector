@@ -53,10 +53,20 @@ from songselector.config import COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_C
 from songselector.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from songselector.core.color_search import COLOR_NAMES
 from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
+from songselector.core.placement import (
+    ABOVE_LEFT,
+    ABOVE_RIGHT,
+    BELOW_LEFT,
+    BELOW_RIGHT,
+    CORNERS,
+    corner_rect,
+    place_box,
+)
 from songselector.core.search_filters import NUMERIC_COLUMNS
 from songselector.core.similarity import (
     EDGE_SAME_COLOR,
     EDGE_SAME_RATING,
+    connection,
     display_color,
     nearest,
     place_new,
@@ -95,6 +105,13 @@ EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clic
 # length) beside its middle. Edges from one track then fan out in one direction of turn.
 CURVE_BEND = 0.18
 ONLY_LIST_TEXT = 'Map the List only'
+# The selected track's label prefers the top of its dot, the cards the bottom: they rarely collide to begin with.
+LABEL_CORNERS = (ABOVE_RIGHT, ABOVE_LEFT, BELOW_RIGHT, BELOW_LEFT)
+# Closest matches: all similar tracks, only harmonic partners, or only the relations checked under Edges.
+MATCHES_ALL, MATCHES_HARMONIC, MATCHES_EDGES = 'all', 'harmonic', 'edges'
+MATCH_FILTERS = {MATCHES_ALL: 'Closest matches: all',
+                 MATCHES_HARMONIC: 'Closest matches: harmonic only',
+                 MATCHES_EDGES: 'Closest matches: Edges selection'}
 # "Map the List only" re-maps this long after the List's last change (typing a filter, scrolling Top N).
 FOLLOW_DELAY_MS = 300
 # 3D view: Shift+drag rotates (radians per pixel); far dots fade to this opacity; nearer dots
@@ -220,14 +237,50 @@ class Card(QGraphicsPathItem):
         self.hide()
 
     def show_at(self, dot, html):
+        """Show the card at the dot, below and right of it; the map then moves it to a free corner."""
         self.text.setHtml(html)
-        box = self.text.boundingRect()
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(DOT_SIZE, DOT_SIZE, box.width(), box.height()), 8, 8)
-        self.setPath(path)
-        self.text.setPos(DOT_SIZE, DOT_SIZE)
         self.setPos(dot.pos())
+        self.set_corner(BELOW_RIGHT)
         self.show()
+
+    def box_size(self):
+        box = self.text.boundingRect()
+        return box.width(), box.height()
+
+    def set_corner(self, corner):
+        """Draw the card at this corner of its dot (core.placement corners), in pixels."""
+        x, y, width, height = corner_rect((0, 0), self.box_size(), corner, DOT_SIZE)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(x, y, width, height), 8, 8)
+        self.setPath(path)
+        self.text.setPos(x, y)
+        self.corner = corner
+
+
+class MapLabel(QGraphicsRectItem):
+    """Label next to the selected dot (artist - title, key and BPM at the current tempo); same pixel size at any zoom.
+    Above and right of the dot unless the map moves it to another corner."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+        self.setBrush(QBrush(QColor(20, 22, 25, 225)))
+        self.setPen(QPen(QColor(SELECTED_RING), 1))
+        self.setZValue(10)
+        self.text = QGraphicsSimpleTextItem(self)
+        self.text.setBrush(QBrush(QColor('#f0f0f0')))
+        self.corner = ABOVE_RIGHT
+        self.hide()
+
+    def box_size(self):
+        box = self.text.boundingRect()
+        return box.width() + 12, box.height() + 8
+
+    def set_corner(self, corner):
+        x, y, width, height = corner_rect((0, 0), self.box_size(), corner, DOT_SIZE)
+        self.setRect(QRectF(x, y, width, height))
+        self.text.setPos(x + 6, y + 4)
+        self.corner = corner
 
 
 def group_colour(group):
@@ -407,6 +460,9 @@ class MapView(QGraphicsView):
             self.viewport().setCursor(Qt.SizeAllCursor)
             event.accept()
             return
+        if (event.button() == Qt.LeftButton and event.modifiers() & Qt.ControlModifier and self.rotator is not None
+                and not any(isinstance(item, DotItem) for item in self.items(event.pos()))):
+            self.rotator.end_compare()  # Ctrl+click on empty space: the compared track goes, the selection stays
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -430,6 +486,13 @@ class MapView(QGraphicsView):
     def wheelEvent(self, event):
         factor = 1.2 ** (event.angleDelta().y() / 120)
         self.scale(factor, factor)
+        if self.rotator is not None:
+            self.rotator._layout_boxes()  # dots moved closer or apart; the boxes keep their pixel size
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.rotator is not None:
+            self.rotator._layout_boxes()  # the visible area changed
 
     # Dropping a track selects it on the map. The view handles drops itself instead of
     # passing them to the scene, whose items do not accept drops.
@@ -507,15 +570,8 @@ class SimilarityMapWidget(QWidget):
         self.view.rotator = self
         self.view.dropped.connect(self.drop_paths)
         self.edge_items = []
-        # Label next to the selected dot: artist - title, key and BPM at the current tempo.
-        self.label = QGraphicsRectItem()
-        self.label.setFlag(QGraphicsItem.ItemIgnoresTransformations)
-        self.label.setBrush(QBrush(QColor(20, 22, 25, 225)))
-        self.label.setPen(QPen(QColor(SELECTED_RING), 1))
-        self.label.setZValue(10)
-        self.label_text = QGraphicsSimpleTextItem(self.label)
-        self.label_text.setBrush(QBrush(QColor('#f0f0f0')))
-        self.label.hide()
+        self.label = MapLabel()
+        self.label_text = self.label.text
         self.scene.addItem(self.label)
         # Glows behind the selected track (white) and a clicked closest match (magenta).
         self.selected_glow = Halo(SELECTED_RING, 3.9, self)
@@ -561,11 +617,19 @@ class SimilarityMapWidget(QWidget):
                                   'left). Otherwise edges start at the selected track only.')
         self.all_edges.setChecked(settings.get('Map edges between all', False))
         self.all_edges.toggled.connect(self._edges_changed)
-        self.harmonic_only = QCheckBox('Closest matches: harmonic only')
-        self.harmonic_only.setToolTip('Tracks without a key in Traktor stay in the list (Mix: "no key"):\n'
-                                      'their sound can still match.')
-        self.harmonic_only.setChecked(settings.get('Map harmonic only', False))
-        self.harmonic_only.toggled.connect(self._update_suggestions)
+        self.match_filter = QComboBox()
+        for name, label in MATCH_FILTERS.items():
+            self.match_filter.addItem(label, name)
+        self.match_filter.setToolTip(
+            'Which tracks the closest matches list:\n'
+            'all: every track, most similar first;\n'
+            'harmonic only: tracks that mix harmonically with the selected track (any mix type);\n'
+            'Edges selection: only tracks with a relation checked under Edges (mix types, same colour, same rating).\n'
+            'Tracks without a key in Traktor stay in the list (Mix: "no key"): their sound can still match.')
+        # Up to 1.1.x a checkbox, "harmonic only": its setting carries over.
+        saved = settings.get('Map match filter') or (MATCHES_HARMONIC if settings.get('Map harmonic only') else MATCHES_ALL)
+        self.match_filter.setCurrentIndex(max(self.match_filter.findData(saved), 0))
+        self.match_filter.currentIndexChanged.connect(self._update_suggestions)
         fit = QPushButton('Fit')
         fit.clicked.connect(self.fit)
         self.view_3d_button = QPushButton('3D')
@@ -610,7 +674,7 @@ class SimilarityMapWidget(QWidget):
         self.grouping_parameter.valueChanged.connect(self._update_groups)
 
         bar = QHBoxLayout()
-        for widget in (self.edges_button, self.lines_per_track, self.all_edges, self.harmonic_only):
+        for widget in (self.edges_button, self.lines_per_track, self.all_edges, self.match_filter):
             bar.addWidget(widget)
         bar.addStretch()
         bar.addWidget(self.view_3d_button)
@@ -970,8 +1034,25 @@ class SimilarityMapWidget(QWidget):
         """Label, glows and cards stay on their dots after the dots moved."""
         if self.label.isVisible() and self.selected_key in self.dots:
             self.label.setPos(self.dots[self.selected_key].pos())
-        self._show_halos()
         self.hover_card.hide()
+        self._show_halos()  # also lays the boxes out again: the dots moved relative to each other
+
+    def _layout_boxes(self):
+        """The selected track's label, then the compare card, then the hover card, each at the first corner of its
+        dot where it covers neither the boxes placed before it nor their dots, and stays in view if it can. The
+        boxes have a fixed pixel size, so this runs again when the zoom or the 3D view's angle changes."""
+        viewport = self.view.viewport().rect()
+        bounds = (0, 0, viewport.width(), viewport.height())
+        shown = [(box, corners, self.view.mapFromScene(box.pos()))
+                 for box, corners in ((self.label, LABEL_CORNERS), (self.preview_card, CORNERS),
+                                      (self.hover_card, CORNERS))
+                 if box.isVisible()]
+        half = DOT_SIZE / 2 + 2
+        taken = [(point.x() - half, point.y() - half, 2 * half, 2 * half) for _box, _corners, point in shown]
+        for box, corners, point in shown:
+            corner, rect = place_box((point.x(), point.y()), box.box_size(), taken, bounds, DOT_SIZE, corners)
+            box.set_corner(corner)
+            taken.append(rect)
 
     def set_3d(self, on):
         """Switch between the 2D map and the 3D view (computed in the background the first time)."""
@@ -1049,6 +1130,7 @@ class SimilarityMapWidget(QWidget):
             rect = QRectF(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
             margin = max(rect.width(), rect.height(), 1) * 0.05
             self.view.fitInView(rect.adjusted(-margin, -margin, margin, margin), Qt.KeepAspectRatio)
+            self._layout_boxes()
 
     def select(self, key):
         if key is None or key not in self.dots:
@@ -1067,8 +1149,12 @@ class SimilarityMapWidget(QWidget):
         self.selected.emit(key)
 
     def deselect(self):
-        """Esc: no track selected, nothing compared; rings, edges, closest matches and the card go away."""
+        """Esc, in two steps: first the compared track (Ctrl+click, or a clicked closest match) goes and the selected
+        track stays; then the selection: rings, edges, closest matches and the card go away."""
         if self.selected_key is None and self.preview_key is None and self.reference is None:
+            return
+        if self.preview_key is not None and self.selected_key is not None:
+            self.end_compare()
             return
         previous, self.selected_key = self.selected_key, None
         self._clear_preview()
@@ -1097,8 +1183,7 @@ class SimilarityMapWidget(QWidget):
         """Ctrl+click on a dot: preview it, and mark its row if it is among the closest matches.
         Ctrl+click on the compared dot again ends the comparison."""
         if key == self.preview_key:
-            self._clear_preview()
-            self._draw_edges()
+            self.end_compare()
             return
         self.preview(key)
         for index in range(self.suggestions.topLevelItemCount()):
@@ -1109,6 +1194,14 @@ class SimilarityMapWidget(QWidget):
                 break
         else:
             self.suggestions.clearSelection()
+
+    def end_compare(self):
+        """The compared track goes (glow, card, dashed line, its row's mark); the selected track stays."""
+        if self.preview_key is None:
+            return
+        self._clear_preview()
+        self._draw_edges()
+        self.suggestions.clearSelection()
 
     def _clear_preview(self):
         previous, self.preview_key = self.preview_key, None
@@ -1123,6 +1216,7 @@ class SimilarityMapWidget(QWidget):
             self.preview_card.show_at(dot, self.card_html(self.preview_key))
         else:
             self.preview_card.hide()
+        self._layout_boxes()
 
     def hover(self, key):
         """Card for the dot under the mouse (None: hide it). The compared track has its own card."""
@@ -1132,6 +1226,7 @@ class SimilarityMapWidget(QWidget):
             self.hover_card.hide()
         else:
             self.hover_card.show_at(dot, self.card_html(key))
+            self._layout_boxes()
 
     def relation(self, key):
         """(mix type or None, similarity or None) of a track to the selected track."""
@@ -1186,13 +1281,10 @@ class SimilarityMapWidget(QWidget):
         key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
         self.label_text.setText(f"{fields.get('Artist', '')} - {fields.get('Title', '')}\n"
                                 f"{key_now} at master tempo, {fields.get('Original BPM', '')} BPM")
-        # The label ignores zoom, so these offsets are pixels: right of and above the dot.
-        text_box = self.label_text.boundingRect()
-        top = -(text_box.height() + 8) - DOT_SIZE
-        self.label.setRect(QRectF(DOT_SIZE, top, text_box.width() + 12, text_box.height() + 8))
-        self.label_text.setPos(DOT_SIZE + 6, top + 4)
+        self.label.set_corner(ABOVE_RIGHT)
         self.label.setPos(self.dots[self.selected_key].pos())
         self.label.show()
+        self._layout_boxes()
         hover = self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)
         rows = ''.join(f'<tr><td><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
                        for name, text in shown_fields(fields, hover))
@@ -1245,6 +1337,8 @@ class SimilarityMapWidget(QWidget):
         self.settings['Map lines per track'] = self.lines_per_track.value()
         self.settings['Map curved edges'] = self.curved_action.isChecked()
         self._draw_edges()
+        if self.match_filter.currentData() == MATCHES_EDGES:
+            self._update_suggestions()  # the closest matches follow the Edges choice
 
     def _edge_sources(self):
         """[(sources, alpha)] to draw; pale first, so the selected track's edges lie on top."""
@@ -1383,8 +1477,12 @@ class SimilarityMapWidget(QWidget):
             self.edge_items.append(item)
 
     def _update_suggestions(self, _checked=False):
-        self.settings['Map harmonic only'] = self.harmonic_only.isChecked()
+        mode = self.match_filter.currentData()
+        self.settings['Map match filter'] = mode
+        self.settings.pop('Map harmonic only', None)  # replaced by 'Map match filter'
         self.settings['Map match count'] = self.match_count.value()
+        criteria = self.criteria()
+        harmonic_criteria = criteria & set(MIX_TYPES_BY_NAME)
         self.suggestions.clear()
         previous, self.match_keys = self.match_keys, []
         for key in previous:
@@ -1406,7 +1504,12 @@ class SimilarityMapWidget(QWidget):
             # A track Traktor has not analysed has no key, but its sound can still match:
             # "harmonic only" cannot rule it out, so it stays.
             keys_known = all(parse_camelot(fields.get('Camelot Key New')) is not None for fields in (source, target))
-            if self.harmonic_only.isChecked() and mix is None and keys_known:
+            if mode == MATCHES_HARMONIC and mix is None and keys_known:
+                continue
+            # Edges selection: a checked relation must link the two. Without a key a checked mix type cannot rule
+            # the track out (as above); colour and rating can.
+            if mode == MATCHES_EDGES and connection(source, target, criteria) is None \
+                    and (keys_known or not harmonic_criteria):
                 continue
             item = MatchItem([f'{score * 100:.0f} %', mix.label if mix else ('' if keys_known else NO_KEY_TEXT)]
                              + [target.get(name, '') for name in FIELD_LABELS])

@@ -14,7 +14,7 @@ One PR per block below, in this order; each with tests (a failing test first for
       showed only tracks that were in both the old and the new List. Now, while it is on, the map re-maps whenever
       the List changes (debounced). Button renamed **Map the List only**. Edges tooltip: "to the N most similar" is
       relative, per track, among the visible tracks (the user's question).
-- [ ] **B. Map interaction.** Ctrl+click on empty space (or the compared dot) ends the comparison; Esc in two steps
+- [x] **B. Map interaction.** Ctrl+click on empty space (or the compared dot) ends the comparison; Esc in two steps
       (compared track first, then the selection); hover / compare cards and the label never overlap (try four
       corners, unit-tested on rectangles); *Closest matches* becomes a choice: *All*, *Harmonic*, *Edge selection*
       (only the relations checked under Edges); the old "harmonic only" setting carries over.
