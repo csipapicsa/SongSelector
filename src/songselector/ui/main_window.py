@@ -119,7 +119,9 @@ IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the p
 GROUPING_MESSAGE = 'Grouping tracks for the List...'
 # Reasons the status bar's spinners turn (shown in their tooltips).
 SAVING, SEARCHING, ANALYSING = 'Saving to the file', 'Searching by description', 'Analysing tracks'
-ALL_RESULTS, MAX_RESULTS = 0, 100000   # Top N of the description search: 0 is All
+ALL_RESULTS, MAX_RESULTS = 0, 100000
+# An import of up to this many tracks updates the List row by row; more rebuild it (then about as fast).
+INCREMENTAL_IMPORT_LIMIT = 200   # Top N of the description search: 0 is All
 NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
 
 
@@ -1133,7 +1135,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.table = self.table.loc[~mask].reset_index(drop=True)
             self.data_manager.table = self.table
             error = self._save_library()
-            self.populate_tree()
+            self._remove_rows(keys)
             where = 'library'
         self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
         self.status_label.setText(error or f'Removed {len(keys)} {what} from the {where}; files on disk were not changed')
@@ -2096,6 +2098,53 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
 
 
+    def _list_view_changed(self):
+        """After rows were added to or taken from the List: what depends on all of its rows."""
+        self.list_browser.set_collection(self.table)
+        self._apply_source_positions()
+        if self._group_colours_on():
+            self._apply_groups()
+        self.filter_items()
+        self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
+
+    def _add_or_update_rows(self, paths):
+        """Show these tracks' current table rows in the List and the Playlist: new tracks get a row, existing rows are
+        redrawn. Rebuilding the whole List instead takes 1-2 s with thousands of tracks."""
+        mask = self._rows_mask(paths)
+        if mask is None or not mask.any():
+            return
+        rows = {}
+        for row in self.table.loc[mask].to_dict('records'):
+            rows.setdefault(canonical_path(row['File_Path']), row)
+        shown = {canonical_path(item.text(HEADER_INDEX['Path'])): item for item in self.all_items}
+        tree = self.candidate_tree
+        tree.setSortingEnabled(False)
+        for key, row in rows.items():
+            if key in shown:
+                self._track_item(row, shown[key])
+            else:
+                item = self._track_item(row)
+                tree.addTopLevelItem(item)
+                self.all_items.append(item)
+        tree.setSortingEnabled(True)
+        tree.sortItems(tree.sort_column, Qt.AscendingOrder if tree.sort_order else Qt.DescendingOrder)
+        for index in range(self.playlist_tree.topLevelItemCount()):
+            item = self.playlist_tree.topLevelItem(index)
+            row = rows.get(canonical_path(item.text(HEADER_INDEX['Path'])))
+            if row is not None:
+                self._track_item(row, item)
+        self._list_view_changed()
+
+    def _remove_rows(self, keys):
+        """Take the List's rows of these path_keys out (the table already lost them), without a rebuild."""
+        keys = set(keys)
+        tree = self.candidate_tree
+        for index in reversed(range(tree.topLevelItemCount())):
+            if canonical_path(tree.topLevelItem(index).text(HEADER_INDEX['Path'])) in keys:
+                tree.takeTopLevelItem(index)
+        self.all_items = [item for item in self.all_items if canonical_path(item.text(HEADER_INDEX['Path'])) not in keys]
+        self._list_view_changed()
+
     def reset_settings(self):
         """Reset all settings to default"""
         import os
@@ -2329,7 +2378,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
             if not to_playlist:
                 self.list_source = None
                 self._resolve_source()
-        self.populate_tree()
+        if self.all_items and len(records) <= INCREMENTAL_IMPORT_LIMIT:
+            self._add_or_update_rows(list(records))  # a few tracks: no rebuild of the whole List
+        else:
+            self.populate_tree()
         if to_playlist:
             for record in records.values():
                 self._add_to_playlist(record)

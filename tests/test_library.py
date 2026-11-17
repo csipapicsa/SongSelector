@@ -66,6 +66,43 @@ class LibraryStoreTests(unittest.TestCase):
         self.store.upsert_tracks([track(r'E:\csv.mp3'), track(r'E:\dropped.mp3', Imported=True)])
         self.assertEqual(list(self.store.imported_tracks()), [canonical_path(r'E:\dropped.mp3')])
 
+    def test_saving_an_unchanged_list_does_not_write_the_file(self):
+        # 2026-11-17: each save rewrote every track and the whole list order (2.5-5 s on a slow SSD for one change).
+        import time
+        records = [track(rf'E:\music\{index}.mp3', str(index)) for index in range(50)]
+        self.store.save_list(LIBRARY_LIST, records)
+        before = os.stat(self.store.path).st_mtime_ns
+        time.sleep(0.05)
+        self.store.save_list(LIBRARY_LIST, records)
+        self.assertEqual(os.stat(self.store.path).st_mtime_ns, before)
+        self.assertFalse(Path(str(self.store.path) + '-wal').exists())  # still one file between saves
+
+    def test_only_changed_tracks_are_rewritten(self):
+        import sqlite3
+        from contextlib import closing
+        records = [track(rf'E:\music\{index}.mp3', str(index)) for index in range(5)]
+        with patch('songselector.core.library_store._now', return_value='first'):
+            self.store.save_list(LIBRARY_LIST, records)
+        records[2] = dict(records[2], Title='changed')
+        with patch('songselector.core.library_store._now', return_value='second'):
+            self.store.save_list(LIBRARY_LIST, records)
+        with closing(sqlite3.connect(self.store.path)) as connection:
+            stamps = dict(connection.execute('SELECT title, updated_at FROM tracks'))
+        self.assertEqual(stamps, {'0': 'first', '1': 'first', 'changed': 'second', '3': 'first', '4': 'first'})
+        self.assertEqual([row['Title'] for row in self.store.load_list(LIBRARY_LIST)], ['0', '1', 'changed', '3', '4'])
+
+    def test_list_order_is_saved_by_changed_positions(self):
+        import sqlite3
+        from contextlib import closing
+        songs = {name: track(rf'E:\music\{name}.mp3', name) for name in 'abcde'}
+        for order in ('abc', 'abcd', 'acd', 'da', 'edcba', '', 'b'):
+            self.store.save_list(LIBRARY_LIST, [songs[name] for name in order])
+            self.assertEqual(''.join(row['Title'] for row in self.store.load_list(LIBRARY_LIST)), order)
+            with closing(sqlite3.connect(self.store.path)) as connection:
+                count = connection.execute('SELECT COUNT(*) FROM list_tracks WHERE list_name = ?', (LIBRARY_LIST,))
+                self.assertEqual(count.fetchone()[0], len(order))
+        self.store.save_list(PLAYLIST_LIST, [songs['a']])  # other lists are untouched
+        self.assertEqual([row['Title'] for row in self.store.load_list(LIBRARY_LIST)], ['b'])
 
 class DuplicatePathTests(unittest.TestCase):
     def test_same_path_in_other_case_or_slashes_is_a_duplicate_and_first_row_is_kept(self):
@@ -136,6 +173,31 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
     def titles(tree):
         from songselector.config import HEADER_INDEX
         return [tree.topLevelItem(i).text(HEADER_INDEX['Title']) for i in range(tree.topLevelItemCount())]
+
+    def rows(self, tree):
+        return [[tree.topLevelItem(i).text(c) for c in range(tree.columnCount())] for i in range(tree.topLevelItemCount())]
+
+    def test_importing_a_few_files_updates_the_list_without_rebuilding_it(self):
+        window = self.window()
+        new = self.root / 'four.mp3'
+        new.write_bytes(b'')
+        with patch.object(window, 'populate_tree', side_effect=AssertionError('whole List rebuilt')):
+            window.import_audio_files([str(new), str(self.files[1])])  # one new track, one already listed
+        incremental = self.rows(window.candidate_tree)
+        self.assertEqual(len(window.all_items), window.candidate_tree.topLevelItemCount())
+        window.populate_tree()
+        self.assertEqual(incremental, self.rows(window.candidate_tree))  # exactly what a rebuild shows
+        self.assertIn('four', self.titles(window.candidate_tree))
+
+    def test_removing_tracks_takes_out_their_rows_without_rebuilding_the_list(self):
+        window = self.window()
+        with patch.object(window, 'populate_tree', side_effect=AssertionError('whole List rebuilt')):
+            window._remove_tracks(window.candidate_tree, [str(self.files[1])], confirm=False, what='track')
+        incremental = self.rows(window.candidate_tree)
+        self.assertNotIn('two', self.titles(window.candidate_tree))
+        self.assertEqual(len(window.all_items), window.candidate_tree.topLevelItemCount())
+        window.populate_tree()
+        self.assertEqual(incremental, self.rows(window.candidate_tree))
 
     def test_playlist_columns_can_be_resized_and_keep_their_width(self):
         from PyQt5.QtWidgets import QHeaderView
