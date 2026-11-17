@@ -37,7 +37,7 @@ def node_label(node):
     if node['kind'] == 'all':
         return 'All Tracks'
     if node['kind'] in FOREIGN_KINDS:
-        return f"{FOREIGN_KINDS[node['kind']]} playlist: {node['name']}"
+        return f"{FOREIGN_KINDS[node['kind']]} {'smartlist' if node.get('smart') else 'playlist'}: {node['name']}"
     if node['kind'] == DESCRIPTION:
         within = node.get('within')
         return f'tracks that sound like "{node["name"]}"' + (f' within {node_label(within)}' if within else '')
@@ -191,6 +191,14 @@ class ListBrowser(QTreeWidget):
                     item = self._item(parent, entry['name'], {'kind': kind, 'name': entry['name'], 'path': here},
                                       self.list_icon)
                     item.setToolTip(0, f"{len(entry['tracks'])} tracks")
+                    count += 1
+                elif entry['type'] == 'SMARTLIST' and kind == TRAKTOR:
+                    # Evaluated on Traktor's collection (core.traktor_smartlist): shown like a playlist.
+                    item = self._item(parent, entry['name'],
+                                      {'kind': kind, 'name': entry['name'], 'path': here, 'smart': True},
+                                      self.smart_icon)
+                    item.setToolTip(0, f"Traktor smartlist: {entry.get('query', '')}\n"
+                                       "Evaluated on Traktor's collection; ~ counts as within 1 BPM.")
                     count += 1
                 elif entry['type'] == 'SMARTLIST':
                     item = self._item(parent, entry['name'], {'kind': f'{kind}_smartlist', 'path': here},
