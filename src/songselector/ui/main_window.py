@@ -96,6 +96,7 @@ from songselector.ui.elided_label import ElidedLabel
 from songselector.ui.embedding_worker import EmbeddingAnalyzer
 from songselector.ui.list_browser import DESCRIPTION, ORDERED_KINDS, ListBrowser, node_label
 from songselector.ui.map_settings_dialog import HoverFieldsDialog
+from songselector.ui.map_window import MapPlaceholder, MapWindow
 from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.model_download_dialog import ModelDownloadDialog
 from songselector.ui.music_paths_dialog import MusicPathsDialog
@@ -121,6 +122,7 @@ GROUPING_MESSAGE = 'Grouping tracks for the List...'
 # Reasons the status bar's spinners turn (shown in their tooltips).
 SAVING, SEARCHING, ANALYSING = 'Saving to the file', 'Searching by description', 'Analysing tracks'
 FINDING_DUPLICATES = 'Looking for duplicates'
+MAP_TAB = 1   # index of the Similarity map tab in the library panel
 ALL_RESULTS, MAX_RESULTS = 0, 100000
 # An import of up to this many tracks updates the List row by row; more rebuild it (then about as fast).
 INCREMENTAL_IMPORT_LIMIT = 200   # Top N of the description search: 0 is All
@@ -308,6 +310,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.similarity_map.playlist_keys = lambda: {canonical_path(path) for path in self.playlist_paths}
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
+        # The map can live in a window of its own (its "Own window" button); the tab then shows a placeholder.
+        self.map_window = None
+        self.map_placeholder = MapPlaceholder(self.show_map, lambda: self.set_map_detached(False))
+        self.similarity_map.detach_requested.connect(self.set_map_detached)
+        if self.settings.get('Map detached', False):
+            QTimer.singleShot(0, lambda: self.set_map_detached(True))  # as it was when the app was closed
         self._map_stale = True
         self.similarity_map.groups_changed.connect(self._apply_groups)
         # Groups for the List (colours or the Group column) without opening the map first; but only once the
@@ -1368,7 +1376,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         list_view.triggered.connect(lambda: self.library_tabs.setCurrentIndex(0))
         map_view = menu.addAction('Similarity map')
         map_view.setShortcut('Ctrl+2')
-        map_view.triggered.connect(lambda: self.library_tabs.setCurrentIndex(1))
+        map_view.triggered.connect(self.show_map)
         menu.addAction('Map hover details...').triggered.connect(self.choose_hover_fields)
 
     # -- similarity map -----------------------------------------------------
@@ -1389,7 +1397,47 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.playlist_count_label.setText(f'{text}, {selected:,} selected' if selected else text)
 
     def map_visible(self):
+        if getattr(self, 'map_window', None) is not None:
+            return self.map_window.isVisible()
         return hasattr(self, 'similarity_map') and self.library_tabs.currentWidget() is self.similarity_map
+
+    def show_map(self):
+        """Ctrl+2: the map's tab, or its own window brought to the front."""
+        if self.map_window is not None:
+            self.map_window.showNormal()
+            self.map_window.raise_()
+            self.map_window.activateWindow()
+        else:
+            self.library_tabs.setCurrentIndex(MAP_TAB)
+
+    def set_map_detached(self, detached):
+        """Move the map into a window of its own, or back into its tab. Remembered for the next start."""
+        if detached == (self.map_window is not None):
+            return
+        current = self.library_tabs.currentIndex()
+        self.library_tabs.blockSignals(True)  # the tab swap must not refresh the map half-way
+        self.library_tabs.removeTab(MAP_TAB)
+        if detached:
+            self.library_tabs.insertTab(MAP_TAB, self.map_placeholder, 'Similarity map')
+            self.map_window = MapWindow(self.similarity_map, self.settings, self.windowIcon())
+            self.map_window.closed.connect(lambda: self.set_map_detached(False))
+        else:
+            window, self.map_window = self.map_window, None
+            window.save_geometry()
+            self.library_tabs.insertTab(MAP_TAB, self.similarity_map, 'Similarity map')
+            window.closing_with_app = True  # closed by us: no "closed" signal back
+            window.close()
+            window.deleteLater()
+        self.library_tabs.setCurrentIndex(current)
+        self.library_tabs.blockSignals(False)
+        self.similarity_map.detach_button.blockSignals(True)
+        self.similarity_map.detach_button.setChecked(detached)
+        self.similarity_map.detach_button.setText('Back to the tab' if detached else 'Own window')
+        self.similarity_map.detach_button.blockSignals(False)
+        self.settings['Map detached'] = detached
+        if detached:
+            self.map_window.show()
+        self._refresh_map()
 
     def _refresh_map(self):
         """Show the rows the list shows; (re)load map data when it is opened and stale."""
@@ -2245,6 +2293,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         """Save settings before closing the app"""
         self.background.flush(timeout=30)  # a tag edit or row save still running finishes first
         self.background.stop()
+        if self.map_window is not None:  # stays detached for the next start
+            self.map_window.closing_with_app = True
+            self.map_window.close()
         self.collection_watcher.stop()
         self.rekordbox_watcher.stop()
         if self.embedding_analyzer is not None:

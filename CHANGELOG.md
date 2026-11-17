@@ -17,6 +17,9 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **The map in its own window.** *Own window* on the map moves it into a separate window (another screen, any
+  size); it keeps following the List, and Ctrl+2 brings it to the front. Close that window (or *Back to the tab*)
+  to get it back in its tab. Its size and position, and whether it was in its own window, are remembered.
 - **Delete duplicates, three ways.** *Right-click -> Delete duplicates from the list* now offers *Same file path*
   (as before), *Same Artist - Title* (case and spaces ignored) and *Same file* (a copy in another folder: same size
   and content). It first shows each group and which row stays: the one whose file exists, then the one with the most

@@ -35,7 +35,7 @@ One PR per block below, in this order; each with tests (a failing test first for
       exists, 2) the richest row (count of filled fields: comment, colour, rating, key, BPM, genre, Song Selector
       rating / colour...), 3) on a tie the one in the Traktor / Rekordbox collection, 4) else the first. Preview
       dialog before removing; only list rows are removed, never files.
-- [ ] **D. Map in its own window.** Detach / Attach; closing the window docks it again; geometry saved.
+- [x] **D. Map in its own window.** Detach / Attach; closing the window docks it again; geometry saved.
 - [ ] **H. Cover art.** Embedded pictures (ID3 APIC, FLAC, MP4), else `cover.jpg` / `folder.jpg` (also .png) next
       to the file. Thumbnails cached on disk, loaded in the background for visible rows. *Cover* column, size
       setting, two styles: cropped to the normal row height (top of the image) or square rows (rows without a
