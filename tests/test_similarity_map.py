@@ -442,8 +442,10 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertFalse(self.map.grouping_parameter.isVisible())
 
     def wait_for_map(self):
+        """Until the map is loaded, including a pending re-map of a changed List ("Map the List only")."""
         deadline = time.monotonic() + 60
-        while (self.map._loading or self.map._again) and time.monotonic() < deadline:
+        timer = lambda: getattr(self.map, "_follow_timer", None) is not None and self.map._follow_timer.isActive()  # noqa: E731
+        while (self.map._loading or self.map._again or timer()) and time.monotonic() < deadline:
             self.application.processEvents()
             time.sleep(0.01)
         self.application.processEvents()
@@ -463,10 +465,11 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertIn('of the 12 mapped tracks', self.map.grouping_summary.text())
         self.assertEqual(store.load_layout(), library_layout)             # the library layout is untouched
         self.assertEqual(self.visible(), set(self.map.data.keys))
-        self.window.search_bar.clear()                                     # a snapshot: the list moved on
-        self.assertEqual(self.visible(), {self.key(i) for i in range(12)})
-        self.assertIn('Re-arrange map', self.map.status.text() + self.map._base_status)
-        self.map.rearrange_button.click()                                  # maps the list as it is now
+        self.window.search_bar.clear()                                     # the map follows the List
+        self.wait_for_map()
+        self.assertEqual(len(self.map.data.keys), 24)
+        self.assertEqual(len(self.visible()), 24)
+        self.map.rearrange_button.click()                                  # arranges the List from scratch
         self.wait_for_map()
         self.assertEqual(len(self.map.data.keys), 24)
         self.map.only_button.setChecked(False)
@@ -475,6 +478,58 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(len(self.map.data.keys), 24)
         self.assertIn('of all 24 analysed tracks', self.map.grouping_summary.text())
         self.assertEqual(store.load_layout(), library_layout)
+
+    def describe(self, indexes, prompt='dark rolling'):
+        """A description search result in the List (as when the text search answers; also after a model switch)."""
+        from songselector.core.embedding_models import LAION_CLAP
+        self.window._description_model_id = LAION_CLAP.id
+        self.window.show_description_results(prompt, [(self.key(i), 0.5 - i / 100) for i in indexes], 0.01)
+
+    def test_map_the_list_only_follows_new_description_searches(self):
+        # Reported 2026-11-17: after a new search (or a CLAP model switch, which searches again) the map showed only
+        # the tracks that were in both the old and the new List, and the button did not bring the new ones.
+        self.assertEqual(self.map.only_button.text(), 'Map the List only')
+        self.describe(range(0, 6))
+        self.map.only_button.setChecked(True)
+        self.wait_for_map()
+        self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(0, 6)})
+        self.describe(range(3, 15), prompt='other model, same prompt')
+        self.wait_for_map()
+        self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(3, 15)})
+        self.assertEqual(self.visible(), {self.key(i) for i in range(3, 15)})
+        self.assertIn('only the tracks the List shows', self.map._base_status)
+
+    def test_a_burst_of_list_changes_gives_one_new_map(self):
+        from songselector.ui import similarity_map
+        self.map.only_button.setChecked(True)
+        self.wait_for_map()
+        with patch.object(similarity_map, 'build_map_data', wraps=similarity_map.build_map_data) as build:
+            for text in ('b', 'br', 'bre', 'breaks'):
+                self.window.search_bar.setText(text)
+            self.wait_for_map()
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(12)})
+
+    def test_a_list_change_during_a_load_maps_the_latest_list(self):
+        self.map.only_button.setChecked(True)  # starts a load in the background
+        self.assertTrue(self.map._loading)
+        self.window.search_bar.setText('dnb')
+        self.map._follow_timer.stop()
+        self.map._follow_list()                # the pause is over while the first load still runs
+        self.assertTrue(self.map._again)
+        self.wait_for_map()
+        self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(12, 24)})
+
+    def test_an_unchanged_list_does_not_map_again(self):
+        from songselector.ui import similarity_map
+        self.window.search_bar.setText('breaks')
+        self.map.only_button.setChecked(True)
+        self.wait_for_map()
+        with patch.object(similarity_map, 'build_map_data', wraps=similarity_map.build_map_data) as build:
+            self.window.filter_items()                 # filtered again: same rows
+            self.window.update_tree_after_slider()     # the tempo moved: same rows, new texts
+            self.wait_for_map()
+        build.assert_not_called()
 
     def test_every_grouping_method_runs_on_the_map(self):
         for method in ('kmeans', 'communities', 'density'):

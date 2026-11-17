@@ -3,17 +3,48 @@
 Known issues, technical debt and ideas, roughly by priority. Move items into the
 CHANGELOG when they ship.
 
-## Next session (Wednesday 2026-11-18)
+## Release 1.2.0 (planned 2026-11-17)
 
-1.1.4 is merged into main (PR #19) but not tagged or released. `dist\SongSelector-1.1.4.exe` is an older local
-build, made before the last tweaks.
-- [ ] Build a fresh exe (`.\scripts\build.ps1`) and test it on the real library:
-  - [ ] Description search: changing *Top* updates the List without a new search; *All* (one step below 1) lists
-        every analysed track; the field shows only the number, with "Top" as a label next to it.
-  - [ ] *Match* column shows whole percentages next to `#` and sorts correctly; it is hidden in the Playlist.
+The unreleased 1.1.4 (Top N re-cut, Match column; merged in PR #19, never tagged) and the user's feedback list of
+2026-11-17 ship together as **1.2.0**: new features, so a minor version (SemVer), and one release instead of two.
+One PR per block below, in this order; each with tests (a failing test first for bugs), ruff, CHANGELOG, worklog.
+
+- [x] **A. The map follows the List** (`fix/map-follows-list`). *Only listed tracks* stored the List as a snapshot
+      (`SimilarityMapWidget.only`), so after a new description search, Top N change or CLAP model switch the map
+      showed only tracks that were in both the old and the new List. Now, while it is on, the map re-maps whenever
+      the List changes (debounced). Button renamed **Map the List only**. Edges tooltip: "to the N most similar" is
+      relative, per track, among the visible tracks (the user's question).
+- [ ] **B. Map interaction.** Ctrl+click on empty space (or the compared dot) ends the comparison; Esc in two steps
+      (compared track first, then the selection); hover / compare cards and the label never overlap (try four
+      corners, unit-tested on rectangles); *Closest matches* becomes a choice: *All*, *Harmonic*, *Edge selection*
+      (only the relations checked under Edges); the old "harmonic only" setting carries over.
+- [ ] **F. Tag edits without freezing.** Profile first (suspect: `_save_library` rewrites every track for one
+      edit). Save only the changed row; file write + re-read on a worker thread; row shows "Saving..." and reverts
+      with an error if it fails; edits of one file run in order. Reusable "small background update" helper.
+      *Edit track info*: the path is selectable.
+- [ ] **E. Busy indicator.** One `BusySpinner` widget (runs only while busy) next to: analysis progress, map
+      arranging / grouping, description search, model download, tag saving.
+- [ ] **C. Playlist selection on the map.** Selected Playlist tracks are shown on the map even if the List filters
+      them out, in a distinct style; several at once; tracks not on a *Map the List only* map are placed near
+      their most similar tracks (`place_new`). Field lookup by a dict instead of scanning the trees.
+- [ ] **G. Delete duplicates, three ways:** same path (today), same Artist - Title (case and spaces ignored), same
+      file (same size, then same content hash; e.g. a copy in another folder). Which row stays: 1) the file still
+      exists, 2) the richest row (count of filled fields: comment, colour, rating, key, BPM, genre, Song Selector
+      rating / colour...), 3) on a tie the one in the Traktor / Rekordbox collection, 4) else the first. Preview
+      dialog before removing; only list rows are removed, never files.
+- [ ] **D. Map in its own window.** Detach / Attach; closing the window docks it again; geometry saved.
+- [ ] **H. Cover art.** Embedded pictures (ID3 APIC, FLAC, MP4), else `cover.jpg` / `folder.jpg` (also .png) next
+      to the file. Thumbnails cached on disk, loaded in the background for visible rows. *Cover* column, size
+      setting, two styles: cropped to the normal row height (top of the image) or square rows (rows without a
+      cover keep the same height). Also in the map cards and the closest matches. No new dependency (Qt scales).
+- [ ] **Release:** version 1.2.0 (CHANGELOG `[1.1.4]` becomes `[1.2.0]`), fresh `.\scripts\build.ps1`, selfcheck,
+      then on the real library:
+  - [ ] Description search: changing *Top* updates the List without a new search; *All* lists every analysed
+        track; *Match* shows whole percentages, sorts correctly, is hidden in the Playlist.
   - [ ] Still OK from 1.1.3: switching to LAION CLAP / Microsoft CLAP analyses its missing tracks; the window
         does not stretch; "no search: show all tracks" in the dropdown.
-- [ ] If it's good: tag `v1.1.4` and release (the workflow publishes the exe).
+  - [ ] Each block A-H above, as described.
+  - [ ] Tag `v1.2.0`; the workflow publishes the exe.
 
 ## Product
 

@@ -8,7 +8,19 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
-## [1.1.4] - 2026-11-16
+## [1.2.0] - unreleased
+
+1.1.4 was never released; its changes ship in 1.2.0 together with the items below.
+
+- **"Map the List only" follows the List.** The button (formerly *Only listed tracks*) maps and groups just the
+  tracks the List shows, and now keeps doing so: a new description search, a switch between the CLAP models, a
+  changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
+  moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
+  the new List. *Re-arrange map* still arranges the List again from scratch.
+- The tooltips of the map's edge settings explain that "to the N most similar" is relative: every track keeps its
+  N most similar partners among the tracks on the map.
+
+### From 1.1.4 (unreleased, 2026-11-16)
 
 - **Top N updates the List right away.** Changing the number next to the description field now shows the new
   number of tracks immediately. The whole ranking of the last search is kept, so no new search is needed. The

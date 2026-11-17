@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from html import escape
 
 import numpy as np
-from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QUrl, QVariantAnimation, pyqtSignal
+from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QTimer, QUrl, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QDrag, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -94,6 +94,9 @@ EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clic
 # Edges bend to one side like an arc: the control point lies this far (share of the edge's
 # length) beside its middle. Edges from one track then fan out in one direction of turn.
 CURVE_BEND = 0.18
+ONLY_LIST_TEXT = 'Map the List only'
+# "Map the List only" re-maps this long after the List's last change (typing a filter, scrolling Top N).
+FOLLOW_DELAY_MS = 300
 # 3D view: Shift+drag rotates (radians per pixel); far dots fade to this opacity; nearer dots
 # lie above farther ones within their ring tier (selected, clicked, matches, others).
 ROTATE_SPEED, FAR_OPACITY, DEPTH_Z = 0.008, 0.35, 0.3
@@ -488,6 +491,9 @@ class SimilarityMapWidget(QWidget):
         self._base_status = ''
         self._loading = False
         self.only = None          # frozenset of path_keys while the map shows just those tracks, else None
+        # While "Map the List only" is on, a changed List re-maps after a short pause (a burst of changes,
+        # e.g. Top N scrolled or typed, gives one new map).
+        self._follow_timer = None
         self._again = False       # the mode changed during a load: load once more when it ends
         self._fit_next = False    # fit the view to the dots when the next load arrives
         self._stop = threading.Event()
@@ -545,12 +551,14 @@ class SimilarityMapWidget(QWidget):
         self.lines_per_track.setPrefix('to the ')
         self.lines_per_track.setSuffix(' most similar')
         self.lines_per_track.setToolTip('Edges from a track go only to this many partners: those that sound most\n'
-                                        'similar. The more similar, the more opaque the line.')
+                                        'similar to it among the tracks on the map (relative, per track, so every\n'
+                                        'track keeps its N closest partners). The more similar, the more opaque the line.')
         self.lines_per_track.setValue(settings.get('Map lines per track', LINES_PER_TRACK))
         self.lines_per_track.setKeyboardTracking(False)
         self.lines_per_track.valueChanged.connect(self._edges_changed)
         self.all_edges = QCheckBox('Edges between all visible tracks')
-        self.all_edges.setToolTip('Otherwise edges start at the selected track only.')
+        self.all_edges.setToolTip('Every visible track draws edges to its N most similar partners (the number on the\n'
+                                  'left). Otherwise edges start at the selected track only.')
         self.all_edges.setChecked(settings.get('Map edges between all', False))
         self.all_edges.toggled.connect(self._edges_changed)
         self.harmonic_only = QCheckBox('Closest matches: harmonic only')
@@ -568,7 +576,7 @@ class SimilarityMapWidget(QWidget):
         self.view_3d_button.toggled.connect(self.set_3d)
         self.rearrange_button = QPushButton('Re-arrange map')
         self.rearrange_button.clicked.connect(self._rearrange)
-        self.only_button = QPushButton('Only listed tracks')
+        self.only_button = QPushButton(ONLY_LIST_TEXT)
         self.only_button.setCheckable(True)
         self.only_button.toggled.connect(self.set_only_listed)
         self._describe_buttons()
@@ -660,24 +668,37 @@ class SimilarityMapWidget(QWidget):
         if self.only is None:
             self.rearrange_button.setToolTip('Compute the map again from all analysed tracks (takes a few minutes).')
         else:
-            self.rearrange_button.setToolTip('Map the tracks the list shows now, on their own (seconds).')
+            self.rearrange_button.setToolTip('Arrange the tracks the List shows again, from scratch (seconds).')
         self.only_button.setToolTip(
-            'Map and group only the tracks the list shows now (a genre, a playlist...): the arrangement and\n'
-            'the groups then fit just these tracks, which separates them better than the whole library does.\n'
-            'Takes seconds. Change the list and press Re-arrange map to map the new list; switch this off\n'
-            'to get the library map back.')
+            'Map and group only the tracks the List shows (a genre, a playlist, a description search...):\n'
+            'the arrangement and the groups then fit just these tracks, which separates them better than\n'
+            'the whole library does. Takes seconds, and follows the List: a new search or filter maps the\n'
+            'new List. Switch this off to get the library map back.')
 
     def set_only_listed(self, on):
-        """Map just the tracks the list shows now (a snapshot), or the whole library again."""
+        """Map just the tracks the List shows (and keep following it), or the whole library again."""
+        if self._follow_timer is not None:
+            self._follow_timer.stop()
         self.only = frozenset(self.listed) if on else None
         self._describe_buttons()
+        self._remap()
+
+    def _remap(self):
+        """Load the map again for the current mode; a running load is for an outdated mode: load once more after it."""
         self._fit_next = True
         if self.data is None:
             return
         if self._loading:
-            self._again = True  # the running load is for the other mode
+            self._again = True
         else:
             self.load()
+
+    def _follow_list(self):
+        """'Map the List only': map the List as it is now, unless the map already shows exactly these tracks."""
+        if self.only is None or self.only == frozenset(self.listed):
+            return
+        self.only = frozenset(self.listed)
+        self._remap()
 
     def _rearrange(self):
         if self.only is not None:
@@ -839,6 +860,12 @@ class SimilarityMapWidget(QWidget):
         self._merge_reference()
         if self.data is not None:
             self._refresh()
+        if self.only is not None and self.only != frozenset(fields):
+            if self._follow_timer is None:
+                self._follow_timer = QTimer(self)
+                self._follow_timer.setSingleShot(True)
+                self._follow_timer.timeout.connect(self._follow_list)
+            self._follow_timer.start(FOLLOW_DELAY_MS)  # restarts: the last change of a burst counts
 
     def _merge_reference(self):
         self.fields = dict(self.listed)
@@ -962,7 +989,6 @@ class SimilarityMapWidget(QWidget):
         """Turn the 3D view (Shift+drag). Several mouse moves are drawn as one."""
         self.angles = (self.angles[0] + yaw, max(-1.5, min(1.5, self.angles[1] + pitch)))
         if self._place_timer is None:
-            from PyQt5.QtCore import QTimer
             self._place_timer = QTimer(self)
             self._place_timer.setSingleShot(True)
             self._place_timer.timeout.connect(self._place_dots)
@@ -1003,8 +1029,8 @@ class SimilarityMapWidget(QWidget):
         if self.only is None:
             note = f'; {missing} listed tracks are not analysed yet' if missing > 0 else ''
         else:
-            note = ' (only the tracks listed when the map was arranged)' + \
-                (f'; {missing} listed tracks are not on it: press Re-arrange map' if missing > 0 else '')
+            note = ' (only the tracks the List shows)' + \
+                (f'; {missing} listed tracks are not analysed yet' if missing > 0 else '')
         self._base_status = (f'{shown} tracks on the map' + note +
                              '. Scroll: zoom, drag background: move, drag dot: file to Traktor, '
                              'hover: details, click: closest matches, Ctrl+click: compare with the selected track.')
