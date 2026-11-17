@@ -49,6 +49,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |
 | `similarity.py` | `track_vectors` (mean+std, centred, unit length), `nearest`, `tsne_layout` (numpy), `place_new`, map edge rules |
+| `placement.py` | `place_box`: the first corner next to a point where a box (map label, info card) covers no other box and stays in view; plain pixel rectangles, no Qt |
 | `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
 | `text_search.py` | Free-text search: `tokenize`, `TextEncoder` (CLAP text side, onnxruntime), `rank`, `run_text_encoder` (entry point of the text search process). Must not import Qt |

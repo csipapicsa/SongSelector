@@ -251,6 +251,87 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         tree = self.map.suggestions
         return [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
 
+    def set_match_filter(self, name):
+        self.map.match_filter.setCurrentIndex(self.map.match_filter.findData(name))
+
+    def set_edges(self, *names):
+        for name, action in self.map.edge_actions.items():
+            action.setChecked(name in names)
+
+    def matched_keys(self):
+        return {item.data(0, 0x0100) for item in self.matches()}
+
+    def test_closest_matches_can_follow_the_edges_selection(self):
+        # Asked 2026-11-17: list only the relations checked under Edges. Keys and colours both follow index % 3.
+        self.set_match_filter('all')
+        self.map.select(self.key(1))
+        self.assertEqual(len(self.matches()), 23)  # every other analysed track
+        self.set_edges('perfect_mix')
+        self.set_match_filter('edges')
+        same_group = {self.key(i) for i in range(24) if i % 3 == 1 and i != 1}
+        self.assertEqual(self.matched_keys(), same_group)
+        self.assertEqual({item.text(1) for item in self.matches()}, {'Perfect mix'})
+        self.set_edges('energy_boost')  # nothing here is an energy boost of track 1: the list follows the menu
+        self.assertEqual(self.matched_keys(), set())
+        self.set_edges(EDGE_SAME_COLOR)
+        self.assertEqual(self.matched_keys(), same_group)
+        self.assertEqual(self.window.settings['Map match filter'], 'edges')
+
+    def test_old_harmonic_only_setting_carries_over(self):
+        from songselector.ui.similarity_map import SimilarityMapWidget
+        widget = SimilarityMapWidget(self.map.store, {'Map harmonic only': True})
+        self.assertEqual(widget.match_filter.currentData(), 'harmonic')
+        widget = SimilarityMapWidget(self.map.store, {'Map harmonic only': False})
+        self.assertEqual(widget.match_filter.currentData(), 'all')
+
+    def test_ctrl_click_on_empty_space_ends_the_comparison(self):
+        from PyQt5.QtCore import QPoint, Qt
+        from PyQt5.QtTest import QTest
+
+        from songselector.ui.similarity_map import DotItem
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+        self.map.select(self.key(0))
+        self.map.compare(self.key(3))
+        view = self.map.view
+        empty = QPoint(3, 3)
+        self.assertFalse(any(isinstance(item, DotItem) for item in view.items(empty)))
+        QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, empty)
+        self.application.processEvents()
+        self.assertIsNone(self.map.preview_key)
+        self.assertFalse(self.map.preview_card.isVisible())
+        self.assertEqual(self.map.selected_key, self.key(0))  # the selection stays
+
+    def test_label_and_cards_never_overlap(self):
+        # Asked 2026-11-17. Zoomed far out, the selected, compared and hovered dots lie on nearly the same pixel:
+        # the label and both cards used to be drawn on top of each other.
+        from PyQt5.QtWidgets import QGraphicsRectItem
+
+        from songselector.core.placement import overlap
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+        view = self.map.view
+        view.resetTransform()
+        view.scale(0.001, 0.001)
+        view.centerOn(self.map.dots[self.key(0)])
+        self.map.select(self.key(0))
+        self.map.compare(self.key(3))
+        self.map.hover(self.key(6))
+        boxes = (self.map.label, self.map.preview_card, self.map.hover_card)
+        self.assertTrue(all(box.isVisible() for box in boxes))
+
+        def pixel_rect(box):
+            point = view.mapFromScene(box.pos())
+            local = box.rect() if isinstance(box, QGraphicsRectItem) else box.path().boundingRect()
+            return point.x() + local.x(), point.y() + local.y(), local.width(), local.height()
+
+        rects = [pixel_rect(box) for box in boxes]
+        for first in range(3):
+            for second in range(first + 1, 3):
+                self.assertEqual(overlap(rects[first], rects[second]), 0, (boxes[first], boxes[second]))
+
     def test_click_on_a_match_highlights_it_double_click_selects_it(self):
         from PyQt5.QtCore import Qt
         from PyQt5.QtTest import QTest
@@ -294,11 +375,11 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.map.preview(other_key_group)
         self.assertIn(85, alphas())  # the clicked match's strongest edges: half of 170
         self.assertEqual(max(alphas()), 170)
-        self.map.harmonic_only.setChecked(True)  # the list is rebuilt: highlight and pale edges go
+        self.set_match_filter('harmonic')  # the list is rebuilt: highlight and pale edges go
         self.assertIsNone(self.map.preview_key)
         self.assertNotIn(85, alphas())
 
-    def test_escape_leaves_no_track_selected(self):
+    def test_escape_ends_the_comparison_then_the_selection(self):
         from PyQt5.QtCore import Qt
         from PyQt5.QtTest import QTest
         self.window.show()
@@ -306,7 +387,13 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.map.compare(self.key(3))
         self.map.view.setFocus()
         self.application.processEvents()
-        QTest.keyClick(self.map.view, Qt.Key_Escape)
+        QTest.keyClick(self.map.view, Qt.Key_Escape)  # first: the compared track goes, the selection stays
+        self.application.processEvents()
+        self.assertEqual(self.map.selected_key, self.key(0))
+        self.assertIsNone(self.map.preview_key)
+        self.assertFalse(self.map.preview_card.isVisible())
+        self.assertGreater(self.map.suggestions.topLevelItemCount(), 0)
+        QTest.keyClick(self.map.view, Qt.Key_Escape)  # then the selection
         self.application.processEvents()
         self.assertIsNone(self.map.selected_key)
         self.assertIsNone(self.map.preview_key)
@@ -367,7 +454,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(italic, {self.key(1)})
 
     def test_harmonic_only_keeps_tracks_without_a_key(self):
-        self.map.harmonic_only.setChecked(True)
+        self.set_match_filter('harmonic')
         fields = {key: dict(values) for key, values in self.map.listed.items()}
         fields[self.key(1)]['Camelot Key New'] = 'Unknown'  # not analysed in Traktor
         self.map.set_tracks(fields)

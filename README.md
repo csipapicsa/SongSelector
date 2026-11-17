@@ -136,7 +136,10 @@ filtered now, so narrow the List first to explore one style.
 | Scroll / drag | Zoom / move |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour or same rating, optionally only to the N most similar |
 | *Groups* | Colour dots by unsupervised groups |
-| *Closest matches: harmonic only* | Only harmonic partners, plus tracks without a key |
+| Ctrl+click a dot | Compare it with the selected track (card, mix type, similarity); Ctrl+click it again or on empty space to stop |
+| Esc | First stops the comparison, then clears the selection |
+| *Closest matches* | *all*; *harmonic only* (plus tracks without a key); or *Edges selection*: only the relations checked under *Edges* |
+| *Map the List only* | Map and group just the tracks the List shows; follows the List as it changes |
 | *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
 
 Distances on a 2D map are approximate; the closest-matches list uses the full embeddings.
