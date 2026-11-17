@@ -88,6 +88,7 @@ from songselector.core.traktor_sync import apply_changes, collection_changes, se
 from songselector.env import getenv
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
 from songselector.ui.background import BackgroundWriter
+from songselector.ui.busy_spinner import BusySpinner
 from songselector.ui.coloring_dialog import ColoringDialog
 from songselector.ui.delegates import ColorDotDelegate
 from songselector.ui.elided_label import ElidedLabel
@@ -116,6 +117,8 @@ from songselector.ui.tree_widgets import (
 PROGRESS_THRESHOLD = 25   # imports with more files than this show a progress dialog
 IN_PLAYLIST_ROLE = Qt.UserRole + 10   # library row whose track is also on the playlist
 GROUPING_MESSAGE = 'Grouping tracks for the List...'
+# Reasons the status bar's spinners turn (shown in their tooltips).
+SAVING, SEARCHING, ANALYSING = 'Saving to the file', 'Searching by description', 'Analysing tracks'
 ALL_RESULTS, MAX_RESULTS = 0, 100000   # Top N of the description search: 0 is All
 NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
 
@@ -275,6 +278,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         data_dir = Path(SETTINGS_FILE).parent
         # Small updates (tag edits, single-row saves) run here, off the UI thread, in order.
         self.background = BackgroundWriter(self)
+        self.background.busy_changed.connect(lambda busy: self.activity_spinner.set_busy(SAVING, busy))
         self.embedding_store = EmbeddingStore(data_dir / 'embeddings.sqlite')
         self.model_stores = {spec.id: (self.embedding_store if spec is CNN14 else
                                        EmbeddingStore(store_path(data_dir, spec), spec=spec))
@@ -662,7 +666,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
         # stretching the window so that it cannot be made narrower again. The whole text is in the tooltip.
         self.status_label = ElidedLabel("Ready")
         self.status_label.setStyleSheet(status_style('info'))
+        # Spinners: something is working right now (saving tags, a description search; the analysis).
+        self.activity_spinner = BusySpinner()
+        self.status_bar.addPermanentWidget(self.activity_spinner)
         self.status_bar.addPermanentWidget(self.status_label)
+        self.analysis_spinner = BusySpinner()
+        self.status_bar.addPermanentWidget(self.analysis_spinner)
         self.embedding_label = ElidedLabel('')
         self.status_bar.addPermanentWidget(self.embedding_label)
 
@@ -1823,9 +1832,14 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.text_search_engine = TextSearchEngine(self.model_stores, self.models_folder(), parent=self)
             self.text_search_engine.results.connect(self.show_description_results)
             self.text_search_engine.status.connect(self._description_status)
-            self.text_search_engine.failed.connect(lambda message: self._description_status(f'Search failed: {message}', 'error'))
+            self.text_search_engine.failed.connect(self._description_failed)
         self._description_model_id = model_id
+        self.activity_spinner.set_busy(SEARCHING)
         self.text_search_engine.search(model_id, prompt)
+
+    def _description_failed(self, message):
+        self.activity_spinner.set_busy(SEARCHING, False)
+        self._description_status(f'Search failed: {message}', 'error')
 
     def _description_status(self, text, level='info'):
         if text:
@@ -1835,6 +1849,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def show_description_results(self, prompt, ranked, seconds):
         """Show the top tracks in the List, best first; tracks no longer in the library are skipped. The whole
         ranking is kept: changing Top N re-cuts it without searching again."""
+        self.activity_spinner.set_busy(SEARCHING, False)
         library = self.library_keys()
         self._description_ranked = [(key, score) for key, score in ranked if key in library]
         self._description_prompt, self._description_seconds = prompt, seconds
@@ -1923,6 +1938,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.embedding_analyzer.progress.connect(self._show_embedding_progress)
             self.embedding_analyzer.track_analyzed.connect(self._embedding_added)
             self.embedding_analyzer.failed.connect(self.embedding_label.setText)
+            self.embedding_analyzer.failed.connect(lambda _message: self.analysis_spinner.set_busy(ANALYSING, False))
             if hasattr(self.embedding_analyzer, 'warning'):
                 self.embedding_analyzer.warning.connect(lambda message: self.status_bar.showMessage(message, 10000))
         self._queue_embeddings()
@@ -1959,6 +1975,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         elif finished:
             text += f' - not analysed: {", ".join(self._coverage_short)}' if self._coverage_short else ' - up to date'
         self.embedding_label.setText(text)
+        # Turning while tracks are being analysed; not when paused (a last progress event can still arrive).
+        self.analysis_spinner.set_busy(ANALYSING, self.settings.get('Embedding analysis', True)
+                                       and (bool(current) or done < total))
         if self._groups_waiting and done == total:
             self._groups_when_ready()
 
@@ -1970,6 +1989,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             if self.embedding_analyzer is not None:
                 self.embedding_analyzer.stop(timeout=0)
             self.embedding_label.setText('Embeddings: paused')
+            self.analysis_spinner.set_busy(ANALYSING, False)
 
     def choose_embedding_model(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Choose the CNN14 embedding model',

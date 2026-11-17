@@ -25,7 +25,7 @@ One PR per block below, in this order; each with tests (a failing test first for
 - [ ] **F2 (follow-up, not required for 1.2.0).** Imports, *Remove from library* and *Delete duplicates* still save
       the whole library on the UI thread (2.5-5 s on the library's SSD under load, measured 2026-11-17). Move them to
       `BackgroundWriter`: append / delete only the changed rows, coalesce a burst of saves into one.
-- [ ] **E. Busy indicator.** One `BusySpinner` widget (runs only while busy) next to: analysis progress, map
+- [x] **E. Busy indicator.** One `BusySpinner` widget (runs only while busy) next to: analysis progress, map
       arranging / grouping, description search, model download, tag saving.
 - [ ] **C. Playlist selection on the map.** Selected Playlist tracks are shown on the map even if the List filters
       them out, in a distinct style; several at once; tracks not on a *Map the List only* map are placed near

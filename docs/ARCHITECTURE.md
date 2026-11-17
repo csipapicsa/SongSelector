@@ -71,6 +71,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `coloring_dialog.py` | Choose category colors or key colors |
 | `music_paths_dialog.py` | Music path settings dialog |
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
+| `busy_spinner.py` | `BusySpinner`: small turning arc while any of its reasons is on (`set_busy(reason, on)`); hidden, timer stopped when idle. In the status bar (saving, description search; analysis) and the map (arranging, grouping) |
 | `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
 | `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
 | `map_settings_dialog.py` | Choose the map's hover details |

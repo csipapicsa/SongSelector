@@ -17,6 +17,9 @@ from that period still mention 4.x numbers.
   changed *Top* number or filter maps the new List after a short pause. Before, the map kept the List from the
   moment the button was pressed, so after a new search it showed only the tracks that were in both the old and
   the new List. *Re-arrange map* still arranges the List again from scratch.
+- **A spinner shows when something is working.** A small turning arc next to the status line while a file is
+  saved or a description search runs, next to the analysis progress while tracks are analysed, and next to the
+  map's status while the map is arranged or grouped. Its tooltip says what is running.
 - **Editing a track's tags no longer freezes the app.** *Edit track info* used to save the whole library for one
   changed track, on the window's own thread: 2.5 s on the library's SSD, 4-5 s and more while the analysis kept the
   disk busy. The file is now written in the background, only the changed track is saved, and the window keeps

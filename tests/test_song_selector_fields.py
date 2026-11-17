@@ -316,9 +316,43 @@ class SongSelectorGuiTests(GuiTestBase):
             self.assertLess(time.monotonic() - start, 0.3)  # returns at once
             self.assertTrue(window.background.busy())
             self.assertIn('Saving Artist to song.mp3', window.status_label.text())
+            self.assertIn('Saving to the file', window.activity_spinner.reasons())  # the spinner turns meanwhile
             self.wait(window)
         self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Artist']), 'Edited')
         self.assertIn('Saved Artist to song.mp3', window.status_label.text())
+        self.assertFalse(window.activity_spinner.busy())
+
+    def test_spinners_turn_while_searching_and_analysing(self):
+        from songselector.core.embedding_models import LAION_CLAP
+        window = self.window()
+        spinner = window.activity_spinner
+        searches = []
+        # A stand-in for the text search process (closeEvent stops it, so it needs stop()).
+        window.text_search_engine = type('Engine', (), {'search': lambda _self, *args: searches.append(args),
+                                                        'stop': lambda _self: None})()
+        window.description_box.setEditText('dark rolling')
+        with patch.object(window.description_model, 'currentData', return_value=LAION_CLAP.id):
+            window.describe()
+        self.assertEqual(searches, [(LAION_CLAP.id, 'dark rolling')])
+        self.assertEqual(spinner.reasons(), ['Searching by description'])
+        window._description_model_id = LAION_CLAP.id
+        window.show_description_results('dark rolling', [], 0.01)  # the answer arrives
+        self.assertFalse(spinner.busy())
+        spinner.set_busy('Searching by description')
+        window._description_failed('model missing')
+        self.assertFalse(spinner.busy())
+        self.assertIn('Search failed: model missing', window.status_label.text())
+
+        analysis = window.analysis_spinner
+        window._show_embedding_progress(5, 10, 0, 'song.mp3')
+        self.assertTrue(analysis.busy())
+        window._show_embedding_progress(10, 10, 0, '')
+        self.assertFalse(analysis.busy())
+        window._show_embedding_progress(5, 10, 0, 'song.mp3')
+        window.set_embedding_analysis_enabled(False)
+        self.assertFalse(analysis.busy())
+        window._show_embedding_progress(6, 10, 0, '')  # a last event after pausing
+        self.assertFalse(analysis.busy())
 
     def test_tag_edit_saves_only_the_changed_row(self):
         window = self.window()
