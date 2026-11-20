@@ -11,6 +11,7 @@
   transparent. Dots can be coloured by unsupervised groups (core.clustering) instead of
   the Traktor colour.
 """
+import math
 import os
 import sqlite3
 import threading
@@ -93,6 +94,27 @@ from songselector.ui.delegates import ColorDotDelegate, StarRatingDelegate, star
 
 DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Selector',
                         'Rating - Song Selector', 'Color', 'Rating']
+# What the map adds about a track besides the List's columns (name -> tooltip). Every part of the hover card, the
+# selected track's label and the details panel can be switched on or off for each of them (View -> Map track
+# details...); asked 2026-11-20: "there is no hard coded thing which cannot be changed". The defaults are what the
+# three showed before.
+COVER_ITEM, NAME_ITEM, KEY_ITEM, RELATION_ITEM, GROUP_ITEM = (
+    'Cover art', 'Artist - Title', 'Key at master tempo, BPM', 'Mix and similarity', 'Group')
+MAP_ITEMS = {
+    COVER_ITEM: 'The picture in the file, else cover.jpg / folder.jpg next to it.',
+    NAME_ITEM: 'In bold; the file name for a track with neither tag.',
+    KEY_ITEM: 'One line, e.g. "C minor (5A), 104 BPM": the key at the master tempo and the track\'s own tempo.',
+    RELATION_ITEM: 'How the track mixes with the selected track, and how similar they sound.',
+    GROUP_ITEM: 'Its group on the map, while Groups is on.',
+}
+# Where track details appear: the cards (the hovered dot and the compared track), the label next to the selected
+# dot, and the panel above the closest matches.
+CARD, LABEL, PANEL = 'card', 'label', 'panel'
+DETAIL_PLACES = {CARD: 'Hover card', LABEL: 'Selected track label', PANEL: 'Details panel'}
+NOT_APPLICABLE = {LABEL: {RELATION_ITEM}, PANEL: {RELATION_ITEM}}   # the selected track has no mix with itself
+DEFAULT_DETAILS = {CARD: [COVER_ITEM, NAME_ITEM, KEY_ITEM, RELATION_ITEM, GROUP_ITEM] + DEFAULT_HOVER_FIELDS,
+                   LABEL: [NAME_ITEM, KEY_ITEM],
+                   PANEL: [COVER_ITEM, NAME_ITEM, KEY_ITEM, GROUP_ITEM] + DEFAULT_HOVER_FIELDS}
 DEFAULT_EDGES = ['perfect_mix', 'plus_1_mix', 'minus_1_mix', 'energy_boost']
 SCENE_SIZE = 1000.0          # the map is scaled to about this many scene units
 PAN_ROOM = 3                 # the view can be dragged this many map sizes past each edge of the map
@@ -125,7 +147,7 @@ CURVE_BEND = 0.18
 ONLY_LIST_TEXT = 'Map the List only'
 CARD_COVER, DETAILS_COVER, MATCH_COVER = 64, 96, 28   # px: cover thumbnails in the cards, details, closest matches
 # The info boxes on the map (hover card, compared track's card, the selected track's label) wrap their text at this
-# many pixels: setting `Map info width` (View -> Map hover details...), never below the minimum.
+# many pixels: setting `Map info width` (View -> Map track details...), never below the minimum.
 INFO_WIDTH, MIN_INFO_WIDTH, MAX_INFO_WIDTH = 360, 200, 1200
 # Tracks selected in the Playlist: amber ring; those the List does not show also get a paler dot.
 PLAYLIST_RING, MARKER_ALPHA = '#ffb000', 120
@@ -138,13 +160,15 @@ MATCHES_ALL, MATCHES_HARMONIC, MATCHES_EDGES = 'all', 'harmonic', 'edges'
 MATCH_FILTERS = {MATCHES_ALL: 'of all tracks',
                  MATCHES_HARMONIC: 'harmonic partners only',
                  MATCHES_EDGES: 'with an Edges relation'}
-MAP_HELP = ('Scroll: zoom. Drag the background: move. Shift+drag (3D): rotate.\n'
+MAP_HELP = ('Scroll: zoom. Drag the background: move. Shift+right-drag (2D): turn the map. Shift+drag (3D): rotate.\n'
             'Hover a dot: details. Click: its closest matches. Ctrl+click: compare with the selected track.\n'
-            'Double-click: add to the playlist. Drag a dot: the file to Traktor, the playlist or Explorer.')
+            'Double-click: add to the playlist. Drag a dot: the file to Traktor, the playlist or Explorer.\n'
+            'Right-click beside the map: show or hide the selected track\'s details. What the cards, the label and\n'
+            'the details show: View -> Map track details...')
 # "Map the List only" re-maps this long after the List's last change (typing a filter, scrolling Top N).
 FOLLOW_DELAY_MS = 300
-# 3D view: Shift+drag rotates (radians per pixel); far dots fade to this opacity; nearer dots
-# lie above farther ones within their ring tier (selected, clicked, matches, others).
+# 3D view: Shift+drag rotates (radians per pixel; also the 2D map's Shift+right-drag turn); far dots fade to this
+# opacity; nearer dots lie above farther ones within their ring tier (selected, clicked, matches, others).
 ROTATE_SPEED, FAR_OPACITY, DEPTH_Z = 0.008, 0.35, 0.3
 FAR_SIZE, NEAR_SIZE = 0.5, 1.6   # 3D view: dot size (times DOT_SIZE) at the back and the front
 PERSPECTIVE = 3.0            # eye distance in radii of the cloud: lower is a stronger 3D effect
@@ -267,10 +291,50 @@ def track_name(fields):
     return ' - '.join(part for part in parts if part) or os.path.basename(str(fields.get('Path') or ''))
 
 
-def fields_table(fields, names):
+def fields_table(fields, names, panel=False):
+    """The chosen columns as a table ('' if none has a value): grey names on the cards, plain in the panel."""
+    shown = shown_fields(fields, names)
+    if not shown:
+        return ''
+    if panel:
+        return ('<table cellspacing="4">' + ''.join(f'<tr><td><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
+                                                    for name, text in shown) + '</table>')
     return ('<table cellspacing="0" cellpadding="1">' +
             ''.join(f'<tr><td style="color:#9aa0a6; padding-right:8px"><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
-                    for name, text in shown_fields(fields, names)) + '</table>')
+                    for name, text in shown) + '</table>')
+
+
+def detail_items(settings, place):
+    """What a place (CARD, LABEL, PANEL) shows: MAP_ITEMS and List columns (setting `Map details`, {place: [items]}).
+    Until 2026-11-20 only the columns could be chosen, for the card and the panel alike (`Map hover fields`): they
+    carry over, with the map's own items on, as they were always shown then."""
+    chosen = (settings.get('Map details') or {}).get(place)
+    if chosen is not None:
+        return list(chosen)
+    columns = settings.get('Map hover fields')
+    if columns is None or place == LABEL:
+        return list(DEFAULT_DETAILS[place])
+    return [item for item in DEFAULT_DETAILS[place] if item in MAP_ITEMS] + list(columns)
+
+
+def key_now(fields):
+    """'C minor (5A)': the key at the master tempo, as the List shows it; '' without one."""
+    key, camelot = (str(fields.get(name) or '').strip() for name in ('New Key', 'Camelot Key New'))
+    return f'{key} ({camelot})' if key and camelot else key or camelot
+
+
+def key_line(fields, place):
+    """The key at the master tempo and the track's own BPM, worded for the place; parts without a value left out."""
+    key, bpm = key_now(fields), str(fields.get('Original BPM') or '').strip()
+    if key:
+        key = {LABEL: f'{key} at master tempo', PANEL: f'Key now: {key}'}.get(place, key)
+    return ', '.join(part for part in (key, f'{bpm} BPM' if bpm else '') if part)
+
+
+def turned(points, angle):
+    """Points (n, 2) turned by angle (radians) about the origin: clockwise on screen, where y points down."""
+    cos, sin = math.cos(angle), math.sin(angle)
+    return np.asarray(points, dtype=np.float64) @ np.array([[cos, sin], [-sin, cos]])
 
 
 def wrapping_text(parent):
@@ -330,8 +394,8 @@ class Card(QGraphicsPathItem):
 
 
 class MapLabel(QGraphicsRectItem):
-    """Label next to the selected dot (artist - title, key and BPM at the current tempo); same pixel size at any zoom.
-    Above and right of the dot unless the map moves it to another corner."""
+    """Label next to the selected dot (by default artist - title, key at master tempo and BPM; View -> Map track
+    details...); same pixel size at any zoom. Above and right of the dot unless the map moves it to another corner."""
 
     def __init__(self):
         super().__init__()
@@ -345,9 +409,9 @@ class MapLabel(QGraphicsRectItem):
         self.corner = ABOVE_RIGHT
         self.hide()
 
-    def set_text(self, text, max_width=INFO_WIDTH):
-        """Plain text, wrapped so the whole label (with its padding) is at most max_width pixels wide."""
-        self.text.setPlainText(text)
+    def set_html(self, html, max_width=INFO_WIDTH):
+        """Rich text, wrapped so the whole label (with its padding) is at most max_width pixels wide."""
+        self.text.setHtml(html)
         fit_width(self.text, max_width - 12)
 
     def box_size(self):
@@ -538,10 +602,21 @@ class MapView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
 
-    rotator = None    # set by the map widget: rotates the 3D view on Shift+drag
+    rotator = None    # set by the map widget: rotates the 3D view on Shift+drag, turns the 2D map on Shift+right-drag
     _rotate_from = None
+    _turn_from = None
+    _turned = False   # a turn just ended: the context menu event that follows the right button is not for a menu
 
     def mousePressEvent(self, event):
+        self._turned = False
+        # Asked 2026-11-20: turn the 2D map left and right with Shift+right-drag. Handled here, before the scene, so a
+        # Shift+right-press on a dot turns the map instead of selecting the dot and opening its menu.
+        if (event.button() == Qt.RightButton and event.modifiers() & Qt.ShiftModifier
+                and self.rotator is not None and not self.rotator.showing_3d()):
+            self._turn_from = event.pos()
+            self.viewport().setCursor(Qt.SizeHorCursor)
+            event.accept()
+            return
         if (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier
                 and self.rotator is not None and self.rotator.view_3d):
             self._rotate_from = event.pos()
@@ -554,6 +629,12 @@ class MapView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._turn_from is not None:
+            delta = event.pos().x() - self._turn_from.x()   # right: clockwise, left: anticlockwise
+            self._turn_from = event.pos()
+            self.rotator.turn(delta * ROTATE_SPEED)
+            event.accept()
+            return
         if self._rotate_from is not None:
             delta = event.pos() - self._rotate_from
             self._rotate_from = event.pos()
@@ -563,6 +644,13 @@ class MapView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._turn_from is not None and event.button() == Qt.RightButton:
+            self._turn_from = None
+            self._turned = True
+            self.viewport().unsetCursor()
+            self.rotator.turn_done()
+            event.accept()
+            return
         if self._rotate_from is not None:
             self._rotate_from = None
             self.viewport().unsetCursor()
@@ -570,6 +658,14 @@ class MapView(QGraphicsView):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        # The right button of a turn also sends a context menu event (Windows: on release, Linux: on press).
+        if self._turn_from is not None or self._turned:
+            self._turned = False
+            event.accept()
+            return
+        super().contextMenuEvent(event)
 
     def wheelEvent(self, event):
         factor = 1.2 ** (event.angleDelta().y() / 120)
@@ -610,6 +706,8 @@ class SimilarityMapWidget(QWidget):
     selected = pyqtSignal(str)                         # path_key
     groups_changed = pyqtSignal()                      # self.groups was recomputed or cleared
     detach_requested = pyqtSignal(bool)                # True: show the map in its own window, False: back in its tab
+    details_shown_changed = pyqtSignal(bool)           # the details panel was switched on or off (View menu follows)
+    details_dialog_requested = pyqtSignal()            # "Choose track details..." in the right-click menu
 
     def __init__(self, store, settings, parent=None):
         super().__init__(parent)
@@ -636,6 +734,11 @@ class SimilarityMapWidget(QWidget):
         self.hover_key = None
         self.view_3d = bool(settings.get('Map 3D', False))
         self.angles = tuple(settings.get('Map 3D angles', DEFAULT_ANGLES))  # yaw, pitch
+        try:  # the 2D map turned clockwise by this many radians (Shift+right-drag)
+            self.turn_angle = float(settings.get('Map 2D turn', 0.0)) % (2 * math.pi)
+        except (TypeError, ValueError):
+            self.turn_angle = 0.0
+        self._projected_turn = self.turn_angle  # the turn the 2D dots are drawn at now
         self._projected = {}      # path_key -> QPointF on the scene (2D map or rotated 3D view)
         self._depth = {}          # path_key -> 0 (far) .. 1 (near) in the 3D view
         self._edge_layers = []    # [(edges, alpha)] last computed; redrawn when the 3D view turns
@@ -791,6 +894,7 @@ class SimilarityMapWidget(QWidget):
         # Before: two rows mixing all of these. A QToolBar folds what does not fit into its >> menu, so the map never
         # has to be wider than the screen allows. The model is chosen in the main window's Model box (next to
         # "Describe a sound"); the map had a Model box of its own here for a few hours on 2026-11-20.
+        # It sits below the map (user's request, 2026-11-20), so the map starts right under the tabs.
         toolbar = QToolBar()
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
@@ -812,6 +916,14 @@ class SimilarityMapWidget(QWidget):
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.addWidget(self.details)
+        if not self.details_shown():
+            self.details.hide()
+        # Right-click anywhere beside the map (the details, the caption, the closest matches' rows: they pass the
+        # event on to this panel) shows or hides the details; the details' own menu keeps Copy.
+        side.setContextMenuPolicy(Qt.CustomContextMenu)
+        side.customContextMenuRequested.connect(lambda pos: self._side_menu(side, pos))
+        self.details.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.details.customContextMenuRequested.connect(lambda pos: self._side_menu(self.details, pos))
         caption = QLabel('Closest matches (click: show on the map, double-click: select, drag: to the '
                          'playlist, Traktor or Explorer; italic: on the playlist)')
         caption.setWordWrap(True)
@@ -843,7 +955,6 @@ class SimilarityMapWidget(QWidget):
         self.splitter.splitterMoved.connect(lambda *_: self.settings.__setitem__('Map splitter', self.splitter.sizes()))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(toolbar)
         layout.addWidget(self.splitter, 1)  # the map gets all spare space
         # Status line: what the map shows and the groups' sizes; how to use the map is behind "?" (read once).
         self.help_button = QToolButton()
@@ -858,6 +969,36 @@ class SimilarityMapWidget(QWidget):
         status_bar.addWidget(self.grouping_summary, 1)
         status_bar.addWidget(self.help_button, 0, Qt.AlignTop)
         layout.addLayout(status_bar)
+        layout.addWidget(toolbar)
+
+    # -- details panel ------------------------------------------------------
+
+    def details_shown(self):
+        """The selected track's details above the closest matches are on (setting `Map details panel`)."""
+        return bool(self.settings.get('Map details panel', True))
+
+    def set_details_shown(self, shown):
+        """Show or hide the selected track's details above the closest matches (asked 2026-11-20: right-click beside
+        the map, or View -> Selected track details). The list of matches gets the room."""
+        shown = bool(shown)
+        changed = shown != self.details_shown()
+        self.settings['Map details panel'] = shown
+        self.details.setVisible(shown)
+        if changed:
+            self.details_shown_changed.emit(shown)
+
+    def _side_menu(self, widget, pos):
+        menu = QMenu(self)
+        toggle = menu.addAction('Show selected track details')
+        toggle.setCheckable(True)
+        toggle.setChecked(self.details_shown())
+        toggle.toggled.connect(self.set_details_shown)
+        menu.addAction('Choose track details...').triggered.connect(self.details_dialog_requested.emit)
+        if widget is self.details and self.details.hasSelectedText():  # the label's own menu offered Copy
+            menu.addSeparator()
+            menu.addAction('Copy').triggered.connect(
+                lambda: QApplication.clipboard().setText(self.details.selectedText()))
+        menu.exec_(widget.mapToGlobal(pos))
 
     # -- data ---------------------------------------------------------------
 
@@ -1150,8 +1291,8 @@ class SimilarityMapWidget(QWidget):
                 and all(key in self.data.positions3d for key in self.data.positions))
 
     def _project(self):
-        """Scene positions of all tracks: the 2D map scaled to SCENE_SIZE, or the 3D cloud
-        turned by yaw and pitch, with a little perspective. Fills _projected and _depth."""
+        """Scene positions of all tracks: the 2D map scaled to SCENE_SIZE and turned (Shift+right-drag), or the 3D
+        cloud turned by yaw and pitch, with a little perspective. Fills _projected and _depth."""
         keys = list(self.data.positions)
         self._depth = {}
         if not keys:
@@ -1160,7 +1301,8 @@ class SimilarityMapWidget(QWidget):
         if not self.showing_3d():
             points = np.array([self.data.positions[key] for key in keys], dtype=np.float64)
             spread = float(np.ptp(points, axis=0).max()) or 1.0
-            points = points * (SCENE_SIZE / spread)
+            points = turned(points * (SCENE_SIZE / spread), self.turn_angle)
+            self._projected_turn = self.turn_angle
             self._projected = {key: QPointF(x, y) for key, (x, y) in zip(keys, points)}
             return
         points = np.array([self.data.positions3d[key] for key in keys], dtype=np.float64)
@@ -1177,7 +1319,10 @@ class SimilarityMapWidget(QWidget):
         self._depth = dict(zip(keys, (near + 1) / 2))
 
     def _place_dots(self):
-        """Move the dots to the projected positions (after switching 2D/3D or turning)."""
+        """Move the dots to the projected positions (after switching 2D/3D, rotating the 3D view or turning the 2D
+        map). A 2D turn keeps what is in the middle of the view there: the map turns about it."""
+        middle = self.view.mapToScene(self.view.viewport().rect().center())
+        turn = self.turn_angle - self._projected_turn
         self._project()
         for key, dot in self.dots.items():
             dot.setPos(self._projected[key])
@@ -1185,6 +1330,8 @@ class SimilarityMapWidget(QWidget):
             self._outline(key)
         self._set_scene_rect()
         self._paint_edges()
+        if turn and not self.showing_3d():
+            self.view.centerOn(QPointF(*turned([(middle.x(), middle.y())], turn)[0]))
         self._follow_dots()
 
     def _apply_depth(self, key, dot):
@@ -1259,15 +1406,27 @@ class SimilarityMapWidget(QWidget):
     def rotate(self, yaw, pitch):
         """Turn the 3D view (Shift+drag). Several mouse moves are drawn as one."""
         self.angles = (self.angles[0] + yaw, max(-1.5, min(1.5, self.angles[1] + pitch)))
+        self._place_soon()
+
+    def rotation_done(self):
+        self.settings['Map 3D angles'] = list(self.angles)
+
+    def turn(self, angle):
+        """Turn the 2D map clockwise by angle (radians; negative: anticlockwise) about the middle of the view
+        (Shift+right-drag). Several mouse moves are drawn as one."""
+        self.turn_angle = (self.turn_angle + angle) % (2 * math.pi)
+        self._place_soon()
+
+    def turn_done(self):
+        self.settings['Map 2D turn'] = self.turn_angle
+
+    def _place_soon(self):
         if self._place_timer is None:
             self._place_timer = QTimer(self)
             self._place_timer.setSingleShot(True)
             self._place_timer.timeout.connect(self._place_dots)
         if not self._place_timer.isActive():
             self._place_timer.start(0)
-
-    def rotation_done(self):
-        self.settings['Map 3D angles'] = list(self.angles)
 
     def _rebuild_dots(self):
         for dot in self.dots.values():
@@ -1401,20 +1560,22 @@ class SimilarityMapWidget(QWidget):
         self.selected_glow.follow(self.dots.get(self.selected_key) if self.selected_key in self.fields else None)
         self.preview_glow.follow(self.dots.get(self.preview_key))
         dot = self.dots.get(self.preview_key)
-        if dot is not None and dot.isVisible() and self.preview_key in self.fields:
-            self.preview_card.show_at(dot, self.card_html(self.preview_key), self.info_width())
+        html = self.card_html(self.preview_key) if dot is not None and self.preview_key in self.fields else ''
+        if dot is not None and dot.isVisible() and html:
+            self.preview_card.show_at(dot, html, self.info_width())
         else:
-            self.preview_card.hide()
+            self.preview_card.hide()  # also when nothing is chosen for the cards
         self._layout_boxes()
 
     def hover(self, key):
         """Card for the dot under the mouse (None: hide it). The compared track has its own card."""
         self.hover_key = key
         dot = self.dots.get(key)
-        if dot is None or not dot.isVisible() or key not in self.fields or key == self.preview_key:
+        html = self.card_html(key) if dot is not None and key in self.fields else ''
+        if dot is None or not dot.isVisible() or not html or key == self.preview_key:
             self.hover_card.hide()
         else:
-            self.hover_card.show_at(dot, self.card_html(key), self.info_width())
+            self.hover_card.show_at(dot, html, self.info_width())
             self._layout_boxes()
 
     def relation(self, key):
@@ -1442,22 +1603,34 @@ class SimilarityMapWidget(QWidget):
             text += f' &middot; <b>{similarity * 100:.0f} %</b> similar'
         return f'{text}<br><span style="color:#9aa0a6">to {escape(self.fields[self.selected_key].get("Title", ""))}</span>'
 
-    def card_html(self, key):
-        """Card text: artist - title, key and BPM now, mix and similarity to the selected track,
-        the hover fields (Settings) and the group."""
+    def details_html(self, key, place):
+        """A track's details for a place (CARD, LABEL or PANEL): the map's items chosen there (cover, artist - title,
+        key and BPM, mix and similarity, group; always in this order), then the chosen columns. '' if nothing is."""
         fields = self.fields.get(key, {})
-        key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
-        relation = self._relation_html(key)
-        group = f'<br>{self._group_text(key)}' if self.groups else ''
-        return (self._cover_html(fields, CARD_COVER)
-                + f'<b>{escape(track_name(fields))}</b><br>'
-                f'<span style="color:#9aa0a6">{escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM</span>'
-                + (f'<br>{relation}' if relation else '') + group
-                + fields_table(fields, self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)))
+        chosen = detail_items(self.settings, place)
+        items = set(chosen) - NOT_APPLICABLE.get(place, set())
+        lines = []
+        if COVER_ITEM in items:
+            lines.append(self._cover_html(fields, DETAILS_COVER if place == PANEL else CARD_COVER))
+        if NAME_ITEM in items:
+            lines.append(f'<b>{escape(track_name(fields))}</b>')
+        if KEY_ITEM in items and key_line(fields, place):
+            text = escape(key_line(fields, place))
+            lines.append(f'<span style="color:#9aa0a6">{text}</span>' if place == CARD else text)
+        if RELATION_ITEM in items:
+            lines.append(self._relation_html(key))
+        if GROUP_ITEM in items and self.groups:
+            lines.append(self._group_text(key))
+        table = fields_table(fields, [item for item in chosen if item not in MAP_ITEMS], panel=place == PANEL)
+        return '<br>'.join(line for line in lines if line) + table
+
+    def card_html(self, key):
+        """The hover card's (and the compared track's card's) text."""
+        return self.details_html(key, CARD)
 
     def _cover_html(self, fields, size):
-        """<img> of the track's cached cover thumbnail, above the text; '' without one. A cover that is not loaded
-        yet is requested: the card is drawn again when it arrives (_cover_ready)."""
+        """<img> of the track's cached cover thumbnail; '' without one. A cover that is not loaded yet is
+        requested: the card is drawn again when it arrives (_cover_ready)."""
         path = fields.get('Path')
         if self.covers is None or not path:
             return ''
@@ -1465,7 +1638,7 @@ class SimilarityMapWidget(QWidget):
         if file is None:
             self.covers.pixmap(path)  # request it
             return ''
-        return f'<img src="{escape(QUrl.fromLocalFile(str(file)).toString())}" width="{size}"><br>'
+        return f'<img src="{escape(QUrl.fromLocalFile(str(file)).toString())}" width="{size}">'
 
     def _cover_ready(self, key):
         """A cover arrived: the cards, the details and the closest matches that show this track get it."""
@@ -1499,23 +1672,18 @@ class SimilarityMapWidget(QWidget):
             self.label.hide()
             self.details.setText('Click a track on the map.')
             return
-        key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
-        self.label.set_text(f"{track_name(fields)}\n{key_now} at master tempo, {fields.get('Original BPM', '')} BPM",
-                            self.info_width())
-        self.label.set_corner(ABOVE_RIGHT)
-        self.label.setPos(self.dots[self.selected_key].pos())
-        self.label.show()
+        label = self.details_html(self.selected_key, LABEL)
+        if label:
+            self.label.set_html(label, self.info_width())
+            self.label.set_corner(ABOVE_RIGHT)
+            self.label.setPos(self.dots[self.selected_key].pos())
+            self.label.show()
+        else:
+            self.label.hide()  # nothing chosen for it: the white ring and glow still mark the track
         self._layout_boxes()
-        hover = self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS)
-        rows = ''.join(f'<tr><td><i>{name}</i></td><td>{field_html(name, text)}</td></tr>'
-                       for name, text in shown_fields(fields, hover))
         note = ('<i>Not in the list view (e.g. a playlist track); its matches come from the list.</i><br>'
                 if self.reference is not None and self.reference[0] == self.selected_key else '')
-        group = f'<br>{self._group_text(self.selected_key)}' if self.groups else ''
-        self.details.setText(f'{note}{self._cover_html(fields, DETAILS_COVER)}'
-                             f'<b>{escape(track_name(fields))}</b><br>'
-                             f'Key now: {escape(key_now)}, {escape(fields.get("Original BPM", ""))} BPM{group}'
-                             f'<table cellspacing="4">{rows}</table>')
+        self.details.setText(note + self.details_html(self.selected_key, PANEL))
 
     def drag_files(self, keys):
         """Drag the files of these tracks out of the map (Traktor, Explorer, the playlist)."""

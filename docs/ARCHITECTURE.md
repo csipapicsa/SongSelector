@@ -81,7 +81,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `covers.py` | `CoverProvider`: cover thumbnails (128 px) loaded by a worker thread with QImage and cached on disk (`covers/`, plus "no cover" markers), requested by painting; `CoverDelegate` paints the Cover column (cropped or square rows) |
 | `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
 | `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread. One `QToolBar` ordered by task (Model, Map the List only, Groups, Edges menu, view buttons) that folds into `>>`; info boxes wrap at `Map info width` |
-| `map_settings_dialog.py` | Choose the map's hover details |
+| `map_settings_dialog.py` | Choose which track details the map shows, per place (cards, label, details panel) |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
 | `text_search_worker.py`, `text_search_dialog.py` | The text search process (started on the first query) and the *Search by description* window |
 
