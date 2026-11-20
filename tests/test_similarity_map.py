@@ -261,6 +261,47 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertEqual(self.window.playlist_tree.topLevelItem(0).text(1), 'breaks 5')
         self.assertTrue(dot.isVisible())  # playlist tracks stay in the library view (dimmed in the list)
 
+    def test_one_toolbar_by_task_with_the_model_box(self):
+        # UI review 2026-11-20: one toolbar (what is mapped -> colours -> view) that folds into its >> menu
+        # instead of forcing a width (the two rows before made the map at least ~1,700 px wide).
+        from songselector.core.embedding_models import LAION_CLAP
+        self.assertLess(self.map.minimumSizeHint().width(), 900)
+        toolbar_widgets = [self.map.toolbar.widgetForAction(action) for action in self.map.toolbar.actions()]
+        order = [self.map.model_box, self.map.only_button, self.map.grouping, self.map.edges_button,
+                 self.map.view_3d_button, self.map.detach_button]
+        self.assertEqual([widget for widget in toolbar_widgets if widget in order], order)
+        self.assertNotIn(self.map.match_filter, toolbar_widgets)  # it sits with the closest matches it filters
+        self.assertEqual(self.map.model_box.currentText(), 'CNN14')  # the model the map uses
+        requested = []
+        self.map.model_requested.connect(requested.append)
+        self.map.model_box.activated.emit(self.map.model_box.findData(LAION_CLAP.id))
+        self.assertEqual(requested, [LAION_CLAP.id])
+        self.assertEqual(self.window.settings['Similarity model'], LAION_CLAP.id)  # same as Analysis -> Similarity model
+        self.assertNotIn('Scroll: zoom', self.map.status.text())  # the how-to is behind the ? button
+        self.assertIn('Scroll: zoom', self.map.help_button.toolTip())
+
+    def test_the_map_window_has_its_own_search_that_decides_the_map(self):
+        self.window.search_bar.setText('breaks 1')  # the List: tracks 1, 10-19
+        self.window.set_map_detached(True)
+        try:
+            listed = set(self.map.listed)
+            self.map_window_search('breaks 2')
+            self.assertEqual(set(self.map.listed), {key for key in self.map.dots if 'breaks 2' in self.title(key)})
+            self.assertNotEqual(set(self.map.listed), listed)
+            self.assertIn('own search "breaks 2"', self.map.status.text())
+            self.assertEqual(self.window.search_bar.text(), 'breaks 1')  # the List keeps its own search
+            self.map_window_search('')
+            self.assertEqual(set(self.map.listed), listed)  # empty: the map follows the List again
+        finally:
+            self.window.set_map_detached(False)
+
+    def map_window_search(self, text):
+        self.window.map_window.search.setText(text)
+        self.window.map_window.search_changed.emit()  # what the typing pause sends
+
+    def title(self, key):
+        return self.window._fields_for_key(key).get('Title', '')
+
     def test_hover_fields_dialog_returns_checked_columns_in_table_order(self):
         from songselector.ui.map_settings_dialog import HoverFieldsDialog
         dialog = HoverFieldsDialog(['Title', 'Artist'], ['Artist', 'Title', 'Genre'], width=50)
@@ -381,7 +422,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
                 self.assertEqual(overlap(rects[first], rects[second]), 0, (boxes[first], boxes[second]))
 
     def test_click_on_a_match_highlights_it_double_click_selects_it(self):
-        from PyQt5.QtCore import Qt
+        from PyQt5.QtCore import QPoint, Qt
         from PyQt5.QtTest import QTest
         self.window.resize(1400, 900)
         self.window.show()
@@ -390,7 +431,8 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         tree = self.map.suggestions
         first = self.matches()[0]
         match = first.data(0, 0x0100)
-        QTest.mouseClick(tree.viewport(), Qt.LeftButton, pos=tree.visualItemRect(first).center())
+        row = tree.visualItemRect(first)  # the row is wider than the list (scrolls): click inside the visible part
+        QTest.mouseClick(tree.viewport(), Qt.LeftButton, pos=QPoint(20, row.center().y()))
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, self.key(0))  # the selection stays
         self.assertEqual(self.map.preview_key, match)
@@ -399,7 +441,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(self.map.preview_glow.pos(), self.map.dots[match].pos())
         self.assertEqual(self.map.selected_glow.pos(), self.map.dots[self.key(0)].pos())
         self.assertEqual([item.data(0, 0x0100) for item in self.matches()][0], match)  # list unchanged
-        QTest.mouseDClick(tree.viewport(), Qt.LeftButton, pos=tree.visualItemRect(first).center())
+        QTest.mouseDClick(tree.viewport(), Qt.LeftButton, pos=QPoint(20, tree.visualItemRect(first).center().y()))
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, match)
         self.assertEqual(self.map.dots[match].pen().color().name(), '#ffffff')
@@ -887,13 +929,14 @@ class MapWindowTests(MapWindowTestBase):
             self.application.processEvents()
 
     def test_the_map_window_can_be_much_narrower_than_the_main_window(self):
-        # The map's controls are in two rows: one row of all of them made the map at least the whole row wide.
+        # One row of all the map's controls used to make the map at least the whole row wide; since 2026-11-20 the
+        # toolbar folds what does not fit into its >> menu, so the map can be narrower than its controls.
         self.window.show()
         self.window.set_map_detached(True)
         self.application.processEvents()
-        controls = (self.map.edges_button, self.map.lines_per_track, self.map.all_edges, self.map.match_filter,
-                    self.map.view_3d_button, self.map.only_button, self.map.rearrange_button, self.map.detach_button)
-        one_row = sum(widget.minimumSizeHint().width() for widget in controls)
+        toolbar = self.map.toolbar
+        controls = [toolbar.widgetForAction(action) for action in toolbar.actions()]
+        one_row = sum(widget.minimumSizeHint().width() for widget in controls if widget is not None)
         self.assertLess(self.map.minimumSizeHint().width(), 0.75 * one_row)
 
     def test_detaching_while_the_list_tab_is_current_shows_the_map(self):
