@@ -33,7 +33,6 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
-    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QGraphicsEllipseItem,
@@ -51,17 +50,21 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QToolBar,
     QToolButton,
+    QToolTip,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from songselector.config import FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN, track_qcolor
 from songselector.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from songselector.core.color_search import COLOR_NAMES
 from songselector.core.color_search import color_id as color_family
+from songselector.core.embedding_models import MODELS
 from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from songselector.core.placement import (
     ABOVE_LEFT,
@@ -132,9 +135,13 @@ ARRANGING, GROUPING = 'Arranging the map', 'Grouping'   # reasons the map's spin
 LABEL_CORNERS = (ABOVE_RIGHT, ABOVE_LEFT, BELOW_RIGHT, BELOW_LEFT)
 # Closest matches: all similar tracks, only harmonic partners, or only the relations checked under Edges.
 MATCHES_ALL, MATCHES_HARMONIC, MATCHES_EDGES = 'all', 'harmonic', 'edges'
-MATCH_FILTERS = {MATCHES_ALL: 'Closest matches: all',
-                 MATCHES_HARMONIC: 'Closest matches: harmonic only',
-                 MATCHES_EDGES: 'Closest matches: Edges selection'}
+# Shown after "List the N closest" in the side panel: "List the 35 closest | of all tracks".
+MATCH_FILTERS = {MATCHES_ALL: 'of all tracks',
+                 MATCHES_HARMONIC: 'harmonic partners only',
+                 MATCHES_EDGES: 'with an Edges relation'}
+MAP_HELP = ('Scroll: zoom. Drag the background: move. Shift+drag (3D): rotate.\n'
+            'Hover a dot: details. Click: its closest matches. Ctrl+click: compare with the selected track.\n'
+            'Double-click: add to the playlist. Drag a dot: the file to Traktor, the playlist or Explorer.')
 # "Map the List only" re-maps this long after the List's last change (typing a filter, scrolling Top N).
 FOLLOW_DELAY_MS = 300
 # 3D view: Shift+drag rotates (radians per pixel); far dots fade to this opacity; nearer dots
@@ -600,6 +607,7 @@ class SimilarityMapWidget(QWidget):
     selected = pyqtSignal(str)                         # path_key
     groups_changed = pyqtSignal()                      # self.groups was recomputed or cleared
     detach_requested = pyqtSignal(bool)                # True: show the map in its own window, False: back in its tab
+    model_requested = pyqtSignal(str)                  # model id chosen in the map's Model box
 
     def __init__(self, store, settings, parent=None):
         super().__init__(parent)
@@ -636,6 +644,7 @@ class SimilarityMapWidget(QWidget):
         self._grouper.done.connect(self._grouped)
         self.match_keys = []      # closest matches of the selected track, ringed on the map
         self._base_status = ''
+        self.search_note = ''     # set by the main window while the map window's own search decides the tracks
         self._loading = False
         self.only = None          # frozenset of path_keys while the map shows just those tracks, else None
         # While "Map the List only" is on, a changed List re-maps after a short pause (a burst of changes,
@@ -681,15 +690,11 @@ class SimilarityMapWidget(QWidget):
             action.setChecked(name in settings.get('Map edges', DEFAULT_EDGES))
             action.toggled.connect(self._edges_changed)
             self.edge_actions[name] = action
-        edges_menu.addSeparator()
-        self.curved_action = edges_menu.addAction('Curved lines')
-        self.curved_action.setCheckable(True)
-        self.curved_action.setChecked(settings.get('Map curved edges', True))
-        self.curved_action.toggled.connect(self._edges_changed)
         self.edges_button.setMenu(edges_menu)
+        self.edges_button.setToolTip('Which relations the map draws as lines, to how many partners, and how')
         self.lines_per_track = QSpinBox()
         self.lines_per_track.setRange(1, 500)
-        self.lines_per_track.setPrefix('to the ')
+        self.lines_per_track.setPrefix('Lines to the ')
         self.lines_per_track.setSuffix(' most similar')
         self.lines_per_track.setToolTip('Edges from a track go only to this many partners: those that sound most\n'
                                         'similar to it among the tracks on the map (relative, per track, so every\n'
@@ -697,11 +702,26 @@ class SimilarityMapWidget(QWidget):
         self.lines_per_track.setValue(settings.get('Map lines per track', LINES_PER_TRACK))
         self.lines_per_track.setKeyboardTracking(False)
         self.lines_per_track.valueChanged.connect(self._edges_changed)
-        self.all_edges = QCheckBox('Edges between all visible tracks')
-        self.all_edges.setToolTip('Every visible track draws edges to its N most similar partners (the number on the\n'
-                                  'left). Otherwise edges start at the selected track only.')
+        # All edge settings live in the Edges menu: set once, rarely changed, so they need no toolbar space.
+        edges_menu.addSeparator()
+        edges_menu.setToolTipsVisible(True)
+        holder = QWidget()
+        holder_layout = QHBoxLayout(holder)
+        holder_layout.setContentsMargins(24, 2, 8, 2)
+        holder_layout.addWidget(self.lines_per_track)
+        lines_action = QWidgetAction(edges_menu)
+        lines_action.setDefaultWidget(holder)
+        edges_menu.addAction(lines_action)
+        self.all_edges = edges_menu.addAction('Edges between all visible tracks')
+        self.all_edges.setCheckable(True)
+        self.all_edges.setToolTip('Every visible track draws edges to its N most similar partners (the number '
+                                  'above). Otherwise edges start at the selected track only.')
         self.all_edges.setChecked(settings.get('Map edges between all', False))
         self.all_edges.toggled.connect(self._edges_changed)
+        self.curved_action = edges_menu.addAction('Curved lines')
+        self.curved_action.setCheckable(True)
+        self.curved_action.setChecked(settings.get('Map curved edges', True))
+        self.curved_action.toggled.connect(self._edges_changed)
         self.match_filter = QComboBox()
         for name, label in MATCH_FILTERS.items():
             self.match_filter.addItem(label, name)
@@ -747,7 +767,7 @@ class SimilarityMapWidget(QWidget):
 
         # Grouping: colour the dots by unsupervised groups instead of the Traktor colour.
         self.grouping = QComboBox()
-        self.grouping.addItem('Off (Traktor colours)', None)
+        self.grouping.addItem('Off (track colours)', None)
         for method in GROUPING_METHODS:
             self.grouping.addItem(method.label, method.name)
         self.grouping.setToolTip('k-means: a fixed number of groups from the sound.\n'
@@ -763,17 +783,37 @@ class SimilarityMapWidget(QWidget):
         self.grouping.currentIndexChanged.connect(self._grouping_method_changed)
         self.grouping_parameter.valueChanged.connect(self._update_groups)
 
-        # Two rows: one row of all these controls made the map (and its own window) at least ~1,100 px wide.
-        bar = QHBoxLayout()
-        for widget in (self.edges_button, self.lines_per_track, self.all_edges, self.match_filter):
-            bar.addWidget(widget)
-        bar.addStretch()
-        group_bar = QHBoxLayout()
-        for widget in (QLabel('Groups:'), self.grouping, self.grouping_parameter, self.grouping_summary):
-            group_bar.addWidget(widget)
-        group_bar.addStretch()
-        for widget in (self.view_3d_button, fit, self.only_button, self.rearrange_button, self.detach_button):
-            group_bar.addWidget(widget)
+        # Which embeddings the map uses (the same choice as Analysis -> Similarity model).
+        self.model_box = QComboBox()
+        for spec in MODELS.values():
+            self.model_box.addItem(spec.name, spec.id)
+            self.model_box.setItemData(self.model_box.count() - 1, spec.description, Qt.ToolTipRole)
+        self.model_box.setToolTip('Which model the map, its groups and the closest matches use (each keeps its own '
+                                  'map). Also under Analysis -> Similarity model.')
+        self._show_model()
+        self.model_box.activated.connect(lambda index: self.model_requested.emit(self.model_box.itemData(index)))
+
+        # One toolbar, ordered by task (UI review 2026-11-20): what is mapped -> how it is coloured -> the view.
+        # Before: two rows mixing all of these. A QToolBar folds what does not fit into its >> menu, so the map (and
+        # its own window) never has to be wider than the screen allows.
+        toolbar = QToolBar()
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.addWidget(QLabel('Model '))
+        toolbar.addWidget(self.model_box)
+        toolbar.addWidget(self.only_button)
+        toolbar.addSeparator()
+        toolbar.addWidget(QLabel('Groups '))
+        toolbar.addWidget(self.grouping)
+        toolbar.addWidget(self.grouping_parameter)
+        toolbar.addSeparator()
+        toolbar.addWidget(self.edges_button)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        toolbar.addWidget(spacer)
+        for widget in (self.view_3d_button, fit, self.rearrange_button, self.detach_button):
+            toolbar.addWidget(widget)
+        self.toolbar = toolbar
         side = QWidget()
         side.setMinimumWidth(SIDE_MIN_WIDTH)
         side_layout = QVBoxLayout(side)
@@ -793,9 +833,9 @@ class SimilarityMapWidget(QWidget):
         self.match_count.setValue(settings.get('Map match count', MATCH_COUNT))
         self.match_count.setKeyboardTracking(False)
         self.match_count.valueChanged.connect(self._update_suggestions)
-        count_row = QHBoxLayout()
+        count_row = QHBoxLayout()  # "List the 35 closest | of all tracks": the filter sits with the list it filters
         count_row.addWidget(self.match_count)
-        count_row.addStretch()
+        count_row.addWidget(self.match_filter, 1)
         side_layout.addLayout(count_row)
         side_layout.addWidget(self.suggestions)
         # Long one-line texts must not set the widget's minimum width: on a narrow window that
@@ -810,12 +850,20 @@ class SimilarityMapWidget(QWidget):
         self.splitter.splitterMoved.connect(lambda *_: self.settings.__setitem__('Map splitter', self.splitter.sizes()))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(bar)
-        layout.addLayout(group_bar)
+        layout.addWidget(toolbar)
         layout.addWidget(self.splitter, 1)  # the map gets all spare space
+        # Status line: what the map shows and the groups' sizes; how to use the map is behind "?" (read once).
+        self.help_button = QToolButton()
+        self.help_button.setText('?')
+        self.help_button.setAutoRaise(True)
+        self.help_button.setToolTip(MAP_HELP)
+        self.help_button.clicked.connect(
+            lambda: QToolTip.showText(self.help_button.mapToGlobal(self.help_button.rect().bottomLeft()), MAP_HELP))
         status_bar = QHBoxLayout()
         status_bar.addWidget(self.spinner, 0, Qt.AlignTop)
         status_bar.addWidget(self.status, 1)
+        status_bar.addWidget(self.grouping_summary, 1)
+        status_bar.addWidget(self.help_button, 0, Qt.AlignTop)
         layout.addLayout(status_bar)
 
     # -- data ---------------------------------------------------------------
@@ -887,12 +935,22 @@ class SimilarityMapWidget(QWidget):
     def stop(self):
         self._stop.set()
 
+    def _show_model(self):
+        """The Model box shows the model whose embeddings the map uses."""
+        spec = getattr(self.store, 'spec', None)
+        index = self.model_box.findData(spec.id) if spec is not None else -1
+        if index >= 0:
+            self.model_box.blockSignals(True)
+            self.model_box.setCurrentIndex(index)
+            self.model_box.blockSignals(False)
+
     def set_store(self, store):
         """Use another model's embeddings (Analysis -> Similarity model). Layout, closest matches and groups follow
         it; each model's cache keeps its own layout. Call load() afterwards if the map or the groups are needed."""
         if store is self.store:
             return
         self.store = store
+        self._show_model()
         self._fit_next = True
         if self._loading:
             self._again = True  # the running load is for the old model: load again when it ends
@@ -1258,9 +1316,7 @@ class SimilarityMapWidget(QWidget):
             on_map = sum(1 for key in self.highlighted if key in self.dots)
             note += (f'; {on_map} of {len(self.highlighted)} selected Playlist tracks shown (amber'
                      + (', dashed: not in the List' if self._markers else '') + ')')
-        self._base_status = (f'{shown} tracks on the map' + note +
-                             '. Scroll: zoom, drag background: move, drag dot: file to Traktor, '
-                             'hover: details, click: closest matches, Ctrl+click: compare with the selected track.')
+        self._base_status = f'{shown} tracks on the map' + note + self.search_note  # how to use it: the ? button
         if self.selected_key not in self.fields:
             self.selected_key = None
         self._draw_edges()
