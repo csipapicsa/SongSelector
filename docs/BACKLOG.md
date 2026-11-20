@@ -168,6 +168,7 @@ One PR per block below, in this order; each with tests (a failing test first for
 - [x] int8 models (2026-11-20, `docs/research/experiments/results/2026-11-20_int8_benchmark.md`): naive dynamic
       quantization was slower everywhere and broke the embeddings (the spectrogram front-end got quantized). Not
       worth it on the GPU; a fair CPU test (front-end in float, only LAION's MatMuls) is open if CPU speed matters.
+      **Closed 2026-11-20 (user's decision):** no quantized models; only the float32 files are published.
 - [ ] Research: do CLAP embeddings group tracks by *feel* better than CNN14 (asked 2026-11-13)? CLAP is trained to
       match descriptions ("dark", "uplifting", "groovy"), CNN14 to label sound events, so its neighbourhoods may follow
       mood and energy more. Compare on the same tracks: style purity of the 10 nearest (as for CNN14), plus a blind
