@@ -13,7 +13,8 @@ CHANGELOG when they ship.
 2. **Model files on Hugging Face** (decided 2026-11-20; *Get models* has no download source since 1.2.0):
    - [x] Login, three repos with licence tags and model cards, files uploaded and checked, app pinned to the
      commits, download tested against the private repos (branch `feature/models-on-hf`).
-   - Open: make the three repos public (user's go), the user's test in WSL (move `.appdata/models` aside, *Get
+   - [x] The three repos are public (2026-11-20, user's go); anonymous download and resume checked.
+   - Open: the user's test in WSL (move `.appdata/models` aside, *Get
      models* -> *Download*), PR + merge; delete the local branch `fix/model-download-release` (replaced) and the
      leftover **draft** GitHub release (one tokenizer asset, `untagged-...`, not public).
    - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums);
