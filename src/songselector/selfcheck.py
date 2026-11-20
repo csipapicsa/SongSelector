@@ -300,7 +300,7 @@ def run():
         assert baseline==0,f'A fresh install must start with an empty library, found {baseline} tracks'
         window.importer=TrackImporter(test_collection)
         window.coloring_mode='song'
-        window.bpm_slider.setValue(100)
+        window.tempo_box.setValue(100)
 
         def drop(tree,paths):
             mime=QMimeData()
@@ -385,8 +385,8 @@ def run():
         window.populate_tree()
         for view in (window.candidate_tree,window.playlist_tree):
             assert find(view,fixture).background(0).color().rgb()==OPEN_KEY_COLOR_MAPPING['1d'].rgb()
-        window.bpm_slider.setValue(150)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(150)
+        window.apply_tempo()
         assert find(window.playlist_tree,fixture).text(HEADER_INDEX['New Key'])=='G major'
         for view in (window.candidate_tree,window.playlist_tree):
             assert find(view,fixture).background(0).color().rgb()==OPEN_KEY_COLOR_MAPPING['2d'].rgb()

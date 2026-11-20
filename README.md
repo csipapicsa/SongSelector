@@ -11,7 +11,7 @@ their libraries automatically, and answers three questions:
 
 - **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
   pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
-  Open Key notation, and recalculates the whole library as you move the tempo slider.
+  Open Key notation, and recalculates the whole library as you change the master tempo.
 - **What sounds like this track?** Neural audio models (PANNs CNN14, LAION CLAP, Microsoft CLAP, run
   through ONNX Runtime on the GPU) turn every track into embeddings in the background. A similarity map
   and a closest-matches list then show tracks that *sound* alike, whatever their tags say.
@@ -143,14 +143,13 @@ filtered now, so narrow the List first to explore one style.
 | Drag a dot or a match | The files, e.g. onto a Traktor deck or playlist |
 | Drop a track on the map | Select it and show its closest matches |
 | Double-click a dot | Add to the playlist |
-| Scroll / drag | Zoom / move |
+| Scroll / drag | Zoom / move (anywhere, even out of view; *Fit* brings the map back) |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour or same rating, optionally only to the N most similar |
 | *Groups* | Colour dots by unsupervised groups (numbered along the map) |
 | Ctrl+click a dot | Compare it with the selected track (card, mix type, similarity); Ctrl+click it again or on empty space to stop |
 | Esc | First stops the comparison, then clears the selection |
 | *Closest matches* | *all*; *harmonic only* (plus tracks without a key); or *Edges selection*: only the relations checked under *Edges* |
 | Select tracks in the Playlist | Shown on the map with an amber ring, even if the List filters them out (dashed) |
-| *Own window* | The map in a separate window (e.g. a second screen); close it to get it back in the tab |
 | *Map the List only* | Map and group just the tracks the List shows; follows the List as it changes |
 | *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
 
@@ -163,8 +162,10 @@ sound like (or pick a saved prompt from its dropdown) and press Enter. The List 
 the chosen CLAP model, best first in the `#` column, with their similarity to the description in *Match* (cosine similarity as a
 percentage, higher is closer; compare within one search). ★ saves the prompt, ✕ deletes it, and *Top* changes how
 many tracks are shown without searching again (*All* lists every analysed track). *No search: show all
-tracks* at the top of the dropdown (or Enter in an empty field, or *Show all tracks*) goes back. Choosing a model
-that has not analysed the whole library yet switches it on and analyses the rest in the background.
+tracks* at the top of the dropdown (or Enter in an empty field) goes back; Browser → *All Tracks* shows all tracks.
+The *Model* box next to it is the one model choice: it sets the model of the search and of the similarity map,
+closest matches and groups (CNN14 can drive the map but has no text side, so it cannot search by description).
+Choosing a model that has not analysed the whole library yet switches it on and analyses the rest in the background.
 With a playlist, smartlist or other Browser entry shown, the search ranks only its tracks.
 *Analysis → Search by description…* (Ctrl+Shift+F) opens the same search in its own window, with scores.
 Describe the sound (instruments, textures, energy, mood: *"warm pads, slow and dreamy"*, *"distorted
@@ -173,7 +174,7 @@ prompts you want to repeat, double-click a result to select it in the List, drag
 Only tracks already analysed with that model can be found.
 
 *Analysis → Embedding models* sets which models are kept up to date (each shows how many tracks it has
-analysed); *Similarity model* sets which one the
+analysed); *Similarity model* (the same as the *Model* box) sets which one the
 map, the closest matches and the groups use. Each model keeps its own map layout. *Parallel analysis* sets how
 many tracks are analysed at once (automatic: 2 on a GPU). On laptops with two GPUs the analysis uses the
 high-performance one, and each model's batch size is measured once on your machine.
@@ -207,7 +208,7 @@ slider). Setting a row's column to *None* switches that row off without losing i
 | Setting | How |
 |---|---|
 | Cover art | *View → Cover art*: off, cropped to the row height, or square rows; 48 / 72 / 96 px |
-| Always on top | *View → Always on top*: SongSelector (and the map in its own window) stays above other windows |
+| Always on top | *View → Always on top*: SongSelector stays above other windows |
 | Columns | Right-click a column header: show or hide columns (*Speed change*, *Match*, *Group*, *Cover*...) |
 | Sorting by *Group* | Within each group, the best *Match* of a description search comes first |
 

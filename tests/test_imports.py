@@ -215,7 +215,7 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(len(window.table), 0)  # a fresh install starts with an empty library
         window.importer = TrackImporter(nml)
         window.table = pd.DataFrame()
-        window.bpm_slider.setValue(100)
+        window.tempo_box.setValue(100)
         window.populate_tree()
         window.search_bar.setText('a filter that excludes everything')
         window.current_advanced_search = {'enabled': True, 'filters': [{'column': 'Genre', 'condition': 'is', 'value': 'not matching'}]}
@@ -255,8 +255,8 @@ class GuiTests(unittest.TestCase):
         in_library = item_for(window.candidate_tree, tagged)
         self.assertFalse(in_library.isHidden())  # playlist tracks stay in the library, dimmed
         self.assertTrue(in_library.data(0, IN_PLAYLIST_ROLE) and in_library.font(0).italic())
-        window.bpm_slider.setValue(150)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(150)
+        window.apply_tempo()
         self.assertEqual(item_for(window.playlist_tree, tagged).text(HEADER_INDEX['New Key']), 'G major')
         self.assertEqual(item_for(window.playlist_tree, tagged).text(HEADER_INDEX['Original Key']), 'C major')
         drop(window.playlist_tree, [unknown])
@@ -310,7 +310,7 @@ class ColorGuiTests(unittest.TestCase):
         self.window.library_store=LibraryStore(self.root/'library.sqlite')
         self.window.saved_imports={}
         self.window.table=pd.DataFrame()
-        self.window.bpm_slider.setValue(100)
+        self.window.tempo_box.setValue(100)
         self.window.populate_tree()
 
     def tearDown(self):
@@ -357,8 +357,8 @@ class ColorGuiTests(unittest.TestCase):
         self.window.populate_tree()
         for tree in (self.window.candidate_tree,self.window.playlist_tree):
             self.assertEqual(tree.topLevelItem(0).background(0).color().rgb(),OPEN_KEY_COLOR_MAPPING['1d'].rgb())
-        self.window.bpm_slider.setValue(150)
-        self.window.update_tree_after_slider()
+        self.window.tempo_box.setValue(150)
+        self.window.apply_tempo()
         for tree in (self.window.candidate_tree,self.window.playlist_tree):
             item=tree.topLevelItem(0)
             self.assertEqual(item.text(HEADER_INDEX['New Key']),'G major')
