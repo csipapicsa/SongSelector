@@ -263,9 +263,33 @@ class SimilarityMapGuiTests(MapWindowTestBase):
 
     def test_hover_fields_dialog_returns_checked_columns_in_table_order(self):
         from songselector.ui.map_settings_dialog import HoverFieldsDialog
-        dialog = HoverFieldsDialog(['Title', 'Artist'], ['Artist', 'Title', 'Genre'])
+        dialog = HoverFieldsDialog(['Title', 'Artist'], ['Artist', 'Title', 'Genre'], width=50)
         dialog.boxes['Genre'].setChecked(True)
         self.assertEqual(dialog.selected(), ['Artist', 'Title', 'Genre'])
+        self.assertEqual(dialog.info_width(), 200)  # never narrower than the minimum
+
+    def test_info_boxes_wrap_long_file_names_at_the_set_width(self):
+        # Reported 2026-11-20: a track named by its long file name made its card and label as wide as the map.
+        from songselector.ui.similarity_map import MIN_INFO_WIDTH, Card, MapLabel
+        name = 'LA_PHAZE_VS_MADNESS_ONE_STEP_BEYOND_REMIX_Free_Mp3_Download_a_a_www.mrtzcmp3.net'
+        dot = self.map.dots[self.key(5)]
+        card = Card('#ffffff', 1)
+        card.show_at(dot, '<b>Short</b>', 300)
+        short_width, one_line = card.box_size()
+        self.assertLess(short_width, 150)  # short text keeps its own width
+        card.show_at(dot, f'<b>{name}</b>', 300)
+        width, height = card.box_size()
+        self.assertLessEqual(width, 300)
+        self.assertGreater(height, one_line * 1.5)  # wrapped onto more lines instead
+        label = MapLabel()
+        label.set_text(f'{name}\nF minor (4A) at master tempo, 130 BPM', 300)
+        self.assertLessEqual(label.box_size()[0], 300)
+        self.assertEqual(self.map.info_width(), 360)  # the default
+        self.window.settings['Map info width'] = 50
+        self.assertEqual(self.map.info_width(), MIN_INFO_WIDTH)
+        self.window.settings['Map info width'] = 500
+        self.map.hover(self.key(5))
+        self.assertLessEqual(self.map.hover_card.box_size()[0], 500)
 
 
 class SimilarityMapInteractionTests(MapWindowTestBase):
@@ -666,8 +690,8 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
     def test_selected_track_shows_details_box_and_label_on_the_map(self):
         self.map.select(self.key(4))
         self.assertTrue(self.map.label.isVisible())
-        self.assertIn('breaks artist - breaks 4', self.map.label_text.text())
-        self.assertIn('master tempo', self.map.label_text.text())
+        self.assertIn('breaks artist - breaks 4', self.map.label_text.toPlainText())
+        self.assertIn('master tempo', self.map.label_text.toPlainText())
         self.assertIn('breaks 4', self.map.details.text())
         self.assertIn('Genre', self.map.details.text())
         self.window.search_bar.setText('dnb')  # the selected track is filtered out
@@ -1096,7 +1120,7 @@ class MapDropTests(MapWindowTestBase):
         self.drop_on_map(self.root / 'track2.mp3')
         self.assertEqual(self.map.selected_key, self.key(2))
         self.assertTrue(self.map.dots[self.key(2)].isVisible())
-        self.assertIn('breaks 2', self.map.label_text.text())
+        self.assertIn('breaks 2', self.map.label_text.toPlainText())
         self.assertIn('Not in the list view', self.map.details.text())
         matches = {self.map.suggestions.topLevelItem(i).data(0, 0x0100) for i in range(self.map.suggestions.topLevelItemCount())}
         self.assertNotIn(self.key(2), matches)

@@ -12,6 +12,9 @@ from that period still mention 4.x numbers.
 
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
+- **Map info boxes stay narrow.** The hover card, the compared track's card and the selected track's label wrap
+  their text at 360 px (*View → Map hover details…*, from 200 px), so a long file name no longer makes a box as wide
+  as the map and hides the dots under it; words without spaces break where needed. Short text keeps its own width.
 - **Time left of the embedding analysis.** The progress line says how long the analysis will still take
   ("Embeddings (CNN14+LAION CLAP, CPU): 5/200, about 39 min left - track.mp3"), from the speed of the last few
   minutes, once a few tracks have been analysed.
