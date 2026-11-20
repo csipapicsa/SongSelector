@@ -118,7 +118,17 @@ CREATE TABLE IF NOT EXISTS traktor_seen (
     color    INTEGER,
     rating   REAL
 );
+-- The same for Mixxx's library; color is '#RRGGBB' text there (SQLite keeps it as text).
+CREATE TABLE IF NOT EXISTS mixxx_seen (
+    path_key TEXT PRIMARY KEY,
+    key      TEXT,
+    bpm      REAL,
+    color    INTEGER,
+    rating   REAL
+);
 """
+# DJ program (core/dj_programs.py) -> its table of seen values
+_SEEN_TABLES = {'traktor': 'traktor_seen', 'mixxx': 'mixxx_seen'}
 
 
 def _plain(value):
@@ -163,20 +173,32 @@ class LibraryStore:
                     connection.execute(f'ALTER TABLE tracks ADD COLUMN {column} {kind}')
             connection.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
 
-    # -- Traktor sync -----------------------------------------------------------
+    # -- DJ program sync (Traktor, Mixxx) --------------------------------------
 
-    def traktor_seen(self):
-        """{path_key: {'key', 'bpm', 'color', 'rating'}} as Traktor had them at the last sync."""
+    def seen(self, program):
+        """{path_key: {'key', 'bpm', 'color', 'rating'}} as the program ('traktor', 'mixxx') had them at the
+        last sync."""
         with closing(self._connect()) as connection:
-            rows = connection.execute('SELECT path_key, key, bpm, color, rating FROM traktor_seen').fetchall()
+            rows = connection.execute(f'SELECT path_key, key, bpm, color, rating FROM {_SEEN_TABLES[program]}').fetchall()
         return {row[0]: dict(zip(('key', 'bpm', 'color', 'rating'), row[1:])) for row in rows}
 
-    def save_traktor_seen(self, values):
-        """Store {path_key: values} (the whole collection, in one transaction)."""
+    def save_seen(self, program, values):
+        """Store {path_key: values} of a program (the whole library, in one transaction)."""
         with closing(self._connect()) as connection, connection:
-            connection.executemany('INSERT OR REPLACE INTO traktor_seen VALUES (?, ?, ?, ?, ?)',
+            connection.executemany(f'INSERT OR REPLACE INTO {_SEEN_TABLES[program]} VALUES (?, ?, ?, ?, ?)',
                                    [(key, value['key'], value['bpm'], value['color'], value['rating'])
                                     for key, value in values.items()])
+
+    def forget_seen(self, program):
+        """Forget what the program had: its next sync treats every track as new (it became the primary one)."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute(f'DELETE FROM {_SEEN_TABLES[program]}')
+
+    def traktor_seen(self):
+        return self.seen('traktor')
+
+    def save_traktor_seen(self, values):
+        self.save_seen('traktor', values)
 
     # -- collection -----------------------------------------------------------
 

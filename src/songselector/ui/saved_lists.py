@@ -22,6 +22,7 @@ from songselector.ui.list_browser import (
     COLLECTION_GROUPS,
     DESCRIPTION,
     FOREIGN_KINDS,
+    MIXXX,
     ORDERED_KINDS,
     REKORDBOX,
     SAVED_KINDS,
@@ -262,13 +263,15 @@ class SavedListsMixin:
         """The playlist tree of another program, in its order; None: that program's library is not known."""
         if kind == TRAKTOR:
             return self.importer.collection.playlists
-        library = getattr(self, 'rekordbox_library', None)
+        library = self.importer.mixxx if kind == MIXXX else getattr(self, 'rekordbox_library', None)
         return library.playlists if library is not None and library.path else None
 
     def _refresh_foreign(self, kind):
         playlists = self._foreign_playlists(kind)
         if kind == TRAKTOR:
             self.list_browser.set_traktor_playlists(playlists)
+        elif kind == MIXXX:
+            self.list_browser.set_mixxx_playlists(playlists)
         else:
             self.list_browser.set_rekordbox_playlists(playlists)
         source = self.list_source
@@ -277,6 +280,9 @@ class SavedListsMixin:
 
     def refresh_traktor_playlists(self):
         self._refresh_foreign(TRAKTOR)
+
+    def refresh_mixxx_playlists(self):
+        self._refresh_foreign(MIXXX)
 
     def refresh_rekordbox_playlists(self):
         self._refresh_foreign(REKORDBOX)

@@ -62,6 +62,7 @@ from songselector.config import (
     SS_COLOR_COLUMN,
     SS_RATING_COLUMN,
     WINDOW_SIZE,
+    track_qcolor,
 )
 from songselector.core.color_search import (
     COLOR_NAMES,
@@ -70,12 +71,25 @@ from songselector.core.color_search import (
     replace_color_filter,
 )
 from songselector.core.data_manager import DataManager
+from songselector.core.dj_programs import (
+    AUTOMATIC,
+    MIXXX,
+    NAMES,
+    PROGRAMS,
+    SOURCES,
+    TRAKTOR,
+    priority,
+    resolve_primary,
+)
 from songselector.core.duplicates import ARTIST_TITLE, MODES, PATH, SAME_FILE, find_duplicates
 from songselector.core.embedding_models import CNN14, DEFAULT_MODEL_IDS, MODELS, store_path
 from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, OnnxEmbedder, file_fingerprint
 from songselector.core.key_calculator import KeyCalculator
 from songselector.core.key_formats import parse_bpm, parse_key
 from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
+from songselector.core.mixxx_library import MixxxLibrary
+from songselector.core.mixxx_library import discover_library as discover_mixxx_library
+from songselector.core.mixxx_library import signature as mixxx_signature
 from songselector.core.model_download import BASE_URL
 from songselector.core.rekordbox_library import RekordboxLibrary, discover_library
 from songselector.core.rekordbox_library import signature as rekordbox_signature
@@ -87,7 +101,7 @@ from songselector.core.track_import import (
     enrich_ratings,
     merge_tracks,
 )
-from songselector.core.traktor_collection import canonical_path, discover_collection
+from songselector.core.traktor_collection import TraktorCollection, canonical_path, discover_collection
 from songselector.core.traktor_sync import apply_changes, collection_changes, seen_values, summary
 from songselector.env import getenv
 from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
@@ -274,7 +288,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.playlist_paths = set()
         collection_path = self.settings.get('Traktor collection') or discover_collection()
         self.settings['Traktor collection'] = collection_path
-        self.importer = TrackImporter(collection_path)
+        mixxx_path = self.settings.get('Mixxx library') or discover_mixxx_library()
+        self.settings['Mixxx library'] = mixxx_path
+        self.settings.setdefault('Primary DJ program', AUTOMATIC)
+        self.importer = TrackImporter(collection_path, mixxx_path, self._primary_program())
+        self._programs_read = set()   # DJ programs whose library has been read (or failed) since the start
+        self._waiting_sync = {}       # program -> library read before the primary program's: synced after it
         rekordbox_path = self.settings.get('Rekordbox library') or discover_library()
         self.settings['Rekordbox library'] = rekordbox_path
         self.rekordbox_library = RekordboxLibrary(rekordbox_path)  # filled by the watcher below
@@ -293,9 +312,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._restore_lists()
         self.populate_tree()
         self._init_browser()
-        # Changes made in Traktor (key, BPM, colour, rating) come in after Traktor saves.
+        # Changes made in Traktor or Mixxx (key, BPM, colour, rating) come in after the program saves.
         self.collection_watcher = CollectionWatcher(collection_path, self)
         self.collection_watcher.loaded.connect(self._collection_changed)
+        self.collection_watcher.failed.connect(partial(self._program_failed, TRAKTOR))
+        self.mixxx_watcher = CollectionWatcher(mixxx_path, self, reader=MixxxLibrary, signature=mixxx_signature)
+        self.mixxx_watcher.loaded.connect(self._mixxx_changed)
+        self.mixxx_watcher.failed.connect(partial(self._program_failed, MIXXX))
         # Rekordbox's playlists, read straight from its library; Rekordbox is never touched
         self.rekordbox_watcher = CollectionWatcher(rekordbox_path, self, reader=RekordboxLibrary,
                                                    signature=rekordbox_signature)
@@ -378,10 +401,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         elif self.coloring_mode == 'key':
             color = OPEN_KEY_COLOR_MAPPING.get(item.text(HEADER_INDEX['Open Key New']).lower())
         else:
-            try:
-                color = COLOR_MAPPING_CATEGORY.get(int(float(item.text(COLOR_COLUMN_INDEX))))
-            except (TypeError, ValueError, OverflowError):
-                pass
+            color = track_qcolor(item.text(COLOR_COLUMN_INDEX))
         brush = QBrush()
         if color is not None:
             shaded = QColor(color)
@@ -981,29 +1001,104 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def _load_library(self, table, records=None):
         """A library list from `table` plus the tracks imported so far (or `records`)."""
         merged = merge_tracks(table, self.saved_imports.values() if records is None else records)
-        return self._with_user_fields(enrich_ratings(merged, self.importer.collection))
+        return self._with_user_fields(enrich_ratings(merged, *self.importer.libraries()))
 
     def _rekordbox_changed(self, library):
         """Rekordbox saved its library (or the app just started): refresh its playlists in the Browser."""
         self.rekordbox_library = library
         self.refresh_rekordbox_playlists()
 
+    # -- DJ programs: Traktor, Mixxx (core/dj_programs.py) ---------------------
+
+    def _primary_program(self):
+        """The primary DJ program: the setting, or automatically the first program whose library was found."""
+        available = {program for program, setting in ((TRAKTOR, 'Traktor collection'), (MIXXX, 'Mixxx library'))
+                     if self.settings.get(setting)}
+        return resolve_primary(self.settings.get('Primary DJ program', AUTOMATIC), available)
+
     def _collection_changed(self, collection):
-        """Traktor saved its collection: take the values changed in Traktor into the library,
-        all at once (see core/traktor_sync.py)."""
-        self.importer.collection = collection  # imports use the fresh copy, no second read
-        self.refresh_traktor_playlists()
-        try:
-            seen = self.library_store.traktor_seen()
-        except sqlite3.Error as error:
-            self.status_bar.showMessage(f'Traktor sync skipped: {error}')
+        """Traktor saved its collection (or the app just started)."""
+        self._program_changed(TRAKTOR, collection)
+
+    def _mixxx_changed(self, library):
+        """Mixxx saved its library (or the app just started)."""
+        self._program_changed(MIXXX, library)
+
+    def _program_changed(self, program, library):
+        """A DJ program's library was read: imports and the Browser use the fresh copy (no second read), and the
+        values changed in the program come into the library, all at once (core/traktor_sync.py). The primary
+        program syncs first: a library read before it waits for it, so the result never depends on which file
+        happened to be read first."""
+        if program == TRAKTOR:
+            self.importer.collection = library
+            self.refresh_traktor_playlists()
+        else:
+            self.importer.mixxx = library
+            self.refresh_mixxx_playlists()
+        self._programs_read.add(program)
+        primary = self.importer.primary
+        if program != primary and not self._program_ready(primary):
+            self._waiting_sync[program] = library
             return
-        changes = collection_changes(self.table, collection.by_path, seen)
-        now = {key: seen_values(record) for key, record in collection.by_path.items()}
+        self._sync_program(program, library)
+        if program == primary:
+            self._sync_waiting()
+
+    def _program_failed(self, program, message):
+        self.status_bar.showMessage(message)
+        self._programs_read.add(program)
+        if program == self.importer.primary:
+            self._sync_waiting()  # the others need not wait for a library that cannot be read
+
+    def _program_ready(self, program):
+        """Whether the program's library has been read, or there is none to wait for."""
+        return program in self._programs_read or not os.path.isfile(self.importer.library(program).path or '')
+
+    def _sync_waiting(self):
+        waiting, self._waiting_sync = self._waiting_sync, {}
+        for program, library in waiting.items():
+            self._sync_program(program, library)
+
+    def _decides(self, program):
+        """For the sync: whether the program decides a track (path key). The primary program decides every track
+        it has; another program only the tracks no program before it in the priority order has."""
+        order = priority(self.importer.primary)
+        before = [self.importer.library(other) for other in order[:order.index(program)]]
+        if not before:
+            return None
+        return lambda key: not any(key in library.by_path for library in before)
+
+    def set_primary_program(self, setting):
+        """Menu: Import -> Primary DJ program. The new primary program's colours (and the values only it has)
+        come in right away: what it had before is forgotten, so its next sync treats every track as new."""
+        self.settings['Primary DJ program'] = setting
+        primary = self._primary_program()
+        if primary != self.importer.primary:
+            self.importer.primary = primary
+            try:
+                self.library_store.forget_seen(primary)
+            except sqlite3.Error as error:
+                self.status_bar.showMessage(f'Could not reset the {NAMES[primary]} sync state: {error}')
+            if primary in self._programs_read:
+                self._sync_program(primary, self.importer.library(primary))
+        self._update_primary_menu()
+        self.status_bar.showMessage(f'Primary DJ program: {NAMES[primary]}'
+                                    + (' (automatic)' if setting == AUTOMATIC else ''))
+
+    def _sync_program(self, program, library):
+        """Take the values changed in the program into the library (core/traktor_sync.py)."""
+        name = NAMES[program]
         try:
-            self.library_store.save_traktor_seen({key: values for key, values in now.items() if seen.get(key) != values})
+            seen = self.library_store.seen(program)
         except sqlite3.Error as error:
-            self.status_bar.showMessage(f'Could not save the Traktor sync state: {error}')
+            self.status_bar.showMessage(f'{name} sync skipped: {error}')
+            return
+        changes = collection_changes(self.table, library.by_path, seen, SOURCES[program], self._decides(program))
+        now = {key: seen_values(record) for key, record in library.by_path.items()}
+        try:
+            self.library_store.save_seen(program, {key: values for key, values in now.items() if seen.get(key) != values})
+        except sqlite3.Error as error:
+            self.status_bar.showMessage(f'Could not save the {name} sync state: {error}')
         if not changes:
             return
         self.table = apply_changes(self.table, changes)
@@ -1023,7 +1118,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
                     self._track_item(row, item)
         error = self._save_playlist() or error
         self.filter_items()  # changed values may (no longer) match the search
-        message = f'Updated from Traktor: {summary(changes)}'
+        message = f'Updated from {name}: {summary(changes)}'
         self.status_label.setStyleSheet(status_style('error') if error else status_style('ok'))
         self.status_label.setText(error or message)
         self.status_bar.showMessage(message)
@@ -1051,7 +1146,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.table = self._load_library(self.data_manager.load_default_data())
             self._save_library()
         else:
-            self.table = enrich_ratings(pd.DataFrame(saved_library), self.importer.collection)
+            self.table = enrich_ratings(pd.DataFrame(saved_library), *self.importer.libraries())
         self.data_manager.table = self.table
         for record in saved_playlist:
             self._add_to_playlist(record)
@@ -1120,12 +1215,14 @@ class MainWindow(SavedListsMixin, QMainWindow):
         return found(find_duplicates(snapshot, mode, in_collection))
 
     def _collection_keys(self):
-        """path_keys of the tracks in the Traktor collection and on Rekordbox playlists (for the duplicate rule)."""
+        """path_keys of the tracks in the Traktor collection, the Mixxx library and on Rekordbox playlists (for the
+        duplicate rule)."""
         keys = set()
-        try:
-            keys |= self.importer.collection.keys()
-        except Exception:  # no collection, or it cannot be read: the rule just skips this step
-            pass
+        for library in self.importer.libraries():
+            try:
+                keys |= library.keys()
+            except Exception:  # no library, or it cannot be read: the rule just skips this step
+                pass
 
         def walk(entries):
             for entry in entries or []:
@@ -2431,6 +2528,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.map_window.closing_with_app = True
             self.map_window.close()
         self.collection_watcher.stop()
+        self.mixxx_watcher.stop()
         self.rekordbox_watcher.stop()
         if self.embedding_analyzer is not None:
             self.embedding_analyzer.stop(timeout=2)
@@ -2499,8 +2597,30 @@ class MainWindow(SavedListsMixin, QMainWindow):
         add_folder.triggered.connect(self.choose_audio_folder)
         collection = menu.addAction('Link Traktor collection...')
         collection.triggered.connect(self.choose_traktor_collection)
+        mixxx = menu.addAction('Link Mixxx library...')
+        mixxx.triggered.connect(self.choose_mixxx_library)
         rekordbox = menu.addAction('Link Rekordbox library...')
         rekordbox.triggered.connect(self.choose_rekordbox_library)
+        menu.addSeparator()
+        primary = menu.addMenu('Primary DJ program')
+        primary.setToolTipsVisible(True)
+        group = QActionGroup(primary)
+        self.primary_actions = {}
+        for setting, label in ((AUTOMATIC, 'Automatic'), *((program, NAMES[program]) for program in PROGRAMS)):
+            action = primary.addAction(label)
+            action.setCheckable(True)
+            action.setActionGroup(group)
+            action.setToolTip("Its key, BPM, colour and rating win; the other programs only fill what is empty. "
+                              "Automatic: the first program found (Traktor, then Mixxx).")
+            action.triggered.connect(partial(self.set_primary_program, setting))
+            self.primary_actions[setting] = action
+        self._update_primary_menu()
+
+    def _update_primary_menu(self):
+        setting = self.settings.get('Primary DJ program', AUTOMATIC)
+        self.primary_actions.get(setting, self.primary_actions[AUTOMATIC]).setChecked(True)
+        self.primary_actions[AUTOMATIC].setText(f'Automatic ({NAMES[self._primary_program()]})'
+                                                if setting == AUTOMATIC else 'Automatic')
 
     def choose_audio_files(self):
         paths, _ = QFileDialog.getOpenFileNames(self, 'Add audio files', '',
@@ -2524,18 +2644,44 @@ class MainWindow(SavedListsMixin, QMainWindow):
                                               'Traktor collections (*.nml)')
         if not path:
             return
-        importer = TrackImporter(path)
-        importer.collection._load()
-        if importer.collection.error:
-            QMessageBox.warning(self, 'Cannot read collection', importer.collection.error)
+        collection = TraktorCollection(path)
+        collection._load()
+        if collection.error:
+            QMessageBox.warning(self, 'Cannot read collection', collection.error)
             return
-        self.importer = importer
-        self.settings['Traktor collection'] = path
-        self.collection_watcher.set_path(path)  # its changed values come in with the next sync
-        self.table = enrich_ratings(self.table, importer.collection)
+        self._link_program(TRAKTOR, 'Traktor collection', path, collection, self.collection_watcher)
+        self.status_label.setText(f'Linked {len(collection.by_path)} Traktor tracks')
+
+    def choose_mixxx_library(self):
+        """Only needed when Mixxx's library is not found by itself (mixxxdb.sqlite)."""
+        path, _ = QFileDialog.getOpenFileName(self, 'Link Mixxx library', self.settings.get('Mixxx library', ''),
+                                              'Mixxx library (mixxxdb.sqlite);;All files (*)')
+        if not path:
+            return
+        library = MixxxLibrary(path)
+        library._load()
+        if library.error:
+            QMessageBox.warning(self, 'Cannot read the Mixxx library', library.error)
+            return
+        self._link_program(MIXXX, 'Mixxx library', path, library, self.mixxx_watcher)
+        self.status_label.setText(f'Linked the Mixxx library: {library.track_count} tracks')
+
+    def _link_program(self, program, setting, path, library, watcher):
+        self.settings[setting] = path
+        if program == TRAKTOR:
+            self.importer.collection = library
+        else:
+            self.importer.mixxx = library
+        self.importer.primary = self._primary_program()  # automatic: may now be this program
+        self._update_primary_menu()
+        watcher.set_path(path)  # its changed values come in with the next sync
+        self.table = enrich_ratings(self.table, *self.importer.libraries())
         self._save_library()
         self.populate_tree()
-        self.status_label.setText(f'Linked {len(importer.collection.by_path)} Traktor tracks')
+        if program == MIXXX:
+            self.refresh_mixxx_playlists()
+        else:
+            self.refresh_traktor_playlists()
         self.status_bar.showMessage(path)
 
     def choose_rekordbox_library(self):
@@ -2644,12 +2790,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if cancelled:
             message += f' (cancelled; {len(paths) - len(records) - len(failures)} not imported)'
         if missing:
-            message += f'; {missing} need key/BPM analysis in Traktor'
+            message += f'; {missing} need key/BPM analysis in {NAMES[self.importer.primary]}'
         if failures:
             message += f'; {len(failures)} file(s) skipped'
         self.status_label.setStyleSheet(status_style('warning') if missing or failures else status_style('ok'))
         self.status_label.setText(message)
-        self.status_bar.showMessage(persistence_error or self.importer.collection.error or message)
+        self.status_bar.showMessage(persistence_error or self.importer.collection.error or self.importer.mixxx.error
+                                    or message)
         return list(records.values())
 
     @staticmethod

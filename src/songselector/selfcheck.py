@@ -240,6 +240,39 @@ def _check_rekordbox_reader():
     return 'ok'
 
 
+def _check_mixxx_reader():
+    """Writes a small library like Mixxx's mixxxdb.sqlite and reads a track (BPM, key, colour, rating) and a
+    playlist with the app's own reader, inside the frozen exe."""
+    import sqlite3
+    from contextlib import closing
+
+    from songselector.config import APP_DATA_DIR
+    from songselector.core.mixxx_library import MixxxLibrary
+    path=APP_DATA_DIR/'mixxx_check.sqlite'
+    path.unlink(missing_ok=True)
+    with closing(sqlite3.connect(str(path))) as connection, connection:
+        connection.executescript("""
+            CREATE TABLE track_locations (id INTEGER PRIMARY KEY, location, filename, filesize);
+            CREATE TABLE library (id INTEGER PRIMARY KEY, artist, title, album, genre, comment, location, bpm, key,
+                key_id, rating, color, mixxx_deleted);
+            CREATE TABLE Playlists (id INTEGER PRIMARY KEY, name, position, hidden);
+            CREATE TABLE PlaylistTracks (id INTEGER PRIMARY KEY, playlist_id, track_id, position);
+            CREATE TABLE crates (id INTEGER PRIMARY KEY, name);
+            CREATE TABLE crate_tracks (crate_id, track_id);
+            INSERT INTO track_locations VALUES (1, 'E:/DJ/a.mp3', 'a.mp3', 1000);
+            INSERT INTO library VALUES (1, 'A', 'T', '', '', '', 1, 131.5, 'Abm', 21, 4, 16746496, 0);
+            INSERT INTO Playlists VALUES (1, 'Set', 1, 0);
+            INSERT INTO PlaylistTracks VALUES (1, 1, 1, 1);""")
+    library=MixxxLibrary(str(path))
+    library._load()
+    assert not library.error,library.error
+    record=library.find(r'E:\DJ\a.mp3')
+    assert (record['bpm'],record['key'],record['color'],record['rating'])==(131.5,('G#','minor'),'#FF8800',4),record
+    assert library.playlists==[{'type':'PLAYLIST','name':'Set','tracks':[r'E:\DJ\a.mp3']}],library.playlists
+    path.unlink()
+    return 'ok'
+
+
 def run():
     result_path=Path(os.environ['SONGSELECTOR_VERIFY_RESULT']).resolve()
     result={}
@@ -429,6 +462,7 @@ def run():
         assert restored.delete_duplicate_tracks()==0
         restored.close()
         rekordbox=_check_rekordbox_reader()
+        mixxx=_check_mixxx_reader()
         splash=_check_splash()
         text_search=_check_text_search()
         clap=_check_clap_models()
@@ -442,7 +476,7 @@ def run():
                 'ratings_visible_and_searchable':True,
                 'named_color_search':True,'color_swatch_menu':True,'multiple_colors_and_exclusions':True,'complex_search_color_names':True,
                 'library_and_playlist_restored':True,'library_rows':library_rows,'playlist_rows':playlist_rows,
-                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'aac_decoding':aac,'embedding_process':embedding,'splash':splash,'text_search':text_search,'clap_models':clap,'model_download':download}
+                'delete_duplicates_menu':True,'rekordbox_reader':rekordbox,'mixxx_reader':mixxx,'aac_decoding':aac,'embedding_process':embedding,'splash':splash,'text_search':text_search,'clap_models':clap,'model_download':download}
     except BaseException as error:
         import traceback
         result={'ok':False,'error':repr(error),'traceback':traceback.format_exc()}

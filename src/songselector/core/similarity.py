@@ -144,14 +144,13 @@ EDGE_SAME_RATING = 'same_rating'
 
 
 def display_color(fields):
-    """Colour number of a dot: the Song Selector colour first, then Traktor's; 0 = none."""
+    """Colour of a dot: the Song Selector colour first, then the DJ program's / the tags'. A family number or a
+    program's exact '#RRGGBB' (core/track_colors.py); 0 = none. Equal values mean "same colour" on the map."""
+    from songselector.core.track_colors import normalize
     for name in ('Color - Song Selector', 'Color'):
-        try:
-            number = int(float(fields.get(name) or 0))
-        except ValueError:
-            number = 0
-        if number:
-            return number
+        colour = normalize(fields.get(name))
+        if colour:
+            return colour
     return 0
 
 

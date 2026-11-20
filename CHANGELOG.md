@@ -10,6 +10,20 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **Mixxx support.** The app reads Mixxx's library (`mixxxdb.sqlite`) directly, like Traktor's collection: it is
+  found by itself (Linux `~/.mixxx`, Flatpak, Windows `%LOCALAPPDATA%\Mixxx`, macOS), or linked with *Import ->
+  Link Mixxx library...*. Mixxx may stay open; nothing is written to it.
+  - Imports take BPM, key, rating and colour from Mixxx when the file's tags do not have them; changes made in
+    Mixxx come in after Mixxx saves (as Traktor's do).
+  - Mixxx's playlists, crates and history appear in the Browser under *Mixxx Playlists*.
+  - **Exact colours:** a Mixxx colour is shown as Mixxx shows it (all 19 of its palette, or any custom colour).
+    `color:` searches and filters find it by its family: `color:orange` finds Mixxx's #FF8800. New families
+    *cyan* (alias *aqua*) and *grey*.
+- **Primary DJ program** (*Import -> Primary DJ program*): when Traktor and Mixxx both know a track, the primary
+  program's key, BPM, colour and rating win; the other only fills what is empty. A track the primary program does
+  not have follows the other program. Automatic: the first program found (Traktor, then Mixxx).
+- A DJ program without a colour for a track no longer clears the colour read from the file's tags at the first
+  sync.
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
 

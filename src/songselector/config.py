@@ -23,8 +23,20 @@ COLOR_MAPPING_CATEGORY = {
     6: QColor(75, 0, 130),     # Indigo
     7: QColor(128, 0, 128),    # Violet/Magenta
     8: QColor(255, 192, 203),  # Pink
-    9: QColor(165, 42, 42)     # Brown
+    9: QColor(165, 42, 42),    # Brown
+    10: QColor(0, 200, 200),   # Cyan (Mixxx / Rekordbox aqua)
+    11: QColor(136, 136, 136), # Grey
 }
+
+
+def track_qcolor(value):
+    """QColor of a stored track colour: the exact '#RRGGBB' of a DJ program, else the family's colour;
+    None for no colour (core/track_colors.py)."""
+    from songselector.core.track_colors import normalize
+    colour = normalize(value)
+    if isinstance(colour, str):
+        return QColor(colour)
+    return COLOR_MAPPING_CATEGORY.get(colour) if colour is not None else None
 
 OPEN_KEY_COLOR_MAPPING = {
     "1d": QColor(198, 106, 207),   # Purple
