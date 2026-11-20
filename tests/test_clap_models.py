@@ -340,6 +340,36 @@ class MainWindowModelTests(WindowCase):
         self.assertIs(window.similarity_map.store, window.model_stores[LAION_CLAP.id])
         self.assertEqual(window.settings['Similarity model'], LAION_CLAP.id)
 
+    def test_one_model_box_drives_the_map_and_the_description_search(self):
+        # Asked 2026-11-20: the model is chosen next to "Describe a sound" and the similarity map follows it (the map's
+        # own Model box is gone). CNN14 is listed too; it has no text side, so the description field then says so.
+        from songselector.ui.main_window import DESCRIPTION_HINT
+        window = self.window
+        models = self.root / 'models'
+        models.mkdir()
+        for name in LAION_CLAP.files():
+            (models / name).write_bytes(b'x')
+        window._refresh_model_box()  # as after a download
+        box = window.model_box
+        self.assertEqual(box.currentData(), CNN14.id)  # the similarity model, as before
+        self.assertNotEqual(box.findData(LAION_CLAP.id), -1)
+        self.assertEqual(box.findData(MS_CLAP.id), -1)  # no files: not offered
+        self.assertFalse(window.description_box.isEnabled())
+        self.assertIn('CNN14 cannot search by description', window.description_box.lineEdit().placeholderText())
+
+        with patch.object(window, 'start_embedding_analysis'):  # the stand-in files are not real models
+            box.activated.emit(box.findData(LAION_CLAP.id))
+        self.assertIs(window.similarity_map.store, window.model_stores[LAION_CLAP.id])
+        self.assertEqual(window.settings['Similarity model'], LAION_CLAP.id)
+        self.assertEqual(window.settings['Text search model'], LAION_CLAP.id)
+        self.assertTrue(window.description_box.isEnabled())
+        self.assertEqual(window.description_box.lineEdit().placeholderText(), DESCRIPTION_HINT)
+
+        with patch.object(window, 'start_embedding_analysis'):
+            window.set_similarity_model(CNN14.id)  # Analysis -> Similarity model: the box follows
+        self.assertEqual(box.currentData(), CNN14.id)
+        self.assertEqual(window.settings['Text search model'], LAION_CLAP.id)  # the last CLAP model is kept
+
     def test_store_coverage_counts_analysed_and_failed_tracks(self):
         store = EmbeddingStore(self.root / 'coverage.sqlite', spec=LAION_CLAP)
         store.save('a', (1, 1), np.zeros((2, LAION_CLAP.dim), dtype=np.float32))

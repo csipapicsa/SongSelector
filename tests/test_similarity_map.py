@@ -261,22 +261,18 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertEqual(self.window.playlist_tree.topLevelItem(0).text(1), 'breaks 5')
         self.assertTrue(dot.isVisible())  # playlist tracks stay in the library view (dimmed in the list)
 
-    def test_one_toolbar_by_task_with_the_model_box(self):
+    def test_one_toolbar_by_task(self):
         # UI review 2026-11-20: one toolbar (what is mapped -> colours -> view) that folds into its >> menu
-        # instead of forcing a width (the two rows before made the map at least ~1,700 px wide).
-        from songselector.core.embedding_models import LAION_CLAP
+        # instead of forcing a width (the two rows before made the map at least ~1,700 px wide). Later that day the
+        # user moved the model choice to the main window (next to "Describe a sound") and dropped "Own window".
         self.assertLess(self.map.minimumSizeHint().width(), 900)
         toolbar_widgets = [self.map.toolbar.widgetForAction(action) for action in self.map.toolbar.actions()]
-        order = [self.map.model_box, self.map.only_button, self.map.grouping, self.map.edges_button,
-                 self.map.view_3d_button, self.map.detach_button]
+        order = [self.map.only_button, self.map.grouping, self.map.edges_button, self.map.view_3d_button,
+                 self.map.rearrange_button]
         self.assertEqual([widget for widget in toolbar_widgets if widget in order], order)
         self.assertNotIn(self.map.match_filter, toolbar_widgets)  # it sits with the closest matches it filters
-        self.assertEqual(self.map.model_box.currentText(), 'CNN14')  # the model the map uses
-        requested = []
-        self.map.model_requested.connect(requested.append)
-        self.map.model_box.activated.emit(self.map.model_box.findData(LAION_CLAP.id))
-        self.assertEqual(requested, [LAION_CLAP.id])
-        self.assertEqual(self.window.settings['Similarity model'], LAION_CLAP.id)  # same as Analysis -> Similarity model
+        self.assertNotIn(self.map.detach_button, toolbar_widgets)
+        self.assertFalse(hasattr(self.map, 'model_box'))
         self.assertNotIn('Scroll: zoom', self.map.status.text())  # the how-to is behind the ? button
         self.assertIn('Scroll: zoom', self.map.help_button.toolTip())
 
@@ -391,6 +387,26 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertIsNone(self.map.preview_key)
         self.assertFalse(self.map.preview_card.isVisible())
         self.assertEqual(self.map.selected_key, self.key(0))  # the selection stays
+
+    def test_the_map_can_be_dragged_anywhere_and_fit_brings_it_back(self):
+        # Reported 2026-11-20: the map could hardly be moved (a view scrolls only within its scene rect, which was
+        # the dots plus 5 %), so a hover card at the edge stayed cut off. Dragging stands in for the scroll bars.
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+        self.map.fit()
+        view = self.map.view
+        dots = self.map._dots_rect()
+        shown = lambda: view.mapToScene(view.viewport().rect()).boundingRect()  # noqa: E731
+        self.assertTrue(shown().intersects(dots))
+        for bar in (view.horizontalScrollBar(), view.verticalScrollBar()):
+            bar.setValue(bar.maximum())  # as far right and down as a drag goes
+        self.assertFalse(shown().intersects(dots))  # the dots can leave the view entirely
+        view.scale(0.5, 0.5)  # zoomed out, it still moves
+        bar = view.horizontalScrollBar()
+        self.assertGreater(bar.maximum() - bar.minimum(), 0)
+        self.map.fit()
+        self.assertTrue(shown().contains(dots.center()))
 
     def test_label_and_cards_never_overlap(self):
         # Asked 2026-11-17. Zoomed far out, the selected, compared and hovered dots lie on nearly the same pixel:
@@ -704,7 +720,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.wait_for_map()
         with patch.object(similarity_map, 'build_map_data', wraps=similarity_map.build_map_data) as build:
             self.window.filter_items()                 # filtered again: same rows
-            self.window.update_tree_after_slider()     # the tempo moved: same rows, new texts
+            self.window.apply_tempo()     # the tempo moved: same rows, new texts
             self.wait_for_map()
         build.assert_not_called()
 
@@ -915,7 +931,8 @@ class MapWindowTests(MapWindowTestBase):
         self.window.set_map_detached(True)
         self.application.processEvents()
         self.assertEqual(self.window.map_window.size().width(), width)
-        # Closing the app with the map detached: it opens detached next time.
+        # Closing the app with the map detached: since 2026-11-20 (no "Own window" button any more) it opens docked
+        # next time, as there would be no button to bring it back.
         self.window.close()
         self.application.processEvents()
         self.assertTrue(self.window.settings['Map detached'])
@@ -923,7 +940,8 @@ class MapWindowTests(MapWindowTestBase):
         restarted = MainWindow()
         try:
             self.application.processEvents()
-            self.assertIsNotNone(restarted.map_window)
+            self.assertIsNone(restarted.map_window)
+            self.assertFalse(restarted.settings['Map detached'])
         finally:
             restarted.close()
             self.application.processEvents()

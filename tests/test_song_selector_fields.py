@@ -331,7 +331,7 @@ class SongSelectorGuiTests(GuiTestBase):
         window.text_search_engine = type('Engine', (), {'search': lambda _self, *args: searches.append(args),
                                                         'stop': lambda _self: None})()
         window.description_box.setEditText('dark rolling')
-        with patch.object(window.description_model, 'currentData', return_value=LAION_CLAP.id):
+        with patch.object(window.model_box, 'currentData', return_value=LAION_CLAP.id):
             window.describe()
         self.assertEqual(searches, [(LAION_CLAP.id, 'dark rolling')])
         self.assertEqual(spinner.reasons(), ['Searching by description'])

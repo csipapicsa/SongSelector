@@ -12,15 +12,23 @@ from that period still mention 4.x numbers.
 
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
-- **Similarity map: one tidy toolbar.** The controls are in one row, ordered by task: *Model* (new: choose the
-  model the map uses right there, the same as *Analysis → Similarity model*), *Map the List only*, *Groups*,
+- **A compact top: two rows instead of five.** *Master tempo* is a box at the start of the search row: the arrows or
+  the mouse wheel move it 1 BPM, or type a number and press Enter (the slider row is gone). Gone too: *Refresh*,
+  *Load CSV*, *Show all tracks* (Browser → *All Tracks* does it) and *Add Selected to Playlist* (now in the List's
+  right-click menu as *Add to Playlist*; dragging works as before).
+- **One Model box for the search and the map.** The *Model* box next to *Describe a sound* now also sets the model
+  of the similarity map, its closest matches and groups (the same as *Analysis → Similarity model*). It lists every
+  model whose files are there; CNN14 has no text side, so with CNN14 the description field says to pick a CLAP
+  model.
+- **The map moves freely.** Drag it anywhere, even fully out of view (until now it could hardly move, and not at all
+  once zoomed out, so a hover card at the edge stayed cut off); *Fit* brings it back. No scroll bars any more.
+- **Similarity map: one tidy toolbar.** The controls are in one row, ordered by task: *Map the List only*, *Groups*,
   *Edges* (now one menu with every edge setting: relations, how many partners, between all tracks, curved), then
-  *3D*, *Fit*, *Re-arrange map*, *Own window*. What does not fit folds into a » menu, so the map no longer forces
-  the window to ~1,700 px. The closest-matches filter moved next to the list it filters ("List the 50 closest | of
-  all tracks"); the how-to text moved behind a **?** at the end of the status line.
-- **The map's own window has its own search bar.** With text in it, the map shows the tracks that match it (out of
-  the List's source: All Tracks or a playlist), and the main search bar filters only the List; empty, the map
-  follows the List as before. `color:` works there too.
+  *3D*, *Fit*, *Re-arrange map*. What does not fit folds into a » menu, so the map no longer forces the window to
+  ~1,700 px. The closest-matches filter moved next to the list it filters ("List the 50 closest | of all tracks");
+  the how-to text moved behind a **?** at the end of the status line.
+- **The map has no own window any more.** *Own window* (1.2.0) is gone; a map left in its own window opens in its
+  tab again.
 - **Map info boxes stay narrow.** The hover card, the compared track's card and the selected track's label wrap
   their text at 360 px (*View → Map hover details…*, from 200 px), so a long file name no longer makes a box as wide
   as the map and hides the dots under it; words without spaces break where needed. Short text keeps its own width.

@@ -22,6 +22,8 @@ CHANGELOG when they ship.
 3. **Linux release** (plan of 2026-11-20 in the worklog): Linux in the CI test matrix first (`os.startfile` ->
    `QDesktopServices`, environment markers for `onnxruntime` vs `onnxruntime-directml`), then a release matrix
    (Windows + Linux on `ubuntu-22.04` for an older glibc) with an AppImage, verified with `xvfb-run`.
+4. **Idea, to discuss later (user, 2026-11-20; "not now"):** single-key shortcuts while the app is active, e.g.
+   *F* fits the map. Needs a plan for keys typed into text fields (search, description, tempo box).
 
 ## Release 1.2.0 (planned 2026-11-17)
 
