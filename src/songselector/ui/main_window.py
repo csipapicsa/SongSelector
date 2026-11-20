@@ -30,6 +30,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -99,17 +100,20 @@ from songselector.ui.duplicates_dialog import DuplicatesDialog
 from songselector.ui.elided_label import ElidedLabel
 from songselector.ui.embedding_worker import EmbeddingAnalyzer
 from songselector.ui.list_browser import DESCRIPTION, ORDERED_KINDS, ListBrowser, node_label
-from songselector.ui.map_settings_dialog import HoverFieldsDialog
+from songselector.ui.map_settings_dialog import MapDetailsDialog
 from songselector.ui.map_window import MapPlaceholder, MapWindow
 from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.model_download_dialog import ModelDownloadDialog
 from songselector.ui.music_paths_dialog import MusicPathsDialog
 from songselector.ui.saved_lists import SavedListsMixin, match_text
 from songselector.ui.similarity_map import (
-    DEFAULT_HOVER_FIELDS,
+    DETAIL_PLACES,
+    MAP_ITEMS,
     MAX_INFO_WIDTH,
     MIN_INFO_WIDTH,
+    NOT_APPLICABLE,
     SimilarityMapWidget,
+    detail_items,
     group_colour,
 )
 from songselector.ui.text_search_dialog import TextSearchDialog
@@ -346,6 +350,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.map_window = None
         self.map_placeholder = MapPlaceholder(self.show_map, lambda: self.set_map_detached(False))
         self.similarity_map.detach_requested.connect(self.set_map_detached)
+        self.similarity_map.details_shown_changed.connect(self.map_details_action.setChecked)
+        self.similarity_map.details_dialog_requested.connect(self.choose_map_details)
 
         # Cover art (View -> Cover art): thumbnails loaded in the background, only for rows that are painted.
         self.covers = CoverProvider(Path(SETTINGS_FILE).parent / 'covers', self)
@@ -527,8 +533,15 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.search_bar.setToolTip("Filter Traktor category dots: color:blue, color:red,orange, color:none, or -color:blue.\nCombine with text; Colors lets you choose several swatches. Color filters work regardless of Search Columns.")
         self.search_bar.textChanged.connect(self.filter_items)
         search_layout.addWidget(self.search_bar)
-        right_layout.addLayout(search_layout)
-        right_layout.addLayout(self._build_description_bar())
+        # The two search rows can be folded away (asked 2026-11-20: "like the Playlist/Browser tab on the left"):
+        # they sit above the List in a splitter of their own (see search_splitter below).
+        self.search_panel = QWidget()
+        search_panel_layout = QVBoxLayout(self.search_panel)
+        search_panel_layout.setContentsMargins(0, 0, 0, 0)
+        search_panel_layout.addLayout(search_layout)
+        search_panel_layout.addLayout(self._build_description_bar())
+        # Fixed height: the splitter shows the rows whole or not at all, and never stretches them apart.
+        self.search_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         # -----------------
         # DROPDOWN FOR SEARCH BAR
@@ -643,7 +656,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
         source_layout.addWidget(self.source_label, 1)
         # No "Show all tracks" button since 2026-11-20 (user's request): Browser -> All Tracks does the same.
         self.source_bar.hide()
-        right_layout.addWidget(self.source_bar)
+        list_part = QWidget()
+        list_layout = QVBoxLayout(list_part)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.source_bar)
 
         # Add tree to right layout
         self.library_tabs = QTabWidget()
@@ -664,7 +680,18 @@ class MainWindow(SavedListsMixin, QMainWindow):
         corner_layout.addSpacing(12)
         corner_layout.addWidget(self.list_count_label)
         self.library_tabs.setCornerWidget(corner, Qt.TopRightCorner)
-        right_layout.addWidget(self.library_tabs)
+        list_layout.addWidget(self.library_tabs)
+        # Search rows above, the List and the map below. Dragging the line between them up (or View -> Search bars)
+        # folds the rows away, as dragging the line on the left folds the Playlist and Browser.
+        self.search_splitter = QSplitter(Qt.Vertical)
+        self.search_splitter.addWidget(self.search_panel)
+        self.search_splitter.addWidget(list_part)
+        self.search_splitter.setStretchFactor(1, 1)
+        self.search_splitter.setCollapsible(1, False)
+        if not self.search_bars_shown():
+            self.search_splitter.setSizes([0, 1])
+        self.search_splitter.splitterMoved.connect(self._search_splitter_moved)
+        right_layout.addWidget(self.search_splitter)
         # Hovering a drag over a tab opens it (e.g. a playlist from the Browser to the Playlist tab)
         for tabs in (self.left_tabs, self.library_tabs):
             tabs.tabBar().setChangeCurrentOnDrag(True)
@@ -1473,6 +1500,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.hide_playlist_action.setChecked(self.settings.get('Hide playlist tracks', False))
         self.hide_playlist_action.setToolTip('Off: tracks on the playlist stay in the library list, dimmed.')
         self.hide_playlist_action.toggled.connect(self.set_hide_playlist_tracks)
+        self.search_bars_action = menu.addAction('Search bars')
+        self.search_bars_action.setCheckable(True)
+        self.search_bars_action.setChecked(self.search_bars_shown())
+        self.search_bars_action.setToolTip('The Master tempo, Search and Describe a sound rows above the List. Off '
+                                           'gives the List and the map their room;\ndragging the line under the rows '
+                                           'up or down does the same.')
+        self.search_bars_action.toggled.connect(self.set_search_bars_shown)
         menu.addSeparator()
         list_view = menu.addAction('Library list')
         list_view.setShortcut('Ctrl+1')
@@ -1480,7 +1514,14 @@ class MainWindow(SavedListsMixin, QMainWindow):
         map_view = menu.addAction('Similarity map')
         map_view.setShortcut('Ctrl+2')
         map_view.triggered.connect(self.show_map)
-        menu.addAction('Map hover details...').triggered.connect(self.choose_hover_fields)
+        menu.addAction('Map track details...').triggered.connect(self.choose_map_details)
+        # The map is made after this menu: it reads the same setting, and its signal keeps this tick in step.
+        self.map_details_action = menu.addAction('Selected track details')
+        self.map_details_action.setCheckable(True)
+        self.map_details_action.setChecked(bool(self.settings.get('Map details panel', True)))
+        self.map_details_action.setToolTip('The selected track\'s details above the closest matches, beside the '
+                                           'similarity map (also: right-click there).')
+        self.map_details_action.toggled.connect(lambda shown: self.similarity_map.set_details_shown(shown))
 
     # -- similarity map -----------------------------------------------------
 
@@ -1625,11 +1666,20 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._select_in_list(key)
         self.track_context_menu(self.candidate_tree).exec_(position)
 
-    def choose_hover_fields(self):
-        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), FIELD_LABELS,
-                                   self.similarity_map.info_width(), MIN_INFO_WIDTH, MAX_INFO_WIDTH, parent=self)
+    def map_details_dialog(self):
+        """View -> Map track details...: what the map's cards, the selected track's label and the details panel
+        show (the map's own items and the List's columns), and how wide the boxes get."""
+        sections = [('On the map', MAP_ITEMS),
+                    ('Columns of the List', {name: f'The List\'s {name} column' for name in FIELD_LABELS})]
+        chosen = {place: detail_items(self.settings, place) for place in DETAIL_PLACES}
+        return MapDetailsDialog(chosen, DETAIL_PLACES, sections, NOT_APPLICABLE, self.similarity_map.info_width(),
+                                MIN_INFO_WIDTH, MAX_INFO_WIDTH, parent=self)
+
+    def choose_map_details(self):
+        dialog = self.map_details_dialog()
         if dialog.exec_() == QDialog.Accepted:
-            self.settings['Map hover fields'] = dialog.selected()
+            self.settings['Map details'] = dialog.selected()
+            self.settings.pop('Map hover fields', None)  # replaced by 'Map details' (its card and panel lists)
             self.settings['Map info width'] = dialog.info_width()
             self._refresh_map()
 
@@ -1640,6 +1690,29 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def set_hide_playlist_tracks(self, hide):
         self.settings['Hide playlist tracks'] = hide
         self.filter_items()
+
+    def search_bars_shown(self):
+        """The search rows above the List are on (setting `Show search bars`)."""
+        return bool(self.settings.get('Show search bars', True))
+
+    def set_search_bars_shown(self, shown):
+        """View -> Search bars: fold the search rows away (the List and the map get their room) or bring them back.
+        Searches and filters that are set stay in force while the rows are hidden."""
+        shown = bool(shown)
+        self.settings['Show search bars'] = shown
+        total = sum(self.search_splitter.sizes())
+        top = self.search_panel.sizeHint().height() if shown else 0
+        self.search_splitter.setSizes([top, max(total - top, 1)])
+        if self.search_bars_action.isChecked() != shown:
+            self.search_bars_action.setChecked(shown)
+
+    def _search_splitter_moved(self, _position=0, _index=0):
+        """The line under the search rows was dragged: folded away or back; the View menu's tick follows."""
+        shown = self.search_splitter.sizes()[0] > 0
+        self.settings['Show search bars'] = shown
+        self.search_bars_action.blockSignals(True)  # the drag already set the sizes
+        self.search_bars_action.setChecked(shown)
+        self.search_bars_action.blockSignals(False)
 
     def _show_advanced_search_state(self):
         """'Advanced Search (2 active)', highlighted, with the filters in the tooltip."""

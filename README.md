@@ -139,7 +139,10 @@ filtered now, so narrow the List first to explore one style.
 
 | Action | Result |
 |---|---|
-| Hover / click a dot | Details; a click also lists its 15 most similar tracks (cyan rings) |
+| Hover / click a dot | Details; a click also lists its 15 most similar tracks (cyan rings). What the hover card, the selected track's label and the details panel show: *View → Map track details…* |
+| Right-click beside the map | Show or hide the selected track's details above the closest matches (also *View → Selected track details*) |
+| Shift+right-drag (2D) | Turn the map left or right about the middle of the view |
+| Shift+drag (3D) | Rotate the 3D view |
 | Double-click in the matches list | Select that track and show its own matches |
 | Drag a dot or a match | The files, e.g. onto a Traktor deck or playlist |
 | Drop a track on the map | Select it and show its closest matches |
@@ -154,7 +157,11 @@ filtered now, so narrow the List first to explore one style.
 | *Map the List only* | Map and group just the tracks the List shows; follows the List as it changes |
 | *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
 
+The map's buttons (*Map the List only*, *Groups*, *Edges*, *3D*, *Fit*, *Re-arrange map*) are below the map.
 Distances on a 2D map are approximate; the closest-matches list uses the full embeddings.
+
+*View → Search bars* (or dragging the line under them up, as the Playlist and Browser fold away on the left)
+hides the *Master tempo*, *Search* and *Describe a sound* rows above the List; a search set before stays in force.
 
 ### Search by description and choosing models
 

@@ -41,11 +41,24 @@ from that period still mention 4.x numbers.
 - **The map has no own window any more.** *Own window* (1.2.0) is gone; a map left in its own window opens in its
   tab again.
 - **Map info boxes stay narrow.** The hover card, the compared track's card and the selected track's label wrap
-  their text at 360 px (*View → Map hover details…*, from 200 px), so a long file name no longer makes a box as wide
+  their text at 360 px (*View → Map track details…*, from 200 px), so a long file name no longer makes a box as wide
   as the map and hides the dots under it; words without spaces break where needed. Short text keeps its own width.
 - **Time left of the embedding analysis.** The progress line says how long the analysis will still take
   ("Embeddings (CNN14+LAION CLAP, CPU): 5/200, about 39 min left - track.mp3"), from the speed of the last few
   minutes, once a few tracks have been analysed.
+- **Turn the 2D map.** Shift+right-drag turns the similarity map left or right about the middle of the view; the
+  angle is kept. Shift+drag still rotates the 3D view.
+- **Choose every detail the map shows, and where.** *View → Map track details…* (was *Map hover details…*) is a grid
+  with a column each for the hover card, the selected track's label and the details panel: the cover, *Artist -
+  Title*, the key at master tempo and BPM, the mix and similarity to the selected track (cards), the group, and
+  every List column can be switched on or off in each. Before, only the columns could be chosen (for the card and
+  the panel together) and the rest was always shown. Columns chosen before carry over.
+- **Hide the selected track's details beside the map.** Right-click anywhere beside the map, or *View → Selected
+  track details*, shows or hides the details above the closest matches; the list gets their room.
+- **The map's buttons are below the map**, so the map starts right under the tabs.
+- **Fold the search rows away.** *View → Search bars*, or dragging the line under them up (as the Playlist and
+  Browser fold away on the left), hides *Master tempo*, *Search* and *Describe a sound*; a search set before stays
+  in force.
 
 ## [1.2.0] - 2026-11-17
 
