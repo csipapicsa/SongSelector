@@ -56,6 +56,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
 | `text_search.py` | Free-text search: `tokenize`, `TextEncoder` (CLAP text side, onnxruntime), `rank`, `run_text_encoder` (entry point of the text search process). Must not import Qt |
+| `eta.py` | `Eta`: time left of the embedding analysis from its progress counts, over a sliding 5-minute window; `format_left` ("about 3 h 25 min left"). No Qt |
 | `data_manager.py` | Loads a library CSV picked by the user (*Load CSV*) into a pandas DataFrame; `load_default_data` is the empty starting library |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
@@ -76,10 +77,10 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
 | `busy_spinner.py` | `BusySpinner`: small turning arc while any of its reasons is on (`set_busy(reason, on)`); hidden, timer stopped when idle. In the status bar (saving, description search; analysis) and the map (arranging, grouping) |
 | `duplicates_dialog.py` | Preview of a duplicate search: per group the row that stays (bold) and the rows to remove (checkable) |
-| `map_window.py` | `MapWindow`: the map widget in a top-level window of its own (geometry in the settings); `MapPlaceholder` in the map's tab meanwhile. `MainWindow.set_map_detached` moves the widget |
+| `map_window.py` | `MapWindow`: the map widget in a top-level window of its own (geometry in the settings) with its own search bar: with text, it decides the map's tracks instead of the main search bar (`MainWindow._refresh_map`, matching shared via `_row_matcher`); `MapPlaceholder` in the map's tab meanwhile. `MainWindow.set_map_detached` moves the widget |
 | `covers.py` | `CoverProvider`: cover thumbnails (128 px) loaded by a worker thread with QImage and cached on disk (`covers/`, plus "no cover" markers), requested by painting; `CoverDelegate` paints the Cover column (cropped or square rows) |
 | `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
-| `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
+| `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread. One `QToolBar` ordered by task (Model, Map the List only, Groups, Edges menu, view buttons) that folds into `>>`; info boxes wrap at `Map info width` |
 | `map_settings_dialog.py` | Choose the map's hover details |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
 | `text_search_worker.py`, `text_search_dialog.py` | The text search process (started on the first query) and the *Search by description* window |
