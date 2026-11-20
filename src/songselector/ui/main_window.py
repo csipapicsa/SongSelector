@@ -671,6 +671,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.source_label = ElidedLabel('')  # a long prompt or playlist name must not widen the window
         self.source_label.setStyleSheet(status_style('warning', bold=True))
         source_layout.addWidget(self.source_label, 1)
+        # Another program's playlist with tracks the library does not have yet: one click brings them in.
+        self.source_import_button = QPushButton('Import missing tracks')
+        self.source_import_button.setToolTip('Adds the files of this playlist that are not in the library yet (those '
+                                             'that exist on disk). Also in the Browser: right-click the playlist.')
+        self.source_import_button.hide()
+        source_layout.addWidget(self.source_import_button)
         self.source_clear_button = QPushButton('Show all tracks')
         source_layout.addWidget(self.source_clear_button)
         self.source_bar.hide()
