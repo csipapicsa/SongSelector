@@ -10,6 +10,13 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **The model download works again.** *Analysis → Get models…* → *Download* fetches CNN14 and both CLAP models
+  (resumable, checksum-checked) from Hugging Face, one repo per model, each with a model card naming the source,
+  the changes and the licence: [`songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14),
+  [`songselector-clap-laion`](https://huggingface.co/csipapicsa/songselector-clap-laion),
+  [`songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms). The app downloads from a fixed
+  commit of each, so what a version gets never changes. In 1.2.0 the window could only explain how to build them.
+  `scripts/publish_models.py` (replaces `publish_models.ps1`) checks and uploads a new export.
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
 - **Similarity map: one tidy toolbar.** The controls are in one row, ordered by task: *Model* (new: choose the

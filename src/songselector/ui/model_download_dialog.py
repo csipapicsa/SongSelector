@@ -1,5 +1,5 @@
-"""Analysis -> Get models: which model files are installed; how to get the missing ones (built locally with the
-export scripts, or downloaded from a server set in the settings, core/model_download.py)."""
+"""Analysis -> Get models: which model files are installed; downloads the missing ones (core/model_download.py),
+from Hugging Face or from the `Model download URL` set in the settings."""
 import threading
 import time
 from pathlib import Path
@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 from songselector.core import model_download
-from songselector.core.model_download import BASE_URL, BUILD_HELP, FILES, LICENCES
+from songselector.core.model_download import BUILD_HELP, FILES, LICENCES
 
 
 class _Events(QObject):
@@ -27,9 +27,10 @@ class _Events(QObject):
 class ModelDownloadDialog(QDialog):
     downloaded = pyqtSignal(list)   # ids of models that became complete
 
-    def __init__(self, models, folder, base_url=BASE_URL, files=FILES, parent=None):
+    def __init__(self, models, folder, base_url='', files=FILES, parent=None):
+        """base_url: a web folder serving the files under their names; empty for the Hugging Face repos."""
         super().__init__(parent)
-        self.setWindowTitle('Get models' if not base_url else 'Download models')
+        self.setWindowTitle('Get models')
         self.setAttribute(Qt.WA_QuitOnClose, False)  # never keeps the app running after the main window closes
         self.models, self.folder, self.base_url, self.files = models, folder, base_url, files
         self._stop = threading.Event()
@@ -42,12 +43,9 @@ class ModelDownloadDialog(QDialog):
         layout = QVBoxLayout(self)
         purpose = ('The models turn your tracks into embeddings (similarity map, closest matches, groups); the CLAP '
                    'models also enable <b>Search by description</b>. ')
-        if base_url:
-            text = purpose + f'They are downloaded once into<br><code>{folder}</code><br>and checked before use.'
-        else:  # no public model release: the files are built with the export scripts
-            text = (purpose + 'The model files are not distributed with the app. Build them with the export scripts '
-                    f'(<a href="{BUILD_HELP}">how</a>) or copy them from another installation into<br>'
-                    f'<code>{folder}</code><br>then switch them on under <i>Analysis -> Embedding models</i>.')
+        source = f'<code>{base_url}</code>' if base_url else 'Hugging Face'
+        text = (purpose + f'They are downloaded once from {source} into<br><code>{folder}</code><br>and checked '
+                f'before use. You can also build them yourself (<a href="{BUILD_HELP}">how</a>).')
         intro = QLabel(text)
         intro.setWordWrap(True)
         intro.setTextFormat(Qt.RichText)
@@ -58,10 +56,10 @@ class ModelDownloadDialog(QDialog):
             installed = model_download.installed(spec, folder, files)
             size = model_download.download_size(spec, files) / 1e6
             box = QCheckBox(f'{spec.name}: {size:,.0f} MB, {LICENCES.get(spec.id, "")}'
-                            + (' (installed)' if installed else '' if base_url else ' (missing)'))
+                            + (' (installed)' if installed else ''))
             box.setToolTip(spec.description)
-            box.setChecked(not installed and bool(base_url))
-            box.setEnabled(not installed and bool(base_url))
+            box.setChecked(not installed)
+            box.setEnabled(not installed)
             self.boxes[spec.id] = box
             layout.addWidget(box)
         self.bar = QProgressBar()
@@ -86,8 +84,6 @@ class ModelDownloadDialog(QDialog):
         buttons.addStretch(1)
         buttons.addWidget(self.download_button)
         buttons.addWidget(self.stop_button)
-        for widget in (self.download_button, self.stop_button, self.bar):
-            widget.setVisible(bool(base_url))  # nothing to download from
         buttons.addWidget(close)
         layout.addLayout(buttons)
         self._update_button()

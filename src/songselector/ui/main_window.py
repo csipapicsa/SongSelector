@@ -77,7 +77,6 @@ from songselector.core.eta import Eta, format_left
 from songselector.core.key_calculator import KeyCalculator
 from songselector.core.key_formats import parse_bpm, parse_key
 from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
-from songselector.core.model_download import BASE_URL
 from songselector.core.rekordbox_library import RekordboxLibrary, discover_library
 from songselector.core.rekordbox_library import signature as rekordbox_signature
 from songselector.core.search_filters import active_filters, matches_condition
@@ -1966,7 +1965,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self.model_download_dialog is None:
             self.model_download_dialog = ModelDownloadDialog(
                 list(MODELS.values()), self.models_folder(),
-                base_url=self.settings.get('Model download URL', '') or BASE_URL, parent=self)
+                base_url=self.settings.get('Model download URL', ''), parent=self)
             self.model_download_dialog.downloaded.connect(self._models_downloaded)
         self.model_download_dialog.show()
         self.model_download_dialog.raise_()

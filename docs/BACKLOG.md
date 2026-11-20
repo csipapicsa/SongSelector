@@ -11,14 +11,13 @@ CHANGELOG when they ship.
    a colour or rating changed in Mixxx arriving after Mixxx saves, *Import -> Primary DJ program*. Then mark the PR
    ready, merge main into it, check CI, merge.
 2. **Model files on Hugging Face** (decided 2026-11-20; *Get models* has no download source since 1.2.0):
-   - User: Hugging Face account, a *write* token, `pip install -U huggingface_hub` and `hf auth login` in their own
-     terminal (the token never goes into chat); say whether Microsoft CLAP is in the first upload.
-   - Then: one model repo per model (correct licence tag each: CC BY 4.0 / Apache 2.0 / MS-PL) with a model card
-     from `packaging/models/MODELS.md`; upload the files from `dist\models` (checked against `FILES`); point the app at
-     the pinned revisions (`core/model_download.py` needs a URL per model instead of one `BASE_URL`); rework the local,
-     unpushed branch `fix/model-download-release` (it points at a GitHub release instead); delete the leftover
-     **draft** GitHub release (one tokenizer asset, `untagged-...`, not public).
-   - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums).
+   - [x] Login, three repos with licence tags and model cards, files uploaded and checked, app pinned to the
+     commits, download tested against the private repos (branch `feature/models-on-hf`).
+   - Open: make the three repos public (user's go), the user's test in WSL (move `.appdata/models` aside, *Get
+     models* -> *Download*), PR + merge; delete the local branch `fix/model-download-release` (replaced) and the
+     leftover **draft** GitHub release (one tokenizer asset, `untagged-...`, not public).
+   - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums);
+     `scripts/publish_models.py` is the upload half of it.
 3. **Linux release** (plan of 2026-11-20 in the worklog): Linux in the CI test matrix first (`os.startfile` ->
    `QDesktopServices`, environment markers for `onnxruntime` vs `onnxruntime-directml`), then a release matrix
    (Windows + Linux on `ubuntu-22.04` for an older glibc) with an AppImage, verified with `xvfb-run`.
@@ -175,8 +174,9 @@ One PR per block below, in this order; each with tests (a failing test first for
       listening check ("do these 10 feel alike?") with the DJ.
 - [x] Track similarity from the embeddings (`core/similarity.py`, 4.11.0).
 - [x] GPU in the exe: DirectML since 4.9.0 (CUDA stays optional from source, requirements-gpu.txt).
-- [x] **Download the models from inside the app** (asked 2026-11-13, done in 1.1.0; the release `models-v1` is
-      published with `scripts/publish_models.ps1`; the manual CI workflow below is still open). Today every model has to be
+- [x] **Download the models from inside the app** (asked 2026-11-13, done in 1.1.0; the GitHub release planned
+      below was never published. Since 2026-11-20 the files are on Hugging Face, one repo per model, uploaded with
+      `scripts/publish_models.py`; the manual CI workflow below is still open). Today every model has to be
       built with an export script that needs PyTorch, so for anyone but the developer the app has no embeddings
       (CNN14's default path only exists on the development machine; the CLAP entries show "model files missing").
       Design:

@@ -1,6 +1,7 @@
 """Downloading the model files: resume, checksums, cancelling, the download window. Against a local HTTP server."""
 import hashlib
 import os
+import re
 import tempfile
 import threading
 import time
@@ -123,27 +124,38 @@ class DownloadTests(ServerCase):
                 self.assertIn(name, FILES)
         self.assertGreater(model_download.download_size(CNN14), 300e6)
 
+    def test_every_file_comes_from_its_models_hugging_face_repo_at_a_pinned_commit(self):
+        # A branch name like `main` would let a later push change what this app version downloads.
+        self.assertEqual(set(model_download.URLS), set(FILES))
+        pinned = re.compile(r'https://huggingface\.co/csipapicsa/songselector-[a-z0-9-]+/resolve/[0-9a-f]{40}/')
+        for name, address in model_download.URLS.items():
+            self.assertRegex(address, pinned)
+            self.assertTrue(address.endswith('/' + name))
+        self.assertIn('songselector-clap-ms/', model_download.url('clap-ms-text.onnx'))
+
+    def test_a_download_url_in_the_settings_replaces_hugging_face(self):
+        self.assertEqual(model_download.url('cnn14.onnx', 'https://example.org/models/'),
+                         'https://example.org/models/cnn14.onnx')
+
 
 class DownloadWindowTests(ServerCase):
     @classmethod
     def setUpClass(cls):
         cls.application = QApplication.instance() or QApplication([])
 
-    def test_without_a_download_source_the_window_explains_how_to_get_the_models(self):
-        # 2026-11-17: the model release never existed (the weights are not redistributed); the download got a 404.
-        from songselector.core.model_download import BASE_URL, BUILD_HELP
+    def test_by_default_the_window_offers_the_download_from_hugging_face(self):
+        # 2026-11-17 to 2026-11-20 there was no download source and the window only explained how to build them.
+        from songselector.core.model_download import BUILD_HELP
         from songselector.ui.model_download_dialog import ModelDownloadDialog
-        self.assertEqual(BASE_URL, '')
-        dialog = ModelDownloadDialog([LAION_CLAP], self.folder, '', FILES)
+        dialog = ModelDownloadDialog([LAION_CLAP], self.folder)
         try:
             self.assertEqual(dialog.windowTitle(), 'Get models')
-            self.assertTrue(dialog.download_button.isHidden())
-            self.assertFalse(dialog.boxes[LAION_CLAP.id].isEnabled())
-            self.assertIn('(missing)', dialog.boxes[LAION_CLAP.id].text())
+            self.assertFalse(dialog.download_button.isHidden())
+            self.assertTrue(dialog.download_button.isEnabled())
+            self.assertTrue(dialog.boxes[LAION_CLAP.id].isChecked())  # missing: checked by default
             intro = dialog.findChildren(type(dialog.status))[0].text()
-            self.assertIn('not distributed', intro)
-            self.assertIn(BUILD_HELP, intro)
-            self.assertFalse(dialog.folder_button.isHidden())
+            self.assertIn('Hugging Face', intro)
+            self.assertIn(BUILD_HELP, intro)  # building them yourself stays possible
         finally:
             dialog.close()
 

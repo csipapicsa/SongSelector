@@ -1,13 +1,13 @@
-"""Downloads the model files into the models folder, from a web folder that serves them under their names.
+"""Downloads the model files into the models folder.
 
-There is no public model release (decided 2026-11-17: the weights are not redistributed), so BASE_URL is empty and
-the app explains how to build the models instead (ui/model_download_dialog.py). A team that hosts the files can set
-`Model download URL` in the settings; the download then works as before.
+The files are the ONNX exports made by scripts/export_cnn14_onnx.py and scripts/export_clap_onnx.py. Each model has
+its own Hugging Face repo (since 2026-11-20) with a model card naming the source, the changes and the licence
+(packaging/models/hf/). The app downloads from the commit that added the files, so a later change to a repo cannot
+change what this version downloads. `Model download URL` in the settings points the app at another copy instead: a
+web folder serving the files under their names.
 
-The files are the ONNX exports made by scripts/export_cnn14_onnx.py and scripts/export_clap_onnx.py (see MODELS.md
-in the release for sources and licences). Each download goes to `<name>.part` first, resumes where it stopped
-(HTTP Range), and gets its real name only after its SHA-256 matches the one below, so a broken or tampered file is
-never used.
+Each download goes to `<name>.part` first, resumes where it stopped (HTTP Range), and gets its real name only after
+its SHA-256 matches the one below, so a broken or tampered file is never used.
 
 No PyQt5 here; ui/model_download_dialog.py runs this in a thread.
 """
@@ -16,10 +16,21 @@ import os
 import urllib.request
 from pathlib import Path
 
-BASE_URL = ''   # no public source; see the module docstring
 BUILD_HELP = 'https://github.com/csipapicsa/SongSelector#getting-the-embedding-models'
 
-# name: (size in bytes, SHA-256); the same values as SHA256SUMS.txt in the release.
+# Hugging Face repo: (the commit that holds the files, the files)
+HUGGING_FACE = {
+    'csipapicsa/songselector-cnn14': ('8ebf372b2b1b212865a66f5648144163b8808547', ['cnn14.onnx']),
+    'csipapicsa/songselector-clap-laion': ('14bcb104eba2d7c376e2c2e6ae83d21ccb042022',
+                                           ['clap-laion-audio.onnx', 'clap-laion-text.onnx',
+                                            'clap-laion-tokenizer.json']),
+    'csipapicsa/songselector-clap-ms': ('73b59b5999bac9db8a2c15c786759f2005ecf657',
+                                        ['clap-ms-audio.onnx', 'clap-ms-text.onnx', 'clap-ms-tokenizer.json']),
+}
+URLS = {name: f'https://huggingface.co/{repo}/resolve/{commit}/{name}'
+        for repo, (commit, names) in HUGGING_FACE.items() for name in names}
+
+# name: (size in bytes, SHA-256); the model cards list the same values.
 FILES = {
     'cnn14.onnx': (327330336, 'ae868eda6e9734f4722d61fe70e45ce215c316e3fe306023105ff3c0a9e73a32'),
     'clap-laion-audio.onnx': (121612865, '3c736ebc3a05f8cc652b93f2306e4c12eb714aba9e455f2c17541ed63042d55c'),
@@ -62,9 +73,15 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def download(name, folder, base_url=BASE_URL, files=FILES, progress=lambda done, total: None,
+def url(name, base_url=''):
+    """Where `name` is downloaded from: `base_url` + name if set (a web folder), else its Hugging Face repo."""
+    return base_url + name if base_url else URLS[name]
+
+
+def download(name, folder, base_url='', files=FILES, progress=lambda done, total: None,
              should_stop=lambda: False, timeout=60):
-    """Download one file into `folder`, resuming a previous `.part`; raise DownloadError on a bad checksum."""
+    """Download one file into `folder`, resuming a previous `.part`; raise DownloadError on a bad checksum.
+    base_url: a web folder serving the files under their names; empty for the Hugging Face repos."""
     size, expected = files[name]
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -77,7 +94,8 @@ def download(name, folder, base_url=BASE_URL, files=FILES, progress=lambda done,
         headers = {'User-Agent': 'SongSelector'}
         if done:
             headers['Range'] = f'bytes={done}-'
-        with urllib.request.urlopen(urllib.request.Request(base_url + name, headers=headers), timeout=timeout) as response:
+        with urllib.request.urlopen(urllib.request.Request(url(name, base_url), headers=headers),
+                                    timeout=timeout) as response:
             if done and response.status != 206:  # the server ignored the range: start over
                 done = 0
             with open(part, 'ab' if done else 'wb') as file:
@@ -98,7 +116,7 @@ def download(name, folder, base_url=BASE_URL, files=FILES, progress=lambda done,
     return target
 
 
-def download_models(specs, folder, base_url=BASE_URL, files=FILES, progress=lambda name, done, total: None,
+def download_models(specs, folder, base_url='', files=FILES, progress=lambda name, done, total: None,
                     should_stop=lambda: False):
     """Download every missing file of these models. progress(name, bytes done in all, bytes in all).
     Returns the models that are complete afterwards."""

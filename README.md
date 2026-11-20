@@ -77,10 +77,9 @@ What is behind the features, and where to look:
 1. Download `SongSelector-<version>.exe` from the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest)
    and put it in its own folder. It is self-contained (no Python needed). Windows SmartScreen will
    warn because the exe is not code-signed; check it against `SHA256SUMS.txt` from the same release.
-2. The embedding models (similarity map, closest matches, groups, search by description) are **not
-   distributed** with the app: build them with the export scripts ([below](#getting-the-embedding-models)) and
-   put them in the `models` folder; *Analysis → Get models…* shows which are there and opens the folder.
-   Everything else works without them.
+2. The embedding models (similarity map, closest matches, groups, search by description) are a separate,
+   optional download (up to 1.6 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and
+   checks each file ([below](#getting-the-embedding-models)). Everything else works without them.
 
 The exe stores its data **next to itself**:
 
@@ -97,20 +96,26 @@ To upgrade, put the new exe in the same folder. Settings from versions before 1.
 
 ## Getting the embedding models
 
-The model files are ONNX exports of published weights. They are **not redistributed** with the app: build them
-with the export scripts below (every export is checked against the original PyTorch model), in a separate
-environment, since the exports need PyTorch and the app does not. Copy them into the `models` folder next to the
-app's data (*Analysis → Get models…* → *Open models folder*); when run from source the app looks in
-`.appdata\models\`. The app checks each file's size and SHA-256 against the expected export.
+The model files are ONNX exports of published weights. They are not inside the app: *Analysis → Get models…*
+downloads them from Hugging Face, one repo per model (below), each with a model card naming the source, the
+changes and the licence. Downloads resume where they stopped, and each file's size and SHA-256 are checked before
+use. The app downloads from a fixed commit of each repo, so what a version of the app gets never changes.
 
-If you host the files yourself (a web folder serving them under their names), set `"Model download URL"` in
-`SongSelector_settings.json`: *Get models…* then downloads them (resumable, checksum-checked).
+You can also build them yourself with the export scripts below (every export is checked against the original
+PyTorch model), in a separate environment, since the exports need PyTorch and the app does not. Copy them into the
+`models` folder next to the app's data (*Get models…* → *Open models folder*); when run from source the app looks in
+`.appdata\models\`. To download from your own copy instead (a web folder serving the files under their names), set
+`"Model download URL"` in `SongSelector_settings.json`.
 
-| Model | Files | Weights | Export |
-|---|---|---|---|
-| CNN14 | `cnn14.onnx` (327 MB) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
-| LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
-| Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
+| Model | Files | Download | Weights | Export |
+|---|---|---|---|---|
+| CNN14 | `cnn14.onnx` (327 MB) | [`csipapicsa/songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
+| LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`csipapicsa/songselector-clap-laion`](https://huggingface.co/csipapicsa/songselector-clap-laion) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
+| Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`csipapicsa/songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
+
+To publish a new export: `scripts\publish_models.py --folder <folder>` checks the files against the app's list and
+uploads them with the model cards (`packaging/models/hf/`); then put the printed commits into
+`src/songselector/core/model_download.py`.
 
 ```powershell
 py -3.12 -m venv .export-venv
