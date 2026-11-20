@@ -84,6 +84,7 @@ from songselector.core.dj_programs import (
 from songselector.core.duplicates import ARTIST_TITLE, MODES, PATH, SAME_FILE, find_duplicates
 from songselector.core.embedding_models import CNN14, DEFAULT_MODEL_IDS, MODELS, store_path
 from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, OnnxEmbedder, file_fingerprint
+from songselector.core.eta import Eta, format_left
 from songselector.core.key_calculator import KeyCalculator
 from songselector.core.key_formats import parse_bpm, parse_key
 from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
@@ -336,6 +337,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
                                        EmbeddingStore(store_path(data_dir, spec), spec=spec))
                              for spec in MODELS.values()}
         self.embedding_analyzer = None
+        self.analysis_eta = Eta()  # time left of the embedding analysis, shown in its progress line
         self.text_search_dialog = None
         self.model_download_dialog = None
         self.text_search_engine = None
@@ -2299,6 +2301,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             if hasattr(self.embedding_analyzer, 'warning'):
                 self.embedding_analyzer.warning.connect(lambda message: self.status_bar.showMessage(message, 10000))
         self._queue_embeddings()
+        self.analysis_eta.reset()  # speed from this run only (after a pause the computer may be busier)
         self.embedding_analyzer.start()
 
     def _queue_embeddings(self):
@@ -2314,6 +2317,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
         text = f'Embeddings{f" ({details})" if details else ""}: {done}/{total}'
         if missing:
             text += f' ({missing} files missing)'
+        running = bool(current) and self.settings.get('Embedding analysis', True)
+        left = format_left(self.analysis_eta.update(done, total)) if running else ''
+        if left:  # e.g. "about 3 h 25 min left", once a few tracks have shown the speed (core/eta.py)
+            text += f', {left}'
         finished = not current and done == total
         if finished and self._coverage_checked != (done, total):
             # Every track came back, but a model that could not be loaded leaves its tracks unanalysed.
