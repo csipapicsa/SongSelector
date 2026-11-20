@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 from mutagen import MutagenError
-from PyQt5.QtCore import Qt, QTimer, QUrl
-from PyQt5.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
     QActionGroup,
@@ -76,7 +76,6 @@ from songselector.core.eta import Eta, format_left
 from songselector.core.key_calculator import KeyCalculator
 from songselector.core.key_formats import parse_bpm, parse_key
 from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, LibraryStore
-from songselector.core.model_download import BASE_URL
 from songselector.core.rekordbox_library import RekordboxLibrary, discover_library
 from songselector.core.rekordbox_library import signature as rekordbox_signature
 from songselector.core.search_filters import active_filters, matches_condition
@@ -1747,10 +1746,16 @@ class MainWindow(SavedListsMixin, QMainWindow):
         search.triggered.connect(self.open_text_search)
         menu.addSeparator()
         menu.addAction('Choose CNN14 model file (cnn14.onnx)...').triggered.connect(self.choose_embedding_model)
-        menu.addAction('Open models folder').triggered.connect(self.open_models_folder)
+        menu.addAction('Models folder...').triggered.connect(self.choose_models_folder)
+
+    def default_models_folder(self):
+        return Path(SETTINGS_FILE).with_name('models')
 
     def models_folder(self):
-        return Path(SETTINGS_FILE).with_name('models')
+        """Where the model files are read from and downloaded to: the setting `Models folder` (Models folder...),
+        else `models` next to the app's data."""
+        chosen = self.settings.get('Models folder')
+        return Path(chosen) if chosen else self.default_models_folder()
 
     def enabled_model_ids(self):
         return [model_id for model_id in self.settings.get('Embedding models', DEFAULT_MODEL_IDS) if model_id in MODELS]
@@ -1922,10 +1927,35 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._groups_waiting = False
         self._ensure_groups()
 
-    def open_models_folder(self):
-        folder = self.models_folder()
-        folder.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+    def choose_models_folder(self):
+        """Analysis -> Models folder...: a folder picker that starts in the current folder (so it shows what is
+        there). Until 2026-11-20 this was "Open models folder", which only opened it."""
+        chosen = QFileDialog.getExistingDirectory(self, 'Models folder', str(self.models_folder()))
+        if chosen:
+            self.set_models_folder(chosen)
+
+    def set_models_folder(self, folder):
+        """Read the model files from this folder from now on, and download into it. Everything that found its files
+        in the old folder looks again: menus, the Model box, the analysis, the description search."""
+        folder = Path(folder)
+        if folder == self.models_folder():
+            return
+        self.settings['Models folder'] = '' if folder == self.default_models_folder() else str(folder)
+        if self.text_search_engine is not None:  # its worker loaded the text encoders from the old folder
+            self.text_search_engine.stop()
+            self.text_search_engine = None
+        if self.text_search_dialog is not None:  # the same; opened again, it starts with the new folder
+            self.text_search_dialog.close()
+            self.text_search_dialog = None
+        if self.model_download_dialog is not None:
+            self.model_download_dialog.set_folder(folder)
+        self._update_model_menu()
+        self._refresh_model_box()
+        self.start_embedding_analysis()  # restarts with the new model files (or reports that none are there)
+        found = [spec.name for spec in MODELS.values() if self.model_file(spec) is not None]
+        self.status_label.setStyleSheet(status_style('info' if found else 'warning'))
+        self.status_label.setText(f'Models folder: {folder}. ' + (f'Found: {", ".join(found)}.' if found else
+                                  'No model files there yet: Analysis -> Get models... downloads them into it.'))
 
     def searchable_models(self):
         """CLAP models whose files are there (text search needs the text encoder)."""
@@ -1955,8 +1985,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self.model_download_dialog is None:
             self.model_download_dialog = ModelDownloadDialog(
                 list(MODELS.values()), self.models_folder(),
-                base_url=self.settings.get('Model download URL', '') or BASE_URL, parent=self)
+                base_url=self.settings.get('Model download URL', ''), parent=self)
             self.model_download_dialog.downloaded.connect(self._models_downloaded)
+            self.model_download_dialog.folder_chosen.connect(self.set_models_folder)
         self.model_download_dialog.show()
         self.model_download_dialog.raise_()
         self.model_download_dialog.activateWindow()
@@ -2184,7 +2215,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def embedding_model_path(self):
         """Chosen CNN14 model, else <data folder>/models/cnn14.onnx, else the default; None if none exists."""
         for candidate in (self.settings.get('Embedding model'),
-                          Path(SETTINGS_FILE).with_name('models') / MODEL_FILE_NAME,
+                          self.models_folder() / MODEL_FILE_NAME,
                           DEFAULT_EMBEDDING_MODEL):
             if candidate and Path(candidate).is_file():
                 return Path(candidate)

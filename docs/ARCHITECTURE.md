@@ -265,18 +265,27 @@ Until 2026-11-20 it was the dots plus 5 %, which left almost no room to move.
 
 ### Model download
 
-The model weights are not redistributed (decided 2026-11-17), so there is no public model release and `BASE_URL`
-in `core/model_download.py` is empty: *Analysis -> Get models...* (`ui/model_download_dialog.py`) then lists which
-models are installed and explains how to build the missing ones with the export scripts. If the setting
-`Model download URL` points to a web folder serving the files, the same window downloads them as below.
+Each model has its own Hugging Face repo (since 2026-11-20; `csipapicsa/songselector-cnn14`, `-clap-laion`,
+`-clap-ms`) with a model card (source, changes, licence; kept in `packaging/models/hf/<repo>/README.md`) and, for
+Apache 2.0 and MS-PL, the licence text. `HUGGING_FACE` in `core/model_download.py` names each repo, its files and the
+commit that holds them; `URLS` are `resolve/<commit>/<file>` addresses, so a later push to a repo cannot change what
+an app version downloads (a test checks that every file has a 40-hex commit, not a branch). The setting
+`Model download URL` replaces them with a web folder serving the files under their names (`url()`).
+The files go to, and are read from, `MainWindow.models_folder()`: the setting `Models folder` (empty: `models` next
+to the app's data). *Models folder…* (the Get models window's `folder_chosen`, or the Analysis menu) calls
+`set_models_folder`, which drops the text search workers (they loaded the encoders from the old folder), refreshes
+the menus, the Model box and the window, and restarts the analysis with the new files.
+Between 2026-11-17 and 2026-11-20 there was no download source and the window only explained how to build them.
 
-`core/model_download.py` fetches model files from that folder; `FILES` holds each file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
+`core/model_download.py` fetches the files; `FILES` holds each file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
 the server ignores the range), and renames it only when the hash matches; a mismatch deletes the part file, so bad
 data is never resumed. `ui/model_download_dialog.py` runs it in a thread (one checkbox per model, progress, Stop)
 and reports the complete models; the main window switches them on and restarts the analysis. The window is offered
 once at the first start without any model, except when `SONGSELECTOR_EMBEDDING_MODEL=none` (tests, verification).
-`scripts/publish_models.ps1` checks exported files against `FILES` (its `-DryRun` is useful on its own to check a
-local export); it can publish them as a release, which is not done for this project.
+Resuming works through Hugging Face's redirect to its file storage (the Range header survives the redirect; tested
+2026-11-20 against the real repos). `scripts/publish_models.py` checks exported files against `FILES` (`--dry-run`
+is useful on its own to check a local export) and uploads each repo's card, licence and files in one commit,
+printing the commits to pin.
 
 ### Free-text search
 
