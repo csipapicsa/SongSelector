@@ -63,7 +63,6 @@ from PyQt5.QtWidgets import (
 from songselector.config import COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN
 from songselector.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from songselector.core.color_search import COLOR_NAMES
-from songselector.core.embedding_models import MODELS
 from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from songselector.core.placement import (
     ABOVE_LEFT,
@@ -96,6 +95,7 @@ DEFAULT_HOVER_FIELDS = ['Artist', 'Title', 'Genre', 'Comment', 'Color - Song Sel
                         'Rating - Song Selector', 'Color', 'Rating']
 DEFAULT_EDGES = ['perfect_mix', 'plus_1_mix', 'minus_1_mix', 'energy_boost']
 SCENE_SIZE = 1000.0          # the map is scaled to about this many scene units
+PAN_ROOM = 3                 # the view can be dragged this many map sizes past each edge of the map
 DOT_SIZE = 9                 # pixels, independent of zoom
 GLOW_SIZE = 44               # pixels: pulsing halo around the selected track and a clicked match
 MAX_EDGES = 2500             # "between all visible tracks" is capped to stay readable
@@ -533,6 +533,9 @@ class MapView(QGraphicsView):
         self.setRenderHint(QPainter.Antialiasing)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        # The scene reaches far beyond the dots (PAN_ROOM), so scroll bars would always show: dragging pans instead.
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
 
     rotator = None    # set by the map widget: rotates the 3D view on Shift+drag
@@ -607,7 +610,6 @@ class SimilarityMapWidget(QWidget):
     selected = pyqtSignal(str)                         # path_key
     groups_changed = pyqtSignal()                      # self.groups was recomputed or cleared
     detach_requested = pyqtSignal(bool)                # True: show the map in its own window, False: back in its tab
-    model_requested = pyqtSignal(str)                  # model id chosen in the map's Model box
 
     def __init__(self, store, settings, parent=None):
         super().__init__(parent)
@@ -745,6 +747,8 @@ class SimilarityMapWidget(QWidget):
         self.view_3d_button.toggled.connect(self.set_3d)
         self.rearrange_button = QPushButton('Re-arrange map')
         self.rearrange_button.clicked.connect(self._rearrange)
+        # Not on the toolbar since 2026-11-20 (user's decision: the map's own window made no sense in use); kept, as
+        # MainWindow.set_map_detached keeps its state on it, in case the feature comes back.
         self.detach_button = QPushButton('Own window')
         self.detach_button.setCheckable(True)
         self.detach_button.setToolTip('Show the map in a window of its own (move it to another screen, resize it\n'
@@ -783,24 +787,13 @@ class SimilarityMapWidget(QWidget):
         self.grouping.currentIndexChanged.connect(self._grouping_method_changed)
         self.grouping_parameter.valueChanged.connect(self._update_groups)
 
-        # Which embeddings the map uses (the same choice as Analysis -> Similarity model).
-        self.model_box = QComboBox()
-        for spec in MODELS.values():
-            self.model_box.addItem(spec.name, spec.id)
-            self.model_box.setItemData(self.model_box.count() - 1, spec.description, Qt.ToolTipRole)
-        self.model_box.setToolTip('Which model the map, its groups and the closest matches use (each keeps its own '
-                                  'map). Also under Analysis -> Similarity model.')
-        self._show_model()
-        self.model_box.activated.connect(lambda index: self.model_requested.emit(self.model_box.itemData(index)))
-
         # One toolbar, ordered by task (UI review 2026-11-20): what is mapped -> how it is coloured -> the view.
-        # Before: two rows mixing all of these. A QToolBar folds what does not fit into its >> menu, so the map (and
-        # its own window) never has to be wider than the screen allows.
+        # Before: two rows mixing all of these. A QToolBar folds what does not fit into its >> menu, so the map never
+        # has to be wider than the screen allows. The model is chosen in the main window's Model box (next to
+        # "Describe a sound"); the map had a Model box of its own here for a few hours on 2026-11-20.
         toolbar = QToolBar()
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
-        toolbar.addWidget(QLabel('Model '))
-        toolbar.addWidget(self.model_box)
         toolbar.addWidget(self.only_button)
         toolbar.addSeparator()
         toolbar.addWidget(QLabel('Groups '))
@@ -811,7 +804,7 @@ class SimilarityMapWidget(QWidget):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         toolbar.addWidget(spacer)
-        for widget in (self.view_3d_button, fit, self.rearrange_button, self.detach_button):
+        for widget in (self.view_3d_button, fit, self.rearrange_button):
             toolbar.addWidget(widget)
         self.toolbar = toolbar
         side = QWidget()
@@ -935,22 +928,12 @@ class SimilarityMapWidget(QWidget):
     def stop(self):
         self._stop.set()
 
-    def _show_model(self):
-        """The Model box shows the model whose embeddings the map uses."""
-        spec = getattr(self.store, 'spec', None)
-        index = self.model_box.findData(spec.id) if spec is not None else -1
-        if index >= 0:
-            self.model_box.blockSignals(True)
-            self.model_box.setCurrentIndex(index)
-            self.model_box.blockSignals(False)
-
     def set_store(self, store):
-        """Use another model's embeddings (Analysis -> Similarity model). Layout, closest matches and groups follow
+        """Use another model's embeddings (the main window's Model box). Layout, closest matches and groups follow
         it; each model's cache keeps its own layout. Call load() afterwards if the map or the groups are needed."""
         if store is self.store:
             return
         self.store = store
-        self._show_model()
         self._fit_next = True
         if self._loading:
             self._again = True  # the running load is for the old model: load again when it ends
@@ -1200,10 +1183,7 @@ class SimilarityMapWidget(QWidget):
             dot.setPos(self._projected[key])
             self._apply_depth(key, dot)
             self._outline(key)
-        margin = SCENE_SIZE * 0.05
-        rect = QRectF(-SCENE_SIZE / 2, -SCENE_SIZE / 2, SCENE_SIZE, SCENE_SIZE) if self.showing_3d() else \
-            self._dots_rect()
-        self.scene.setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
+        self._set_scene_rect()
         self._paint_edges()
         self._follow_dots()
 
@@ -1221,6 +1201,16 @@ class SimilarityMapWidget(QWidget):
         xs = [point.x() for point in self._projected.values()] or [0]
         ys = [point.y() for point in self._projected.values()] or [0]
         return QRectF(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+
+    def _set_scene_rect(self):
+        """The area the view can be dragged over: the map plus PAN_ROOM times its size on every side. A view only
+        scrolls within its scene rect; until 2026-11-20 that was the dots plus 5 %, so the map could hardly be moved
+        (not at all once zoomed out), and a hover card at the edge stayed cut off (user's report). Fit brings the
+        dots back."""
+        rect = QRectF(-SCENE_SIZE / 2, -SCENE_SIZE / 2, SCENE_SIZE, SCENE_SIZE) if self.showing_3d() else \
+            self._dots_rect()
+        room = max(rect.width(), rect.height(), SCENE_SIZE * 0.05) * PAN_ROOM
+        self.scene.setSceneRect(rect.adjusted(-room, -room, room, room))
 
     def _follow_dots(self):
         """Label, glows and cards stay on their dots after the dots moved."""
@@ -1290,10 +1280,7 @@ class SimilarityMapWidget(QWidget):
             self._apply_depth(key, dot)
             self.scene.addItem(dot)
             self.dots[key] = dot
-        margin = SCENE_SIZE * 0.05
-        rect = QRectF(-SCENE_SIZE / 2, -SCENE_SIZE / 2, SCENE_SIZE, SCENE_SIZE) if self.showing_3d() else \
-            self._dots_rect()
-        self.scene.setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
+        self._set_scene_rect()
         self._refresh()
 
     def _refresh(self):
