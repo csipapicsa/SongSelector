@@ -8,6 +8,11 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+- **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
+  audio similarity for DJs"); the app is useful beyond DJing too.
+
 ## [1.2.0] - 2026-11-17
 
 1.1.4 was never released; its changes ship in 1.2.0 together with the items below.

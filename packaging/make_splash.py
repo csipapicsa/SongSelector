@@ -43,8 +43,8 @@ def main():
 
     draw = ImageDraw.Draw(image)
     draw.text((32, 74), 'SongSelector', font=font(['segoeuisb.ttf', 'segoeuib.ttf', 'arialbd.ttf'], 38), fill=TEXT)
-    draw.text((34, 128), 'Harmonic keys and audio similarity', font=font(['segoeui.ttf', 'arial.ttf'], 15), fill=DIM)
-    draw.text((34, 149), 'for DJs', font=font(['segoeui.ttf', 'arial.ttf'], 15), fill=DIM)
+    draw.text((34, 128), 'Track organizer', font=font(['segoeui.ttf', 'arial.ttf'], 15), fill=DIM)
+    draw.text((34, 149), 'for DJs and music collectors', font=font(['segoeui.ttf', 'arial.ttf'], 15), fill=DIM)
     draw.rectangle((34, 182, 74, 184), fill=DOT_COLOURS[0])  # accent line above the status text
     draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), outline='#3c3f41')
 
