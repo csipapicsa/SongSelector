@@ -19,6 +19,19 @@ CHANGELOG when they ship.
      leftover **draft** GitHub release (one tokenizer asset, `untagged-...`, not public).
    - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums);
      `scripts/publish_models.py` is the upload half of it.
+   - **Get models window, from the user's WSL test (2026-11-20):**
+     - **Installed = a check mark.** Today an installed model is a greyed-out, *unticked* box with "(installed)",
+       which reads as "not there". Show a clear ✓ (e.g. a green "✓ Installed" next to the row) instead of the
+       disabled empty checkbox; it appears the moment a model's last file passes its checksum.
+     - **Delete a model.** A *Delete* button per installed model (with a confirmation naming the size freed): removes
+       its files, switches the model off and updates the menus. First stop anything using it: the analysis worker and
+       the text-search worker may hold the ONNX file open (on Windows an open file cannot be deleted). Keep its
+       embeddings cache (`embeddings-*.sqlite`) by default, so a re-download does not re-analyse; offer to delete it
+       too in the same dialog.
+     - **Bug: the intro text is cut off** after the folder path ("…and checked before use. You can also build them
+       yourself (how)." is missing, seen on Linux/WSLg). Likely `resize(560, sizeHint().height())` sizing before the
+       wrapped rich-text label knows its height; give the label a height for the window's width (or let the layout
+       set the minimum size) and test that the whole text is visible.
 3. **Linux release** (plan of 2026-11-20 in the worklog): Linux in the CI test matrix first (`os.startfile` ->
    `QDesktopServices`, environment markers for `onnxruntime` vs `onnxruntime-directml`), then a release matrix
    (Windows + Linux on `ubuntu-22.04` for an older glibc) with an AppImage, verified with `xvfb-run`.
