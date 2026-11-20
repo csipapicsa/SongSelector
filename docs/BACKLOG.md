@@ -135,6 +135,19 @@ One PR per block below, in this order; each with tests (a failing test first for
       2. Embedding store and analysis per model (the store already has a `model` column); settings for "models to
          analyse" and "model for the map"; map layouts per model; decode each file once for all models.
       3. Free-text search window (top tracks for a typed description, saved prompts).
+- [ ] Research: which model for the similarity map (observed 2026-11-20 on a DnB + house/downtempo playlist): CNN14
+      separates the genres clearly, LAION CLAP mixes them more. Expected: CNN14 is an AudioSet classifier whose labels
+      include music genres (and it sees rhythm/tempo in 5 s windows); LAION's general model learned from captions of
+      mostly non-music sounds, so it groups by described qualities (dark, calm, vocal) across genres. Keep CNN14 for
+      the map for now; measure instead of eyeballing t-SNE (neighbour purity with the user's labels, as in
+      `rating_color`); try LAION's music-trained `larger_clap_music`. Microsoft CLAP can go later.
+- [ ] Research, low priority: a better similarity than cosine for CNN14 (classifier features, not trained for
+      similarity; CLAP is trained on cosine, so it stays): PCA whitening, hubness reduction (CSLS), window-set
+      comparison (Chamfer / Fréchet), or a learned metric from the user's playlists and sets. Evaluate with the user's
+      labels, as above.
+- [x] int8 models (2026-11-20, `docs/research/experiments/results/2026-11-20_int8_benchmark.md`): naive dynamic
+      quantization was slower everywhere and broke the embeddings (the spectrogram front-end got quantized). Not
+      worth it on the GPU; a fair CPU test (front-end in float, only LAION's MatMuls) is open if CPU speed matters.
 - [ ] Research: do CLAP embeddings group tracks by *feel* better than CNN14 (asked 2026-11-13)? CLAP is trained to
       match descriptions ("dark", "uplifting", "groovy"), CNN14 to label sound events, so its neighbourhoods may follow
       mood and energy more. Compare on the same tracks: style purity of the 10 nearest (as for CNN14), plus a blind
