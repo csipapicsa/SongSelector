@@ -19,7 +19,17 @@ from html import escape
 
 import numpy as np
 from PyQt5.QtCore import QMimeData, QObject, QPointF, QRectF, Qt, QTimer, QUrl, QVariantAnimation, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QDrag, QKeySequence, QPainter, QPainterPath, QPen, QRadialGradient
+from PyQt5.QtGui import (
+    QBrush,
+    QColor,
+    QDrag,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRadialGradient,
+    QTextOption,
+)
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -31,7 +41,6 @@ from PyQt5.QtWidgets import (
     QGraphicsPathItem,
     QGraphicsRectItem,
     QGraphicsScene,
-    QGraphicsSimpleTextItem,
     QGraphicsTextItem,
     QGraphicsView,
     QHBoxLayout,
@@ -113,6 +122,9 @@ EDGE_ALPHA_SELECTED, EDGE_ALPHA_PREVIEW, EDGE_ALPHA_ALL = 170, 85, 90   # a clic
 CURVE_BEND = 0.18
 ONLY_LIST_TEXT = 'Map the List only'
 CARD_COVER, DETAILS_COVER, MATCH_COVER = 64, 96, 28   # px: cover thumbnails in the cards, details, closest matches
+# The info boxes on the map (hover card, compared track's card, the selected track's label) wrap their text at this
+# many pixels: setting `Map info width` (View -> Map hover details...), never below the minimum.
+INFO_WIDTH, MIN_INFO_WIDTH, MAX_INFO_WIDTH = 360, 200, 1200
 # Tracks selected in the Playlist: amber ring; those the List does not show also get a paler dot.
 PLAYLIST_RING, MARKER_ALPHA = '#ffb000', 120
 ARRANGING, GROUPING = 'Arranging the map', 'Grouping'   # reasons the map's spinner turns
@@ -254,9 +266,27 @@ def fields_table(fields, names):
                     for name, text in shown_fields(fields, names)) + '</table>')
 
 
+def wrapping_text(parent):
+    """A text item that can wrap (see fit_width); long words such as file names break anywhere."""
+    item = QGraphicsTextItem(parent)
+    item.setAcceptedMouseButtons(Qt.NoButton)
+    option = item.document().defaultTextOption()
+    option.setWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+    item.document().setDefaultTextOption(option)
+    return item
+
+
+def fit_width(item, max_width):
+    """Wrap the item's text at max_width pixels; text that is narrower keeps its own width (a short card stays
+    small). Without this a long file name made a card as wide as the map and hid the dots under it."""
+    item.setTextWidth(-1)
+    if item.boundingRect().width() > max_width:
+        item.setTextWidth(max_width)
+
+
 class Card(QGraphicsPathItem):
-    """Rounded info card below and right of a dot (same pixel size at any zoom). Mouse clicks
-    and hovering go through it to the dots underneath."""
+    """Rounded info card below and right of a dot (same pixel size at any zoom), at most `Map info width` pixels
+    wide. Mouse clicks and hovering go through it to the dots underneath."""
 
     def __init__(self, border, z):
         super().__init__()
@@ -265,15 +295,15 @@ class Card(QGraphicsPathItem):
         self.setPen(QPen(QColor(border), 1.2))
         self.setBrush(QBrush(CARD_BACKGROUND))
         self.setZValue(z)
-        self.text = QGraphicsTextItem(self)
-        self.text.setAcceptedMouseButtons(Qt.NoButton)
+        self.text = wrapping_text(self)
         self.text.setDefaultTextColor(QColor(CARD_TEXT))
         self.text.document().setDocumentMargin(8)
         self.hide()
 
-    def show_at(self, dot, html):
+    def show_at(self, dot, html, max_width=INFO_WIDTH):
         """Show the card at the dot, below and right of it; the map then moves it to a free corner."""
         self.text.setHtml(html)
+        fit_width(self.text, max_width)
         self.setPos(dot.pos())
         self.set_corner(BELOW_RIGHT)
         self.show()
@@ -302,10 +332,16 @@ class MapLabel(QGraphicsRectItem):
         self.setBrush(QBrush(QColor(20, 22, 25, 225)))
         self.setPen(QPen(QColor(SELECTED_RING), 1))
         self.setZValue(10)
-        self.text = QGraphicsSimpleTextItem(self)
-        self.text.setBrush(QBrush(QColor('#f0f0f0')))
+        self.text = wrapping_text(self)
+        self.text.setDefaultTextColor(QColor('#f0f0f0'))
+        self.text.document().setDocumentMargin(0)  # the padding is the box's (box_size, set_corner)
         self.corner = ABOVE_RIGHT
         self.hide()
+
+    def set_text(self, text, max_width=INFO_WIDTH):
+        """Plain text, wrapped so the whole label (with its padding) is at most max_width pixels wide."""
+        self.text.setPlainText(text)
+        fit_width(self.text, max_width - 12)
 
     def box_size(self):
         box = self.text.boundingRect()
@@ -1135,6 +1171,14 @@ class SimilarityMapWidget(QWidget):
         self.hover_card.hide()
         self._show_halos()  # also lays the boxes out again: the dots moved relative to each other
 
+    def info_width(self):
+        """Pixels the info boxes wrap their text at (setting `Map info width`, kept within its limits)."""
+        try:
+            width = int(self.settings.get('Map info width', INFO_WIDTH))
+        except (TypeError, ValueError):
+            width = INFO_WIDTH
+        return max(MIN_INFO_WIDTH, min(MAX_INFO_WIDTH, width))
+
     def _layout_boxes(self):
         """The selected track's label, then the compare card, then the hover card, each at the first corner of its
         dot where it covers neither the boxes placed before it nor their dots, and stays in view if it can. The
@@ -1315,7 +1359,7 @@ class SimilarityMapWidget(QWidget):
         self.preview_glow.follow(self.dots.get(self.preview_key))
         dot = self.dots.get(self.preview_key)
         if dot is not None and dot.isVisible() and self.preview_key in self.fields:
-            self.preview_card.show_at(dot, self.card_html(self.preview_key))
+            self.preview_card.show_at(dot, self.card_html(self.preview_key), self.info_width())
         else:
             self.preview_card.hide()
         self._layout_boxes()
@@ -1327,7 +1371,7 @@ class SimilarityMapWidget(QWidget):
         if dot is None or not dot.isVisible() or key not in self.fields or key == self.preview_key:
             self.hover_card.hide()
         else:
-            self.hover_card.show_at(dot, self.card_html(key))
+            self.hover_card.show_at(dot, self.card_html(key), self.info_width())
             self._layout_boxes()
 
     def relation(self, key):
@@ -1413,8 +1457,8 @@ class SimilarityMapWidget(QWidget):
             self.details.setText('Click a track on the map.')
             return
         key_now = f"{fields.get('New Key', '')} ({fields.get('Camelot Key New', '')})"
-        self.label_text.setText(f"{track_name(fields)}\n"
-                                f"{key_now} at master tempo, {fields.get('Original BPM', '')} BPM")
+        self.label.set_text(f"{track_name(fields)}\n{key_now} at master tempo, {fields.get('Original BPM', '')} BPM",
+                            self.info_width())
         self.label.set_corner(ABOVE_RIGHT)
         self.label.setPos(self.dots[self.selected_key].pos())
         self.label.show()

@@ -121,7 +121,13 @@ from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.model_download_dialog import ModelDownloadDialog
 from songselector.ui.music_paths_dialog import MusicPathsDialog
 from songselector.ui.saved_lists import SavedListsMixin, match_text
-from songselector.ui.similarity_map import DEFAULT_HOVER_FIELDS, SimilarityMapWidget, group_colour
+from songselector.ui.similarity_map import (
+    DEFAULT_HOVER_FIELDS,
+    MAX_INFO_WIDTH,
+    MIN_INFO_WIDTH,
+    SimilarityMapWidget,
+    group_colour,
+)
 from songselector.ui.text_search_dialog import TextSearchDialog
 from songselector.ui.text_search_engine import TextSearchEngine
 from songselector.ui.theme import DEFAULT_THEME, apply_theme, dim_text_colour, row_tint_alpha, status_style
@@ -1724,9 +1730,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.track_context_menu(self.candidate_tree).exec_(position)
 
     def choose_hover_fields(self):
-        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), FIELD_LABELS, self)
+        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), FIELD_LABELS,
+                                   self.similarity_map.info_width(), MIN_INFO_WIDTH, MAX_INFO_WIDTH, parent=self)
         if dialog.exec_() == QDialog.Accepted:
             self.settings['Map hover fields'] = dialog.selected()
+            self.settings['Map info width'] = dialog.info_width()
             self._refresh_map()
 
     def set_theme(self, name):
