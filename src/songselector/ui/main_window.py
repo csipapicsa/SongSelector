@@ -345,6 +345,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.map_window = None
         self.map_placeholder = MapPlaceholder(self.show_map, lambda: self.set_map_detached(False))
         self.similarity_map.detach_requested.connect(self.set_map_detached)
+        self.similarity_map.model_requested.connect(self.set_similarity_model)  # the map's own Model box
 
         # Cover art (View -> Cover art): thumbnails loaded in the background, only for rows that are painted.
         self.covers = CoverProvider(Path(SETTINGS_FILE).parent / 'covers', self)
@@ -858,10 +859,29 @@ class MainWindow(SavedListsMixin, QMainWindow):
         return True
 
 
-    def filter_items(self):
-        color_query = parse_color_search(self.search_bar.text())
+    def _row_matcher(self, text):
+        """(matches(item, key), colour query, sscolour query): whether a List row matches a search text the way the
+        search bar applies it (color:, sscolor:, plain text in the searched columns), within the List's source and
+        Advanced Search. Used for the search bar and for the map window's own search."""
+        color_query = parse_color_search(text)
         ss_color_query = parse_color_search(color_query.text, SS_COLOR_TOKEN)
         search_text = ss_color_query.text.casefold()
+        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in FIELD_LABELS]
+        advanced = bool(self.current_advanced_search.get('enabled') and self.advanced_filters)
+
+        def matches(item, key):
+            found = (self._in_source(item, key)
+                     and color_query.matches(item.text(COLOR_COLUMN_INDEX))
+                     and ss_color_query.matches(item.text(HEADER_INDEX[SS_COLOR_COLUMN])))
+            if found and search_text:
+                found = any(search_text in item.text(column).casefold() for column in search_indices)
+            if found and advanced:
+                found = self.apply_advanced_filters_tree(item)
+            return found
+        return matches, color_query, ss_color_query
+
+    def filter_items(self):
+        row_matches, color_query, ss_color_query = self._row_matcher(self.search_bar.text())
         if hasattr(self, 'color_search_actions'):
             for number, action in self.color_search_actions.items():
                 action.blockSignals(True)
@@ -869,7 +889,6 @@ class MainWindow(SavedListsMixin, QMainWindow):
                 action.blockSignals(False)
             count = len(color_query.included)
             self.color_search_button.setText(f'Colors ({count})' if count else 'Colors')
-        search_indices = [HEADER_INDEX[name] for name in self.search_columns if name in FIELD_LABELS]
         playlist_paths = {canonical_path(path) for path in self.playlist_paths}
         # A saved playlist shown in the List shows all its tracks (those on the Playlist tab dimmed)
         hide_playlist_tracks = (self.settings.get('Hide playlist tracks', False)
@@ -883,13 +902,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             if bool(item.data(0, IN_PLAYLIST_ROLE)) != in_playlist:
                 item.setData(0, IN_PLAYLIST_ROLE, in_playlist)
                 self._apply_text_colours(item)
-            matches = (self._in_source(item, key)
-                       and color_query.matches(item.text(COLOR_COLUMN_INDEX))
-                       and ss_color_query.matches(item.text(HEADER_INDEX[SS_COLOR_COLUMN])))
-            if matches and search_text:
-                matches = any(search_text in item.text(column).casefold() for column in search_indices)
-            if matches and advanced:
-                matches = self.apply_advanced_filters_tree(item)
+            matches = row_matches(item, key)
             in_playlist_matches += matches and in_playlist
             item.setHidden(not matches or (in_playlist and hide_playlist_tracks))
         self._show_advanced_search_state()
@@ -1544,6 +1557,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self.map_window = MapWindow(self.similarity_map, self.settings, self.windowIcon())
             self.map_window.setWindowFlag(Qt.WindowStaysOnTopHint, bool(self.settings.get('Always on top', False)))
             self.map_window.closed.connect(lambda: self.set_map_detached(False))
+            self.map_window.search_changed.connect(self._refresh_map)
         else:
             window, self.map_window = self.map_window, None
             window.save_geometry()
@@ -1570,12 +1584,18 @@ class MainWindow(SavedListsMixin, QMainWindow):
             self._map_stale = False
             self.similarity_map.load()
         columns = [self.candidate_tree.headerItem().text(i) for i in range(self.candidate_tree.columnCount())]
+        # In its own window the map can have its own search: with text there, it decides the map's tracks (out of
+        # the List's source) instead of the main search bar (MapWindow).
+        query = self.map_window.search_text() if self.map_window is not None else ''
+        map_matches = self._row_matcher(query)[0] if query else None
         fields = {}
         for index in range(self.candidate_tree.topLevelItemCount()):
             item = self.candidate_tree.topLevelItem(index)
-            if not item.isHidden():
-                fields[canonical_path(item.text(HEADER_INDEX['Path']))] = \
-                    {name: item.text(column) for column, name in enumerate(columns)}
+            key = canonical_path(item.text(HEADER_INDEX['Path']))
+            if (map_matches(item, key) if map_matches is not None else not item.isHidden()):
+                fields[key] = {name: item.text(column) for column, name in enumerate(columns)}
+        self.similarity_map.search_note = (f'; the map\'s own search "{query}" (the main search bar filters only the '
+                                           'List)' if query else '')
         self.similarity_map.set_tracks(fields)
         self._highlight_playlist_selection()
 
