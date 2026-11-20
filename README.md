@@ -102,9 +102,10 @@ changes and the licence. Downloads resume where they stopped, and each file's si
 use. The app downloads from a fixed commit of each repo, so what a version of the app gets never changes.
 
 You can also build them yourself with the export scripts below (every export is checked against the original
-PyTorch model), in a separate environment, since the exports need PyTorch and the app does not. Copy them into the
-`models` folder next to the app's data (*Get models…* → *Open models folder*); when run from source the app looks in
-`.appdata\models\`. To download from your own copy instead (a web folder serving the files under their names), set
+PyTorch model), in a separate environment, since the exports need PyTorch and the app does not. By default the app
+looks for them in the `models` folder next to its data (`.appdata\models\` when run from source); *Get models…* →
+*Models folder…* (also in the *Analysis* menu) points it at any other folder, e.g. one that already holds the files
+or is shared by several installations, and downloads go there too. To download from your own copy instead (a web folder serving the files under their names), set
 `"Model download URL"` in `SongSelector_settings.json`.
 
 | Model | Files | Download | Weights | Export |

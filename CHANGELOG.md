@@ -17,6 +17,10 @@ from that period still mention 4.x numbers.
   [`songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms). The app downloads from a fixed
   commit of each, so what a version gets never changes. In 1.2.0 the window could only explain how to build them.
   `scripts/publish_models.py` (replaces `publish_models.ps1`) checks and uploads a new export.
+- **Choose the models folder.** *Get models…* → *Models folder…* (also in the *Analysis* menu) replaces *Open models
+  folder*, which only opened it: pick any folder, e.g. one that already holds the model files or is shared by several
+  installations. The app reads the models from it and downloads into it; the window shows at once what is installed
+  there.
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
 - **A compact top: two rows instead of five.** *Master tempo* is a box at the start of the search row: the arrows or

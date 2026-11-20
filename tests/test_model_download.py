@@ -159,6 +159,33 @@ class DownloadWindowTests(ServerCase):
         finally:
             dialog.close()
 
+    def test_models_folder_button_chooses_the_folder_and_shows_what_is_there(self):
+        # Asked 2026-11-20: "Open models folder" only opened the folder, which has no purpose; now one button
+        # chooses it (the picker starts in the current folder, so it shows what is there).
+        from unittest.mock import patch
+
+        from songselector.ui.model_download_dialog import ModelDownloadDialog
+        contents = {name: os.urandom(1500) for name in LAION_CLAP.files()}
+        shared = Path(self.temp.name) / 'shared models'
+        shared.mkdir()
+        for name, data in contents.items():
+            (shared / name).write_bytes(data)
+        dialog = ModelDownloadDialog([LAION_CLAP], self.folder, self.url, manifest(contents))
+        chosen = []
+        dialog.folder_chosen.connect(chosen.append)
+        try:
+            self.assertEqual(dialog.folder_button.text(), 'Models folder...')
+            self.assertNotIn('installed', dialog.boxes[LAION_CLAP.id].text())
+            with patch('PyQt5.QtWidgets.QFileDialog.getExistingDirectory', return_value=str(shared)) as picker:
+                dialog.folder_button.click()
+            self.assertEqual(picker.call_args[0][2], str(self.folder))  # starts in the current folder
+            self.assertEqual(chosen, [str(shared)])
+            self.assertIn('(installed)', dialog.boxes[LAION_CLAP.id].text())
+            self.assertFalse(dialog.boxes[LAION_CLAP.id].isEnabled())
+            self.assertIn(str(shared), dialog.intro.text())  # downloads would go there
+        finally:
+            dialog.close()
+
     def test_window_downloads_the_checked_models_and_reports_them(self):
         from songselector.ui.model_download_dialog import ModelDownloadDialog
         contents = {name: os.urandom(1500) for name in LAION_CLAP.files()}

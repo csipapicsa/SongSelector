@@ -370,6 +370,26 @@ class MainWindowModelTests(WindowCase):
         self.assertEqual(box.currentData(), CNN14.id)
         self.assertEqual(window.settings['Text search model'], LAION_CLAP.id)  # the last CLAP model is kept
 
+    def test_a_chosen_models_folder_is_where_the_models_are_looked_for(self):
+        # Asked 2026-11-20 (Get models -> Models folder..., also in the Analysis menu).
+        window = self.window
+        shared = self.root / 'shared models'
+        shared.mkdir()
+        for name in LAION_CLAP.files():
+            (shared / name).write_bytes(b'x')
+        self.assertEqual(window.searchable_models(), [])
+        with patch.object(window, 'start_embedding_analysis'):  # the stand-in files are not real models
+            window.set_models_folder(shared)
+        self.assertEqual(window.settings['Models folder'], str(shared))
+        self.assertEqual(window.models_folder(), shared)
+        self.assertEqual(window.searchable_models(), [LAION_CLAP])
+        self.assertNotEqual(window.model_box.findData(LAION_CLAP.id), -1)
+        self.assertIn('LAION CLAP', window.status_label.text())
+        with patch.object(window, 'start_embedding_analysis'):
+            window.set_models_folder(window.default_models_folder())  # back to the default: not stored as a path
+        self.assertEqual(window.settings['Models folder'], '')
+        self.assertEqual(window.searchable_models(), [])
+
     def test_store_coverage_counts_analysed_and_failed_tracks(self):
         store = EmbeddingStore(self.root / 'coverage.sqlite', spec=LAION_CLAP)
         store.save('a', (1, 1), np.zeros((2, LAION_CLAP.dim), dtype=np.float32))

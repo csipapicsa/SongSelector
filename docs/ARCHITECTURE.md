@@ -271,6 +271,10 @@ Apache 2.0 and MS-PL, the licence text. `HUGGING_FACE` in `core/model_download.p
 commit that holds them; `URLS` are `resolve/<commit>/<file>` addresses, so a later push to a repo cannot change what
 an app version downloads (a test checks that every file has a 40-hex commit, not a branch). The setting
 `Model download URL` replaces them with a web folder serving the files under their names (`url()`).
+The files go to, and are read from, `MainWindow.models_folder()`: the setting `Models folder` (empty: `models` next
+to the app's data). *Models folder…* (the Get models window's `folder_chosen`, or the Analysis menu) calls
+`set_models_folder`, which drops the text search workers (they loaded the encoders from the old folder), refreshes
+the menus, the Model box and the window, and restarts the analysis with the new files.
 Between 2026-11-17 and 2026-11-20 there was no download source and the window only explained how to build them.
 
 `core/model_download.py` fetches the files; `FILES` holds each file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
