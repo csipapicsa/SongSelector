@@ -12,6 +12,9 @@ from that period still mention 4.x numbers.
 
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
+- **Time left of the embedding analysis.** The progress line says how long the analysis will still take
+  ("Embeddings (CNN14+LAION CLAP, CPU): 5/200, about 39 min left - track.mp3"), from the speed of the last few
+  minutes, once a few tracks have been analysed.
 
 ## [1.2.0] - 2026-11-17
 
