@@ -3,6 +3,26 @@
 Known issues, technical debt and ideas, roughly by priority. Move items into the
 CHANGELOG when they ship.
 
+## Next session: high priority (set 2026-11-20)
+
+1. **Mixxx support (draft PR #42, branch `feature/mixxx-library`):** the user tests it in WSL (the clone
+   `~/SongSelector` is on the branch; start with `.venv/bin/songselector`): Browser -> *Mixxx Playlists* (playlists,
+   History), *Import missing tracks*, Color column with Mixxx's exact colours, ratings, `color:cyan` / `color:orange`,
+   a colour or rating changed in Mixxx arriving after Mixxx saves, *Import -> Primary DJ program*. Then mark the PR
+   ready, merge main into it, check CI, merge.
+2. **Model files on Hugging Face** (decided 2026-11-20; *Get models* has no download source since 1.2.0):
+   - User: Hugging Face account, a *write* token, `pip install -U huggingface_hub` and `hf auth login` in their own
+     terminal (the token never goes into chat); say whether Microsoft CLAP is in the first upload.
+   - Then: one model repo per model (correct licence tag each: CC BY 4.0 / Apache 2.0 / MS-PL) with a model card
+     from `packaging/models/MODELS.md`; upload the files from `dist\models` (checked against `FILES`); point the app at
+     the pinned revisions (`core/model_download.py` needs a URL per model instead of one `BASE_URL`); rework the local,
+     unpushed branch `fix/model-download-release` (it points at a GitHub release instead); delete the leftover
+     **draft** GitHub release (one tokenizer asset, `untagged-...`, not public).
+   - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums).
+3. **Linux release** (plan of 2026-11-20 in the worklog): Linux in the CI test matrix first (`os.startfile` ->
+   `QDesktopServices`, environment markers for `onnxruntime` vs `onnxruntime-directml`), then a release matrix
+   (Windows + Linux on `ubuntu-22.04` for an older glibc) with an AppImage, verified with `xvfb-run`.
+
 ## Release 1.2.0 (planned 2026-11-17)
 
 The unreleased 1.1.4 (Top N re-cut, Match column; merged in PR #19, never tagged) and the user's feedback list of
