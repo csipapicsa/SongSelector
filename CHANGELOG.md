@@ -8,7 +8,7 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
-## [Unreleased]
+## [1.3.0] - 2026-11-21
 
 - **Linux.** Each release now also has `SongSelector-<version>-x86_64.AppImage`: make it executable
   (`chmod +x`) and start it, no installation needed. It is built on Ubuntu 22.04, so it runs on distributions from
@@ -16,8 +16,6 @@ from that period still mention 4.x numbers.
   the app keeps its data in `~/.local/share/SongSelector`, the analysis runs on the CPU, and tracks come from their
   tags (Traktor and Rekordbox do not run on Linux). The tests now run on Linux too.
 - **App icon** for the window and the Linux desktop entry: dots in clusters, like tracks on the similarity map.
-- Running from source on Linux before this version: track paths keep their capitals now (on Linux `A.mp3` and
-  `a.mp3` are two files), so the library is read anew and the tracks are analysed again.
 - **The model download works again.** *Analysis → Get models…* → *Download* fetches CNN14 and both CLAP models
   (resumable, checksum-checked) from Hugging Face, one repo per model, each with a model card naming the source,
   the changes and the licence: [`songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14),
@@ -67,6 +65,8 @@ from that period still mention 4.x numbers.
 - **Fold the search rows away.** *View → Search bars*, or dragging the line under them up (as the Playlist and
   Browser fold away on the left), hides *Master tempo*, *Search* and *Describe a sound*; a search set before stays
   in force.
+- Running from source on Linux before this version: track paths keep their capitals now (on Linux `A.mp3` and
+  `a.mp3` are two files), so the library is read anew and the tracks are analysed again.
 
 ## [1.2.0] - 2026-11-17
 
