@@ -8,6 +8,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from songselector.core.key_formats import nml_key, parse_bpm, parse_key
+from songselector.env import getenv
 
 _WINDOWS_PATH = re.compile(r'^(?:[A-Za-z]:|\\\\)')   # a drive letter, or a network share (\\server\...)
 
@@ -43,6 +44,10 @@ def nml_track_path(key):
 
 
 def discover_collection():
+    """Path of Traktor's collection.nml, the most recently written of those found; '' if there is none."""
+    override = getenv('TRAKTOR_COLLECTION')
+    if override is not None:  # tests and unusual installs; 'none' or '' switches Traktor off (as for Rekordbox, Mixxx)
+        return '' if override.lower() in ('', 'none') else override
     candidates = [Path(r'E:\DJ\TRAKTOR\collection.nml')]
     home = Path.home()
     for documents in (home / 'Documents', home / 'OneDrive' / 'Documents', home / 'OneDrive' / 'Dokumentumok'):

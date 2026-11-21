@@ -266,7 +266,8 @@ class SavedListsMixin:
         """The playlist tree of another program, in its order; None: that program's library is not known."""
         if kind == TRAKTOR:
             collection = self.importer.collection
-            return collection.playlists if collection.path and os.path.isfile(collection.path) else None
+            there = collection.playlists or (collection.path and os.path.isfile(collection.path))
+            return collection.playlists if there else None
         library = self.importer.mixxx if kind == MIXXX else getattr(self, 'rekordbox_library', None)
         return library.playlists if library is not None and library.path else None
 
