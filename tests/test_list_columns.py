@@ -1,5 +1,6 @@
 """List columns asked for on 2026-11-17: the speed change to the master tempo, sorting by group then match; the
 map's track names without a leading ' - '."""
+import os
 import unittest
 
 import pandas as pd
@@ -27,7 +28,7 @@ class TrackNameTests(unittest.TestCase):
         self.assertEqual(track_name({'Artist': 'Desimal', 'Title': 'Hyperboria'}), 'Desimal - Hyperboria')
         self.assertEqual(track_name({'Artist': '', 'Title': 'Desimal - Hyperboria'}), 'Desimal - Hyperboria')
         self.assertEqual(track_name({'Artist': 'Desimal', 'Title': ' '}), 'Desimal')
-        self.assertEqual(track_name({'Path': r'E:\music\untitled.mp3'}), 'untitled.mp3')
+        self.assertEqual(track_name({'Path': os.path.join('music', 'untitled.mp3')}), 'untitled.mp3')
 
 
 class ListColumnGuiTests(GuiTestBase):

@@ -1,19 +1,32 @@
 """Read-only, cached access to Traktor's NML collection."""
 import ntpath
 import os
+import posixpath
+import re
+import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from songselector.core.key_formats import nml_key, parse_bpm, parse_key
 
+_WINDOWS_PATH = re.compile(r'^(?:[A-Za-z]:|\\\\)')   # a drive letter, or a network share (\\server\...)
+
 
 def canonical_path(path):
+    r"""The key a track is known by (library, embeddings, map, playlists): one per file, however its path is spelt.
+
+    Windows paths are case-insensitive and take either slash, so they become lower case with backslashes
+    ('E:/DJ/A.mp3' -> 'e:\dj\a.mp3'); on any system, as they also come from Traktor's or Rekordbox's files. Other
+    paths (Linux) are only normalised: there 'A.mp3' and 'a.mp3' are two files. Until 1.3 every path was folded the
+    Windows way, also on Linux, where nobody used the app yet."""
     if path is None:
         return ''
     text = str(path).strip()
     if not text or text.lower() == 'nan':
         return ''
-    return ntpath.normcase(ntpath.normpath(text))
+    if sys.platform == 'win32' or _WINDOWS_PATH.match(text):
+        return ntpath.normcase(ntpath.normpath(text))
+    return posixpath.normpath(text)
 
 
 def nml_track_path(key):

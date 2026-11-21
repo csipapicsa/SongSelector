@@ -137,9 +137,11 @@ class LibraryPersistenceGuiTests(unittest.TestCase):
             path = self.root / f'{name}.mp3'
             path.write_bytes(b'')
             self.files.append(path)
-        # The "default CSV": three tracks, with the first one listed twice under another spelling.
+        # The "default CSV": three tracks, with the first one listed twice under another spelling of its path
+        # (Windows: in capitals; on Linux, where case makes another file, with a doubled slash).
+        other = str(self.files[0]).upper() if os.name == 'nt' else str(self.files[0]).replace('/', '//')
         self.default_library = pd.DataFrame([track(path, path.stem) for path in self.files] +
-                                            [track(str(self.files[0]).upper(), 'one again')])
+                                            [track(other, 'one again')])
         self.patches = [
             patch('songselector.ui.main_window.SETTINGS_FILE', str(self.settings_path)),
             patch('songselector.ui.main_window.DataManager.load_default_data',

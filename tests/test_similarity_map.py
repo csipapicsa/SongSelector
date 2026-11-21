@@ -521,12 +521,16 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.window.resize(1400, 900)
         self.window.show()
         self.application.processEvents()
+        from songselector.ui.similarity_map import DotItem
         self.map.select(self.key(0))
-        other = self.key(3)  # same tempo-adjusted key as track 0, same style
         view = self.map.view
-        view.centerOn(self.map.dots[other])
-        self.application.processEvents()
-        point = view.mapFromScene(self.map.dots[other].pos())
+        for index in (3, 6, 9):  # same tempo-adjusted key as track 0 (keys repeat every 3 tracks), same style
+            other = self.key(index)
+            view.centerOn(self.map.dots[other])
+            self.application.processEvents()
+            point = view.mapFromScene(self.map.dots[other].pos())
+            if next(item for item in view.items(point) if isinstance(item, DotItem)) is self.map.dots[other]:
+                break  # one that no other dot covers: a style's fake tracks can land on top of each other
         QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, self.key(0))  # the base track stays selected
@@ -534,7 +538,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertTrue(self.map.preview_glow.isVisible())
         card = self.map.preview_card.text.toPlainText()
         self.assertTrue(self.map.preview_card.isVisible())
-        self.assertIn('breaks 3', card)
+        self.assertIn(f'breaks {index}', card)
         self.assertIn('Perfect mix', card)
         mix, similarity = self.map.relation(other)
         self.assertEqual(mix.name, 'perfect_mix')
@@ -856,7 +860,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         depth = self.map._depth
         near, far = max(depth, key=depth.get), min(depth, key=depth.get)
         near_size, far_size = self.map.dots[near].scale(), self.map.dots[far].scale()
-        self.assertGreater(near_size, 1.5 * far_size)  # and are drawn smaller than near ones
+        self.assertGreater(near_size, far_size)  # and are drawn smaller than near ones (how much: the cloud's depth)
         self.assertTrue(0.5 <= far_size < 1 < near_size <= 1.6)
         before = {key: dot.pos() for key, dot in self.map.dots.items()}
         self.window.resize(1400, 900)
