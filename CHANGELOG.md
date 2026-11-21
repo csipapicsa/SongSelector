@@ -24,6 +24,9 @@ from that period still mention 4.x numbers.
   not have follows the other program. Automatic: the first program found (Traktor, then Mixxx).
 - A DJ program without a colour for a track no longer clears the colour read from the file's tags at the first
   sync.
+- **The Browser lists only the DJ programs that are there.** *Traktor Playlists* appears once a Traktor collection
+  is found or linked, like *Mixxx Playlists* and *Rekordbox Playlists*; before, it was always shown, also on Linux
+  and on computers without Traktor.
 - **Model files are checked properly, at start.** Each model file must be there with the right size and the right
   SHA-256. Files the app downloads are checked as they arrive; files copied in by hand, or in a folder chosen with
   *Models folder…*, are checked once in the background after the start (a model can be used meanwhile) and again
