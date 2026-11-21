@@ -181,6 +181,11 @@ One PR per block below, in this order; each with tests (a failing test first for
       mostly non-music sounds, so it groups by described qualities (dark, calm, vocal) across genres. Keep CNN14 for
       the map for now; measure instead of eyeballing t-SNE (neighbour purity with the user's labels, as in
       `rating_color`); try LAION's music-trained `larger_clap_music`. Microsoft CLAP can go later.
+- [ ] Research: MTG's music-trained CLAP (AllMusicCaps; OMAR-RQ audio encoder, captions from AllMusic reviews) for
+      text search and the map, variants `all_layers` and `te_trained_sigreg`. Desk comparison and plan in
+      `docs/research/allmusiccaps_clap.md`: first precision of the top 10 per genre prompt on the 998-track set
+      against LAION light and MS CLAP 2023 (no number for those yet either), ONNX export only if it wins.
+      Weights CC BY-NC-SA 4.0.
 - [ ] Research, low priority: a better similarity than cosine for CNN14 (classifier features, not trained for
       similarity; CLAP is trained on cosine, so it stays): PCA whitening, hubness reduction (CSLS), window-set
       comparison (Chamfer / Fréchet), or a learned metric from the user's playlists and sets. Evaluate with the user's
