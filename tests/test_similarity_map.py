@@ -521,16 +521,15 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.window.resize(1400, 900)
         self.window.show()
         self.application.processEvents()
-        from songselector.ui.similarity_map import DotItem
         self.map.select(self.key(0))
+        index = 3
+        other = self.key(index)  # same tempo-adjusted key as track 0 (keys repeat every 3 tracks), same style
+        # Lifted to the compared track's tier, above its neighbours: a style's fake tracks can land on one another.
+        self.map.dots[other].setZValue(3.5)
         view = self.map.view
-        for index in (3, 6, 9):  # same tempo-adjusted key as track 0 (keys repeat every 3 tracks), same style
-            other = self.key(index)
-            view.centerOn(self.map.dots[other])
-            self.application.processEvents()
-            point = view.mapFromScene(self.map.dots[other].pos())
-            if next(item for item in view.items(point) if isinstance(item, DotItem)) is self.map.dots[other]:
-                break  # one that no other dot covers: a style's fake tracks can land on top of each other
+        view.centerOn(self.map.dots[other])
+        self.application.processEvents()
+        point = view.mapFromScene(self.map.dots[other].pos())
         QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, self.key(0))  # the base track stays selected

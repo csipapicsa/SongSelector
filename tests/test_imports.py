@@ -25,6 +25,16 @@ from songselector.ui.main_window import IN_PLAYLIST_ROLE
 from songselector.ui.theme import row_tint_alpha
 
 
+def other_spelling(path):
+    """The same file's path spelt another way: in capitals on Windows (case-insensitive); on Linux, where capitals
+    would name another file, with a '/./' before the name."""
+    path = str(path)
+    if os.name == 'nt':
+        return path.upper()
+    folder, name = os.path.split(path)
+    return f'{folder}/./{name}'
+
+
 def tagged_file(path, key='C', bpm='100'):
     tags = ID3()
     tags.add(TIT2(encoding=3, text=['Test title']))
@@ -149,7 +159,7 @@ class MetadataTests(unittest.TestCase):
         row = TrackImporter().read(path)
         self.assertIsNone(row['Musical_Key_Base'])
         self.assertIsNone(row['BPM'])
-        duplicate = dict(row, File_Path=row['File_Path'].upper())
+        duplicate = dict(row, File_Path=other_spelling(row['File_Path']))
         table = merge_tracks(None, [row, duplicate])
         self.assertEqual(len(table), 1)
         store = ImportedTrackStore(self.root/'imports.json')
