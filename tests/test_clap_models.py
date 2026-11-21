@@ -325,6 +325,38 @@ class MainWindowModelTests(WindowCase):
         self.assertIn('Groups wait', self.window.status_label.text())
         self.assertIsNone(self.window.similarity_map.data)  # no map loaded for nothing
 
+    def test_model_files_are_checked_once_in_the_background_and_a_damaged_model_is_switched_off(self):
+        # Asked 2026-11-21: a proper check of the model files at start, not just "a file of that name is there".
+        window = self.window
+        models = self.root / 'models'
+        models.mkdir()
+        for name in LAION_CLAP.files():
+            (models / name).write_bytes(b'x')  # copied in by hand: right size, checksum not computed yet
+
+        def check():
+            window.check_model_files()
+            deadline = time.monotonic() + 20
+            while window._model_check_thread is not None and time.monotonic() < deadline:
+                self.application.processEvents()
+                time.sleep(0.01)
+
+        with patch.object(window, 'start_embedding_analysis'):  # the stand-in files are not real models
+            self.assertEqual(model_download.model_state(window.model_file_states(LAION_CLAP)), model_download.CHECKING)
+            self.assertIsNotNone(window.model_file(LAION_CLAP))  # usable while it is being checked
+            check()
+            self.assertEqual(model_download.model_state(window.model_file_states(LAION_CLAP)), model_download.INSTALLED)
+            self.assertTrue(all(window.settings['Model file checks'][str(models / name)][2]
+                                for name in LAION_CLAP.files()))  # remembered: not computed again at the next start
+            damaged = models / LAION_CLAP.text_file
+            damaged.write_bytes(b'y')  # same size, other bytes
+            stat = damaged.stat()
+            os.utime(damaged, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+            check()
+        self.assertIsNone(window.model_file(LAION_CLAP))
+        self.assertIn('damaged', window.model_actions[LAION_CLAP.id].text())
+        self.assertIn('Damaged model files', window.status_label.text())
+        self.assertIn(f'{LAION_CLAP.text_file}: wrong checksum', window.status_label.text())
+
     def test_models_without_files_cannot_be_switched_on_and_the_map_follows_the_chosen_model(self):
         window = self.window
         self.assertEqual(set(window.model_stores), set(MODELS))

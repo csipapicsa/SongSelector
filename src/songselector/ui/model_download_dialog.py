@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
-    QSizePolicy,
     QVBoxLayout,
 )
 
@@ -125,17 +124,10 @@ class ModelDownloadDialog(QDialog):
                 f'checked before use. You can also build them yourself (<a href="{BUILD_HELP}">how</a>).')
 
     def _fit_height(self):
-        """Tall enough for the intro wrapped at the window's width. The size hint alone measured it at another width
-        and cut off its end ("...You can also build them yourself (how).", seen on Linux)."""
-        width = max(self.width(), 560)
-        self.intro.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+        """Tall enough for the intro wrapped at the window's width, also after another folder changed its text (it
+        was cut off once: "...You can also build them yourself (how)." missing, seen on Linux)."""
+        width = max(self.width(), 560) if self.isVisible() else 560
         self.resize(width, max(self.sizeHint().height(), self.layout().heightForWidth(width)))
-
-    def model_states(self):
-        """{model id: INSTALLED / CHECKING / NOT_INSTALLED / INCOMPLETE / DAMAGED} in the models folder."""
-        return {spec.id: model_download.model_state(model_download.file_states(spec, self.folder, self.files,
-                                                                               self.checked))
-                for spec in self.models}
 
     def _show_installed(self, keep_choice=False):
         """Each model's row: installed ones with a check mark, missing or damaged ones checked for download (with
