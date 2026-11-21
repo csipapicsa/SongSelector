@@ -9,6 +9,8 @@ import sys
 
 
 def close_exe_splash():
+    if '_PYI_SPLASH_IPC' not in os.environ:  # no splash (Linux); pyi_splash would print a traceback
+        return
     try:
         import pyi_splash  # only in an exe built with a splash screen
         pyi_splash.close()
