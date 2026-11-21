@@ -8,7 +8,7 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
-## [Unreleased]
+## [1.4.0] - 2026-11-21
 
 - **Mixxx support.** The app reads Mixxx's library (`mixxxdb.sqlite`) directly, like Traktor's collection: it is
   found by itself (Linux `~/.mixxx`, Flatpak, Windows `%LOCALAPPDATA%\Mixxx`, macOS), or linked with *Import ->

@@ -6,8 +6,8 @@
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
 ![Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
-A desktop app for Windows and Linux that helps DJs pick the next track. It sits next to Traktor or Rekordbox
-(on Windows), reads their libraries automatically, and answers three questions:
+A desktop app for Windows and Linux that helps DJs pick the next track. It sits next to Traktor, Rekordbox or
+Mixxx, reads their libraries automatically, and answers three questions:
 
 - **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
   pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
@@ -88,7 +88,7 @@ self-contained (no Python needed). Check them against `SHA256SUMS.txt` from the 
 
   Built on Ubuntu 22.04, so it runs on distributions from about 2022 on. It mounts itself with FUSE, which desktop
   distributions have; where FUSE is missing, start it with `--appimage-extract-and-run`. Analysis runs on the CPU.
-  Traktor and Rekordbox are Windows/macOS programs, so on Linux tracks come from their tags (*Import*).
+  On Linux the app reads Mixxx's library (also Mixxx from Flathub); Traktor and Rekordbox do not run there.
 
 The embedding models (similarity map, closest matches, groups, search by description) are a separate, optional
 download (up to 1.6 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
@@ -240,6 +240,8 @@ slider). Setting a row's column to *None* switches that row off without losing i
 |---|---|
 | Traktor collection | Auto-detected under `Documents\Native Instruments\Traktor*\`. Change via *Import → Link Traktor collection…* |
 | Rekordbox library | Auto-detected from Rekordbox's settings, else `%APPDATA%\Pioneer\rekordbox\master.db`. Change via *Import → Link Rekordbox library…* |
+| Mixxx library | Auto-detected: `~/.mixxx` on Linux (Flatpak: `~/.var/app/org.mixxx.Mixxx/.mixxx`), `%LOCALAPPDATA%\Mixxx` on Windows. Change via *Import → Link Mixxx library…*. Mixxx can stay open; nothing is written to it |
+| Primary DJ program | *Import → Primary DJ program*: when Traktor and Mixxx both know a track, its key, BPM, colour and rating come from this one; the other fills gaps |
 | Data folder | `SONGSELECTOR_APP_DATA_DIR` environment variable |
 
 ## Development
