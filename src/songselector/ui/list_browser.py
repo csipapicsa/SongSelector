@@ -89,6 +89,9 @@ class ListBrowser(QTreeWidget):
                                        self.style().standardIcon(QStyle.SP_DirIcon))
         self.traktor_root.setToolTip(0, "Traktor's playlists, read from its collection.nml (read-only). "
                                         'Updated when Traktor saves.')
+        # Like Mixxx and Rekordbox below: shown once a Traktor collection has been found (asked 2026-11-21: the entry
+        # showed on Linux and on computers without Traktor, where it can never have anything).
+        self.traktor_root.setHidden(True)
         self.mixxx_root = self._item(self, 'Mixxx Playlists', {'kind': 'mixxx_root'},
                                      self.style().standardIcon(QStyle.SP_DirIcon))
         self.mixxx_root.setToolTip(0, "Mixxx's playlists, crates and history, read from its library (read-only; "
@@ -170,8 +173,10 @@ class ListBrowser(QTreeWidget):
             self.select_node(selected)
 
     def set_traktor_playlists(self, playlists):
-        """Traktor's playlist tree (TraktorCollection.playlists), in Traktor's order."""
-        self.set_foreign_playlists(TRAKTOR, playlists)
+        """Traktor's playlist tree (TraktorCollection.playlists), in Traktor's order;
+        None: no Traktor collection, the entry is hidden."""
+        self.traktor_root.setHidden(playlists is None)
+        self.set_foreign_playlists(TRAKTOR, playlists or [])
 
     def set_mixxx_playlists(self, playlists):
         """Mixxx's playlists, then folders Crates and History (MixxxLibrary.playlists);
