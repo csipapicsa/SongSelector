@@ -457,6 +457,7 @@ class BrowserGuiTests(unittest.TestCase):
         window = self.window()
         node = self.traktor_playlists(window)
         browser = window.list_browser
+        self.assertFalse(browser.traktor_root.isHidden())  # a collection is linked: the entry appears
         self.assertEqual(browser.traktor_root.text(0), 'Traktor Playlists (2)')  # the smartlist counts too
         folder = browser.traktor_root.child(0)
         self.assertEqual((folder.text(0), folder.child(0).text(0)), ('Sets', 'Breakbeat'))
@@ -521,6 +522,7 @@ class BrowserGuiTests(unittest.TestCase):
         window = self.window()
         browser = window.list_browser
         self.assertTrue(browser.rekordbox_root.isHidden())  # no Rekordbox library: no entry
+        self.assertTrue(browser.traktor_root.isHidden())  # no Traktor collection either (e.g. Linux): no entry
         (self.root / 'not imported.mp3').write_bytes(b'')
         library = RekordboxLibrary(str(self.root / 'master.db'))
         library.playlists = [
