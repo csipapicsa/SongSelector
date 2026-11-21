@@ -51,7 +51,7 @@ from that period still mention 4.x numbers.
 - **Choose every detail the map shows, and where.** *View → Map track details…* (was *Map hover details…*) is a grid
   with a column each for the hover card, the selected track's label and the details panel: the cover, *Artist -
   Title*, the key at master tempo and BPM, the mix and similarity to the selected track (cards), the group, and
-  every List column can be switched on or off in each. Before, only the columns could be chosen (for the card and
+  every List column, *Speed change* included, can be switched on or off in each. Before, only the columns could be chosen (for the card and
   the panel together) and the rest was always shown. Columns chosen before carry over.
 - **Hide the selected track's details beside the map.** Right-click anywhere beside the map, or *View → Selected
   track details*, shows or hides the details above the closest matches; the list gets their room.

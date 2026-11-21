@@ -1019,6 +1019,23 @@ class MapViewOptionsTests(MapWindowTestBase):
         self.assertEqual(self.window.settings['Map details'], chosen)
         self.assertNotIn('Map hover fields', self.window.settings)
 
+    def test_speed_change_can_be_chosen_for_the_map_details(self):
+        from songselector.config import SPEED_COLUMN
+        from songselector.ui.similarity_map import CARD, DEFAULT_DETAILS, LABEL, PANEL
+        dialog = self.window.map_details_dialog()
+        bpm = dialog.items.index('Original BPM')
+        self.assertEqual(dialog.items[bpm + 1], SPEED_COLUMN)  # next to the BPM it comes from, as in the List
+        self.assertTrue(all((place, SPEED_COLUMN) in dialog.boxes for place in (CARD, LABEL, PANEL)))
+        self.assertFalse(dialog.boxes[CARD, SPEED_COLUMN].isChecked())  # not shown by default
+        dialog.boxes[CARD, SPEED_COLUMN].setChecked(True)
+        self.assertIn(SPEED_COLUMN, dialog.selected()[CARD])
+        self.window.settings['Map details'] = {CARD: DEFAULT_DETAILS[CARD] + [SPEED_COLUMN]}
+        self.window._refresh_map()
+        self.map.hover(self.key(5))
+        speed = self.window._fields_for_key(self.key(5))[SPEED_COLUMN]
+        self.assertTrue(speed.endswith('%'))
+        self.assertIn(f'{SPEED_COLUMN}\n{speed}', self.map.hover_card.text.toPlainText())
+
     def test_the_details_panel_hides_by_right_click_beside_the_map_or_the_view_menu(self):
         from PyQt5.QtCore import QPoint
         from PyQt5.QtGui import QContextMenuEvent
