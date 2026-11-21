@@ -3,43 +3,31 @@
 Known issues, technical debt and ideas, roughly by priority. Move items into the
 CHANGELOG when they ship.
 
-## Next session: high priority (set 2026-11-20)
+## Next session (updated 2026-11-21, after 1.4.0)
 
-1. **Mixxx support (draft PR #42, branch `feature/mixxx-library`):** the user tests it in WSL (the clone
-   `~/SongSelector` is on the branch; start with `.venv/bin/songselector`): Browser -> *Mixxx Playlists* (playlists,
-   History), *Import missing tracks*, Color column with Mixxx's exact colours, ratings, `color:cyan` / `color:orange`,
-   a colour or rating changed in Mixxx arriving after Mixxx saves, *Import -> Primary DJ program*. Then mark the PR
-   ready, merge main into it, check CI, merge.
-2. **Model files on Hugging Face** (decided 2026-11-20; *Get models* has no download source since 1.2.0):
-   - [x] Login, three repos with licence tags and model cards, files uploaded and checked, app pinned to the
-     commits, download tested against the private repos (branch `feature/models-on-hf`).
-   - [x] The three repos are public (2026-11-20, user's go); anonymous download and resume checked.
-   - Open: the user's test in WSL (move `.appdata/models` aside, *Get
-     models* -> *Download*), PR + merge; delete the local branch `fix/model-download-release` (replaced) and the
-     leftover **draft** GitHub release (one tokenizer asset, `untagged-...`, not public).
+1. [x] **Mixxx support**: shipped in 1.4.0 (PR #42), tested by the user in WSL.
+2. **Model files**
+   - [x] On Hugging Face, downloaded by *Get models* (1.3.0).
+   - [x] *Get models* shows each model's state (a check mark for installed), and the model files are checked at
+     start (size, SHA-256 once per file) (1.4.0, PR #55). The intro cut-off of 2026-11-20 did not reproduce; a test
+     guards that the whole intro fits.
+   - **Delete a model.** A *Delete* button per installed model (with a confirmation naming the size freed): removes
+     its files, switches the model off and updates the menus. First stop anything using it: the analysis worker and
+     the text-search worker may hold the ONNX file open (on Windows an open file cannot be deleted). Keep its
+     embeddings cache (`embeddings-*.sqlite`) by default, so a re-download does not re-analyse; offer to delete it
+     too in the same dialog.
+   - Cleanup, waiting for the user's OK: the local branch `fix/model-download-release` (replaced by the Hugging Face
+     download) and the leftover **draft** GitHub release `models-v1` (one tokenizer asset, never public).
    - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums);
      `scripts/publish_models.py` is the upload half of it.
-   - **Get models window, from the user's WSL test (2026-11-20):**
-     - **Installed = a check mark.** Today an installed model is a greyed-out, *unticked* box with "(installed)",
-       which reads as "not there". Show a clear ✓ (e.g. a green "✓ Installed" next to the row) instead of the
-       disabled empty checkbox; it appears the moment a model's last file passes its checksum.
-     - **Delete a model.** A *Delete* button per installed model (with a confirmation naming the size freed): removes
-       its files, switches the model off and updates the menus. First stop anything using it: the analysis worker and
-       the text-search worker may hold the ONNX file open (on Windows an open file cannot be deleted). Keep its
-       embeddings cache (`embeddings-*.sqlite`) by default, so a re-download does not re-analyse; offer to delete it
-       too in the same dialog.
-     - **Bug: the intro text is cut off** after the folder path ("…and checked before use. You can also build them
-       yourself (how)." is missing, seen on Linux/WSLg). Likely `resize(560, sizeHint().height())` sizing before the
-       wrapped rich-text label knows its height; give the label a height for the window's width (or let the layout
-       set the minimum size) and test that the whole text is visible.
-3. [x] **Linux release** (2026-11-21, PR #52, shipped in 1.3.0): tests on Linux in CI, AppImage built on
-   ubuntu-22.04 and verified with `xvfb-run`. Follow-ups:
+3. [x] **Linux release** (1.3.0, PR #52). Follow-ups:
+   - The user's test on a real Linux desktop: a VM with Ubuntu 24.04 (GNOME on Wayland, newer than the build's
+     22.04) and Mixxx from Flathub, and a friend's machine. Check: start from the file manager, icon in the dock,
+     double-click opens the player (`xdg-open`), drag into Mixxx, *Get models*, analysis, settings after a restart.
    - pip-audit runs on Windows only, so `onnxruntime` (the Linux line of `requirements.txt`) is not audited; an
      audit leg on Linux (keep the required check name, like the `test` gate).
-   - The user's test of the released AppImage on a real Linux desktop (not WSL): menu entry/icon via an AppImage
-     integration tool, opening a file by double-click (`xdg-open`), drag and drop into the playlist.
-   - Linux has no DJ program integration until Mixxx (item 1); `discover_collection()` still looks for
-     `E:\DJ\TRAKTOR\collection.nml` first (harmless there, see Distribution item 3).
+   - `discover_collection()` still looks for `E:\DJ\TRAKTOR\collection.nml` first (see Distribution item 3);
+     `SONGSELECTOR_TRAKTOR_COLLECTION` overrides it (the tests set it to `none`).
 4. **Idea, to discuss later (user, 2026-11-20; "not now"):** single-key shortcuts while the app is active, e.g.
    *F* fits the map. Needs a plan for keys typed into text fields (search, description, tempo box).
 
