@@ -44,7 +44,11 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `audio_metadata.py` | Read ID3 / FLAC / WAV tags with mutagen into `config.AudioMetadata` |
 | `traktor_collection.py` | Read-only, cached index of Traktor's `collection.nml`; lookup by exact path, then by unique filename + file size |
 | `rekordbox_library.py` | Read-only playlists (folders, order, file of each track) from Rekordbox's encrypted `master.db`, via `sqlcipher3` and the published key; reads a temporary copy. Same shape as `TraktorCollection`, so `ui/traktor_watcher.py` and the Browser serve both |
-| `track_import.py` | `TrackImporter` merges tag data with collection data; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
+| `mixxx_library.py` | Read-only Mixxx library from `mixxxdb.sqlite` (plain SQLite, read from a temporary copy): BPM, key (`key_id`, Mixxx's ChromaticKey), rating, exact colour, and playlists / crates / history. Same shape as `TraktorCollection` (`by_path`, `find`, `playlists`) |
+| `dj_programs.py` | The DJ programs with a full library (Traktor, Mixxx) and their priority: the *primary* program decides a track it knows, the next one a track it does not; the others only fill empty values |
+| `traktor_sync.py` | Takes the key / BPM / colour / rating a program changed since its last sync ("seen" per program in `library.sqlite`) into the library table; `fill_only` for programs that do not decide a track |
+| `track_colors.py` | A track colour is a family number (Traktor 1-7, tags) or a program's exact `#RRGGBB` (Mixxx); `family()` puts an exact colour into the family nearest to its hue, for search and filters. No Qt |
+| `track_import.py` | `TrackImporter` merges tag data with the DJ programs' data, the primary program first; `merge_tracks`, `drop_duplicate_paths`, `enrich_ratings`; `ImportedTrackStore` reads the pre-4.6 `imported_tracks.json` |
 | `library_store.py` | `LibraryStore`: SQLite file with the app's own collection (every track ever loaded), the user's Song Selector rating/color, and the saved Library / Playlist lists. Writes only what changed (unchanged tracks and list positions are skipped); WAL journal |
 | `tag_writer.py` | `write_tags`: writes Artist / Title / Genre / Comment into MP3 (ID3), WAV (ID3 chunk) and FLAC (Vorbis) files. The only code that writes audio files |
 | `harmonic.py` | `mix_type(from, to)`: Mixed In Key harmonic relation between Camelot keys, with weights (from the thesis project) |

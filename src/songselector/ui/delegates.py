@@ -1,9 +1,10 @@
-"""Draw Traktor category dots while respecting row backgrounds and selection."""
+"""Draw track colour dots (a family's colour or a DJ program's exact one) while respecting row backgrounds
+and selection."""
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QBrush, QColor, QPainter, QPen
 from PyQt5.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
-from songselector.config import COLOR_MAPPING_CATEGORY
+from songselector.config import track_qcolor
 
 
 class ColorDotDelegate(QStyledItemDelegate):
@@ -21,10 +22,7 @@ class ColorDotDelegate(QStyledItemDelegate):
         styled.text = ''
         style = styled.widget.style() if styled.widget is not None else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, styled, painter, styled.widget)
-        try:
-            color = COLOR_MAPPING_CATEGORY.get(int(float(index.data(Qt.DisplayRole))))
-        except (TypeError, ValueError, OverflowError):
-            color = None
+        color = track_qcolor(index.data(Qt.DisplayRole))
         if color is not None:
             painter.setRenderHint(QPainter.Antialiasing, True)
             painter.setPen(QPen(QColor(60, 60, 60), 1))

@@ -8,6 +8,23 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+- **Mixxx support.** The app reads Mixxx's library (`mixxxdb.sqlite`) directly, like Traktor's collection: it is
+  found by itself (Linux `~/.mixxx`, Flatpak, Windows `%LOCALAPPDATA%\Mixxx`, macOS), or linked with *Import ->
+  Link Mixxx library...*. Mixxx may stay open; nothing is written to it.
+  - Imports take BPM, key, rating and colour from Mixxx when the file's tags do not have them; changes made in
+    Mixxx come in after Mixxx saves (as Traktor's do).
+  - Mixxx's playlists, crates and history appear in the Browser under *Mixxx Playlists*.
+  - **Exact colours:** a Mixxx colour is shown as Mixxx shows it (all 19 of its palette, or any custom colour).
+    `color:` searches and filters find it by its family: `color:orange` finds Mixxx's #FF8800. New families
+    *cyan* (alias *aqua*) and *grey*.
+- **Primary DJ program** (*Import -> Primary DJ program*): when Traktor and Mixxx both know a track, the primary
+  program's key, BPM, colour and rating win; the other only fills what is empty. A track the primary program does
+  not have follows the other program. Automatic: the first program found (Traktor, then Mixxx).
+- A DJ program without a colour for a track no longer clears the colour read from the file's tags at the first
+  sync.
+
 ## [1.3.0] - 2026-11-21
 
 - **Linux.** Each release now also has `SongSelector-<version>-x86_64.AppImage`: make it executable
@@ -66,7 +83,8 @@ from that period still mention 4.x numbers.
   Browser fold away on the left), hides *Master tempo*, *Search* and *Describe a sound*; a search set before stays
   in force.
 - Running from source on Linux before this version: track paths keep their capitals now (on Linux `A.mp3` and
-  `a.mp3` are two files), so the library is read anew and the tracks are analysed again.
+  `a.mp3` are two files), and the data folder still holds the old keys. Start with a fresh `.appdata` (keep its
+  `models` folder); the tracks are then imported and analysed again. Windows is not affected.
 
 ## [1.2.0] - 2026-11-17
 

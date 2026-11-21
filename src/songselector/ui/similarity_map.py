@@ -61,9 +61,10 @@ from PyQt5.QtWidgets import (
     QWidgetAction,
 )
 
-from songselector.config import COLOR_MAPPING_CATEGORY, FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN
+from songselector.config import FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN, track_qcolor
 from songselector.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from songselector.core.color_search import COLOR_NAMES
+from songselector.core.color_search import color_id as color_family
 from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
 from songselector.core.placement import (
     ABOVE_LEFT,
@@ -275,11 +276,10 @@ def shown_fields(fields, names):
 def field_html(name, text):
     """A field's value for the details box and the cards: colours as a coloured dot and name."""
     if name in ('Color', SS_COLOR_COLUMN):
-        try:
-            number = int(float(text))
-        except ValueError:
+        number = color_family(text)
+        if number is None:
             return escape(text)
-        colour = COLOR_MAPPING_CATEGORY.get(number)
+        colour = track_qcolor(text)
         name = COLOR_NAMES.get(number, text).capitalize()
         return f'<span style="color:{colour.name()}">&#9679;</span> {name}' if colour is not None else name
     return escape(text)
@@ -1186,7 +1186,7 @@ class SimilarityMapWidget(QWidget):
 
     def _dot_colour(self, key, fields):
         if not self.groups:
-            colour = QColor(COLOR_MAPPING_CATEGORY.get(display_color(fields)) or NO_COLOR)
+            colour = QColor(track_qcolor(display_color(fields)) or NO_COLOR)
         else:
             colour = QColor(group_colour(self.groups.get(key, -1)))
         if key in self._markers:
@@ -1854,7 +1854,7 @@ class SimilarityMapWidget(QWidget):
         low, high = (min(strengths), max(strengths)) if strengths else (0, 0)
         for source, target, reason, similarity in edges:
             if reason == EDGE_SAME_COLOR:
-                colour = (COLOR_MAPPING_CATEGORY.get(display_color(self.fields[source])) or NO_COLOR).name()
+                colour = (track_qcolor(display_color(self.fields[source])) or QColor(NO_COLOR)).name()
             else:
                 colour = EDGE_COLORS[reason]
             level = round((STRENGTH_LEVELS - 1) * (similarity - low) / (high - low)) if high > low \

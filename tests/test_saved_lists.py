@@ -472,7 +472,8 @@ class BrowserGuiTests(unittest.TestCase):
         browser.node_activated.emit(node)  # double-click: into the Playlist tab
         self.assertEqual(self.playlist(window), ['three', 'one'])
 
-        window.import_foreign_missing(node)  # the file that exists comes in; the view stays
+        self.assertFalse(window.source_import_button.isHidden())  # missing tracks: offered in the bar
+        window.source_import_button.click()  # the file that exists comes in; the view stays
         self.assertEqual(window.list_source, node)
         self.assertEqual(self.shown(window), ['three', 'one', 'not imported'])
         with patch('songselector.ui.saved_lists.QInputDialog.getText', return_value=('My breaks', True)):

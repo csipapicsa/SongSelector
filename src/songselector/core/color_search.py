@@ -1,14 +1,20 @@
-"""Named Traktor category colors and search-bar color filters."""
-import math
+"""Named colour families and search-bar color filters.
+
+Families 1-7 are Traktor's colours; 8-11 come from file tags and from the exact colours of other programs
+(core/track_colors.py: Mixxx's #00FFFF is cyan). A filter matches a track by the family of its colour.
+"""
 import re
 from dataclasses import dataclass, field
 
+from songselector.core.track_colors import family
+
 COLOR_NAMES = {0: 'none', 1: 'red', 2: 'orange', 3: 'yellow', 4: 'green',
-               5: 'blue', 6: 'indigo', 7: 'violet', 8: 'pink', 9: 'brown'}
+               5: 'blue', 6: 'indigo', 7: 'violet', 8: 'pink', 9: 'brown', 10: 'cyan', 11: 'grey'}
 COLOR_ALIASES = {name: number for number, name in COLOR_NAMES.items()}
 COLOR_ALIASES.update({'purple':7, 'magenta':7, 'uncolored':0, 'uncoloured':0,
-                      'no color':0, 'no colour':0})
-COLOR_HELP = 'red, orange, yellow, green, blue, indigo, violet (purple), pink, brown, none'
+                      'no color':0, 'no colour':0, 'aqua':10, 'turquoise':10, 'teal':10,
+                      'gray':11, 'white':11, 'black':11})
+COLOR_HELP = 'red, orange, yellow, green, cyan (aqua), blue, indigo, violet (purple), pink, brown, grey, none'
 # Search-bar keywords: color: filters the Traktor color, sscolor: the Song Selector color.
 TRAKTOR_COLOR_KEYWORDS = ('color', 'colour')
 SS_COLOR_KEYWORDS = ('sscolor', 'sscolour')
@@ -38,14 +44,8 @@ def parse_color_values(value):
 
 
 def color_id(value):
-    text = str(value).strip().casefold() if value is not None else ''
-    if text in ('', 'none', 'nan'):
-        return 0
-    try:
-        number = float(text)
-        return int(number) if math.isfinite(number) and number.is_integer() and int(number) in COLOR_NAMES else None
-    except (ValueError, TypeError, OverflowError):
-        return None
+    """Family number of a stored colour (a family number or an exact '#RRGGBB'); 0 = none, None = not a colour."""
+    return family(value)
 
 
 @dataclass

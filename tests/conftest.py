@@ -11,8 +11,9 @@ from pathlib import Path
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 # No default embedding model: test windows must not start analysing real tracks.
 os.environ.setdefault('SONGSELECTOR_EMBEDDING_MODEL', 'none')
-# Test windows must not read the Rekordbox library of the machine they run on.
+# Test windows must not read the Rekordbox or Mixxx library of the machine they run on.
 os.environ.setdefault('SONGSELECTOR_REKORDBOX_LIBRARY', 'none')
+os.environ.setdefault('SONGSELECTOR_MIXXX_LIBRARY', 'none')
 
 _created_data_dir = None
 if not os.environ.get('SONGSELECTOR_APP_DATA_DIR'):

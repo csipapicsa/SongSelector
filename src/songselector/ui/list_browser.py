@@ -4,9 +4,9 @@ Browser tab, as in Traktor: the track collection (all tracks, by artist, album, 
 the user's playlists and smartlists, and Traktor's own playlists (read-only).
 
 Every entry is a node {'kind', 'name'}: kind 'all', 'artist', 'album', 'genre',
-'playlist', 'smartlist', 'traktor' or 'rekordbox' (track sources; a Traktor or Rekordbox
+'playlist', 'smartlist', 'traktor', 'mixxx' or 'rekordbox' (track sources; another program's
 playlist also has 'path', its folders and name), or 'group' / 'collection' / 'playlists' /
-'traktor_root' / 'traktor_folder' / 'rekordbox_root' / 'rekordbox_folder' (folders) or
+'traktor_root' / 'traktor_folder' / 'mixxx_root' / 'mixxx_folder' / 'rekordbox_root' / 'rekordbox_folder' (folders) or
 'traktor_smartlist' / 'rekordbox_smartlist' (listed, not evaluated yet).
 The window decides what a node shows; this widget only lists them.
 """
@@ -23,8 +23,9 @@ NODE_ROLE = Qt.UserRole + 1
 # Collection folders: node kind -> (folder label, track column)
 COLLECTION_GROUPS = {'artist': ('Artists', 'Artist'), 'album': ('Albums', 'Album'), 'genre': ('Genres', 'Genre')}
 TRAKTOR = 'traktor'      # a playlist in Traktor's collection.nml
+MIXXX = 'mixxx'          # a playlist, crate or history list in Mixxx's mixxxdb.sqlite
 REKORDBOX = 'rekordbox'  # a playlist in Rekordbox's master.db
-FOREIGN_KINDS = {TRAKTOR: 'Traktor', REKORDBOX: 'Rekordbox'}  # playlists of other programs, read-only
+FOREIGN_KINDS = {TRAKTOR: 'Traktor', MIXXX: 'Mixxx', REKORDBOX: 'Rekordbox'}  # other programs' lists, read-only
 DESCRIPTION = 'description'  # the results of a typed description (search bar), best match first
 TRACK_SOURCES = {'all', 'artist', 'album', 'genre', PLAYLIST, SMARTLIST, DESCRIPTION, *FOREIGN_KINDS}
 SAVED_KINDS = {PLAYLIST, SMARTLIST}
@@ -88,12 +89,17 @@ class ListBrowser(QTreeWidget):
                                        self.style().standardIcon(QStyle.SP_DirIcon))
         self.traktor_root.setToolTip(0, "Traktor's playlists, read from its collection.nml (read-only). "
                                         'Updated when Traktor saves.')
+        self.mixxx_root = self._item(self, 'Mixxx Playlists', {'kind': 'mixxx_root'},
+                                     self.style().standardIcon(QStyle.SP_DirIcon))
+        self.mixxx_root.setToolTip(0, "Mixxx's playlists, crates and history, read from its library (read-only; "
+                                      'Mixxx is not touched and does not have to be closed). Updated when Mixxx saves.')
+        self.mixxx_root.setHidden(True)  # shown once a Mixxx library has been found
         self.rekordbox_root = self._item(self, 'Rekordbox Playlists', {'kind': 'rekordbox_root'},
                                          self.style().standardIcon(QStyle.SP_DirIcon))
         self.rekordbox_root.setToolTip(0, "Rekordbox's playlists, read from its library (read-only; Rekordbox is not "
                                           'touched and does not have to be closed). Updated when Rekordbox saves.')
         self.rekordbox_root.setHidden(True)  # shown once a Rekordbox library has been read
-        self.roots = {TRAKTOR: self.traktor_root, REKORDBOX: self.rekordbox_root}
+        self.roots = {TRAKTOR: self.traktor_root, MIXXX: self.mixxx_root, REKORDBOX: self.rekordbox_root}
         self.collection_root.setExpanded(True)
         self.playlists_root.setExpanded(True)
 
@@ -166,6 +172,12 @@ class ListBrowser(QTreeWidget):
     def set_traktor_playlists(self, playlists):
         """Traktor's playlist tree (TraktorCollection.playlists), in Traktor's order."""
         self.set_foreign_playlists(TRAKTOR, playlists)
+
+    def set_mixxx_playlists(self, playlists):
+        """Mixxx's playlists, then folders Crates and History (MixxxLibrary.playlists);
+        None: no Mixxx library, the entry is hidden."""
+        self.mixxx_root.setHidden(playlists is None)
+        self.set_foreign_playlists(MIXXX, playlists or [])
 
     def set_rekordbox_playlists(self, playlists):
         """Rekordbox's playlist tree (RekordboxLibrary.playlists), in Rekordbox's order;

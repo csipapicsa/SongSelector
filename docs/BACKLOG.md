@@ -120,7 +120,19 @@ One PR per block below, in this order; each with tests (a failing test first for
       `== <> < <= > >= % !% ~`, `&` and `|`). Fields the app lacks: `$PLAYCOUNT`, `$TIME`
       (track length); they would have to be read from the NML. 43 in the user's collection.
 - [x] Rekordbox's playlists in the Browser (*Rekordbox Playlists*, read directly from `master.db`, read-only, 4.25.0).
-- [ ] Other apps' playlists (Serato, VirtualDJ, Engine DJ); Rekordbox's own ratings / colours / BPM / key as import sources.
+- [x] Mixxx's library (2026-11-20): BPM, key, rating, exact colour, playlists / crates / history, read directly from
+      `mixxxdb.sqlite`; synced like Traktor. Several programs: the *primary DJ program* decides a track, the others
+      fill gaps (`core/dj_programs.py`).
+- [ ] Other apps' playlists (Serato, VirtualDJ, Engine DJ); Rekordbox's own ratings / colours / BPM / key as import
+      sources (it has 8 track colours and stars in `master.db`): add it to `core/dj_programs.py` so the primary-program
+      rule covers it.
+- [ ] **TODO (decided 2026-11-20): SongSelector as an extension of the DJ programs.** Remove the app's own rating and
+      colour (`Rating - Song Selector`, `Color - Song Selector`, `sscolor:`, the context-menu setters): the values
+      come from Traktor / Mixxx / Rekordbox, and the app is an aid next to them, not another place to curate. Plan
+      what happens to existing values first (show read-only for a while, or offer an export), then remove.
+- [ ] *Optional, later:* the app's own BPM / key analysis for files no DJ program has analysed. Study how Mixxx
+      does it (its analyzers use the Queen Mary Vamp plugins, e.g. `qm-tempotracker` for beats, plus a key
+      detector; GPL like this project) before choosing a library.
 - [ ] Folders under Playlists to organise saved playlists (later; not needed yet, 2026-10-30).
 - [ ] Next-track prediction from the playlist order (the Playlist tab records the set in order;
       models and ideas in the DJ mix segmentation project). Plan only.

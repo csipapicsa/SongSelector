@@ -22,6 +22,7 @@ from songselector.ui.list_browser import (
     COLLECTION_GROUPS,
     DESCRIPTION,
     FOREIGN_KINDS,
+    MIXXX,
     ORDERED_KINDS,
     REKORDBOX,
     SAVED_KINDS,
@@ -55,6 +56,7 @@ class SavedListsMixin:
         self.list_browser.node_activated.connect(self.load_into_playlist)
         self.list_browser.tracks_dropped.connect(self.add_tracks_to_saved_playlist)
         self.list_browser.menu_requested.connect(self._browser_menu)
+        self.source_import_button.clicked.connect(lambda: self.list_source and self.import_foreign_missing(self.list_source))
         self.refresh_saved_lists()
 
     def _report(self, message, level='ok'):
@@ -172,6 +174,9 @@ class SavedListsMixin:
         if missing > 0:
             text += f'; {missing} of its tracks are not in the library list'
         self.source_label.setText(text)
+        # Another program's playlist: its missing files can be imported from here (the button's tooltip says how
+        # else). The app's own playlists only hold library tracks, so theirs are gone, not missing.
+        self.source_import_button.setVisible(missing > 0 and node['kind'] in FOREIGN_KINDS)
 
     # -- the Playlist tab ------------------------------------------------------
 
@@ -261,13 +266,15 @@ class SavedListsMixin:
         """The playlist tree of another program, in its order; None: that program's library is not known."""
         if kind == TRAKTOR:
             return self.importer.collection.playlists
-        library = getattr(self, 'rekordbox_library', None)
+        library = self.importer.mixxx if kind == MIXXX else getattr(self, 'rekordbox_library', None)
         return library.playlists if library is not None and library.path else None
 
     def _refresh_foreign(self, kind):
         playlists = self._foreign_playlists(kind)
         if kind == TRAKTOR:
             self.list_browser.set_traktor_playlists(playlists)
+        elif kind == MIXXX:
+            self.list_browser.set_mixxx_playlists(playlists)
         else:
             self.list_browser.set_rekordbox_playlists(playlists)
         source = self.list_source
@@ -276,6 +283,9 @@ class SavedListsMixin:
 
     def refresh_traktor_playlists(self):
         self._refresh_foreign(TRAKTOR)
+
+    def refresh_mixxx_playlists(self):
+        self._refresh_foreign(MIXXX)
 
     def refresh_rekordbox_playlists(self):
         self._refresh_foreign(REKORDBOX)
