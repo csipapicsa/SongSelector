@@ -157,7 +157,7 @@ class BrowserGuiTests(unittest.TestCase):
         window.text_search_engine = type('Engine', (), {'search': lambda _self, *args: None,
                                                         'stop': lambda _self: None})()
         window.description_box.setEditText(prompt)
-        with patch.object(window.description_model, 'currentData', return_value=LAION_CLAP.id):
+        with patch.object(window.model_box, 'currentData', return_value=LAION_CLAP.id):
             window.describe()
         ranked = [(canonical_path(self.paths[title]), 0.5 - index / 100) for index, title in enumerate(ranked_titles)]
         window.show_description_results(prompt, ranked, 0.01)
@@ -261,7 +261,7 @@ class BrowserGuiTests(unittest.TestCase):
         window.search_bar.setText('three')  # the search applies on top
         self.assertEqual(self.shown(window), ['three'])
         window.search_bar.clear()
-        window.source_clear_button.click()
+        browser.setCurrentItem(browser.all_item)  # Browser -> All Tracks (the "Show all tracks" button is gone)
         self.assertEqual(len(self.shown(window)), 4)
         self.assertFalse(window.source_bar.isVisibleTo(window))
         self.assertEqual(browser.current_node()['kind'], 'all')

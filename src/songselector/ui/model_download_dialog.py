@@ -1,5 +1,5 @@
-"""Analysis -> Get models: which model files are installed; how to get the missing ones (built locally with the
-export scripts, or downloaded from a server set in the settings, core/model_download.py)."""
+"""Analysis -> Get models: which model files are installed; downloads the missing ones (core/model_download.py),
+from Hugging Face or from the `Model download URL` set in the settings."""
 import threading
 import time
 from pathlib import Path
@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 from songselector.core import model_download
-from songselector.core.model_download import BASE_URL, BUILD_HELP, FILES, LICENCES
+from songselector.core.model_download import BUILD_HELP, FILES, LICENCES
 
 
 class _Events(QObject):
@@ -26,12 +26,14 @@ class _Events(QObject):
 
 class ModelDownloadDialog(QDialog):
     downloaded = pyqtSignal(list)   # ids of models that became complete
+    folder_chosen = pyqtSignal(str)  # the user picked another models folder (Models folder...)
 
-    def __init__(self, models, folder, base_url=BASE_URL, files=FILES, parent=None):
+    def __init__(self, models, folder, base_url='', files=FILES, parent=None):
+        """base_url: a web folder serving the files under their names; empty for the Hugging Face repos."""
         super().__init__(parent)
-        self.setWindowTitle('Get models' if not base_url else 'Download models')
+        self.setWindowTitle('Get models')
         self.setAttribute(Qt.WA_QuitOnClose, False)  # never keeps the app running after the main window closes
-        self.models, self.folder, self.base_url, self.files = models, folder, base_url, files
+        self.models, self.folder, self.base_url, self.files = models, Path(folder), base_url, files
         self._stop = threading.Event()
         self._thread = None
         self._started = 0.0
@@ -40,30 +42,18 @@ class ModelDownloadDialog(QDialog):
         self._events.finished.connect(self._finished)
 
         layout = QVBoxLayout(self)
-        purpose = ('The models turn your tracks into embeddings (similarity map, closest matches, groups); the CLAP '
-                   'models also enable <b>Search by description</b>. ')
-        if base_url:
-            text = purpose + f'They are downloaded once into<br><code>{folder}</code><br>and checked before use.'
-        else:  # no public model release: the files are built with the export scripts
-            text = (purpose + 'The model files are not distributed with the app. Build them with the export scripts '
-                    f'(<a href="{BUILD_HELP}">how</a>) or copy them from another installation into<br>'
-                    f'<code>{folder}</code><br>then switch them on under <i>Analysis -> Embedding models</i>.')
-        intro = QLabel(text)
-        intro.setWordWrap(True)
-        intro.setTextFormat(Qt.RichText)
-        intro.setOpenExternalLinks(True)
-        layout.addWidget(intro)
+        self.intro = QLabel(self._intro_text())
+        self.intro.setWordWrap(True)
+        self.intro.setTextFormat(Qt.RichText)
+        self.intro.setOpenExternalLinks(True)
+        layout.addWidget(self.intro)
         self.boxes = {}
         for spec in models:
-            installed = model_download.installed(spec, folder, files)
-            size = model_download.download_size(spec, files) / 1e6
-            box = QCheckBox(f'{spec.name}: {size:,.0f} MB, {LICENCES.get(spec.id, "")}'
-                            + (' (installed)' if installed else '' if base_url else ' (missing)'))
+            box = QCheckBox()
             box.setToolTip(spec.description)
-            box.setChecked(not installed and bool(base_url))
-            box.setEnabled(not installed and bool(base_url))
             self.boxes[spec.id] = box
             layout.addWidget(box)
+        self._show_installed()
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
         self.bar.setValue(0)
@@ -80,14 +70,16 @@ class ModelDownloadDialog(QDialog):
         self.stop_button.clicked.connect(self._stop.set)
         close = QPushButton('Close')
         close.clicked.connect(self.close)
-        self.folder_button = QPushButton('Open models folder')
-        self.folder_button.clicked.connect(self._open_folder)
+        # One button that chooses (asked 2026-11-20: "Open models folder" only opened it, which has no purpose). The
+        # picker starts in the current folder, so it also shows what is there.
+        self.folder_button = QPushButton('Models folder...')
+        self.folder_button.setToolTip('Choose the folder the app reads the model files from and downloads them into,\n'
+                                      'e.g. one that already holds them or is shared by several installations.')
+        self.folder_button.clicked.connect(self._choose_folder)
         buttons.addWidget(self.folder_button)
         buttons.addStretch(1)
         buttons.addWidget(self.download_button)
         buttons.addWidget(self.stop_button)
-        for widget in (self.download_button, self.stop_button, self.bar):
-            widget.setVisible(bool(base_url))  # nothing to download from
         buttons.addWidget(close)
         layout.addLayout(buttons)
         self._update_button()
@@ -95,11 +87,38 @@ class ModelDownloadDialog(QDialog):
             box.toggled.connect(self._update_button)
         self.resize(560, self.sizeHint().height())
 
-    def _open_folder(self):
-        from PyQt5.QtCore import QUrl
-        from PyQt5.QtGui import QDesktopServices
-        Path(self.folder).mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
+    def _intro_text(self):
+        purpose = ('The models turn your tracks into embeddings (similarity map, closest matches, groups); the CLAP '
+                   'models also enable <b>Search by description</b>. ')
+        source = f'<code>{self.base_url}</code>' if self.base_url else 'Hugging Face'
+        return (purpose + f'They are downloaded once from {source} into<br><code>{self.folder}</code><br>and '
+                f'checked before use. You can also build them yourself (<a href="{BUILD_HELP}">how</a>).')
+
+    def _show_installed(self):
+        """Each model's box: installed ones done (greyed out), missing ones checked for download."""
+        for spec in self.models:
+            installed = model_download.installed(spec, self.folder, self.files)
+            size = model_download.download_size(spec, self.files) / 1e6
+            box = self.boxes[spec.id]
+            box.setText(f'{spec.name}: {size:,.0f} MB, {LICENCES.get(spec.id, "")}' + (' (installed)' if installed else ''))
+            box.setChecked(not installed)
+            box.setEnabled(not installed)
+
+    def _choose_folder(self):
+        from PyQt5.QtWidgets import QFileDialog
+        chosen = QFileDialog.getExistingDirectory(self, 'Models folder', str(self.folder))
+        if chosen and Path(chosen) != self.folder:
+            self.set_folder(chosen)
+            self.folder_chosen.emit(str(self.folder))
+
+    def set_folder(self, folder):
+        """Show another models folder: what is installed there and where downloads go."""
+        if self._thread is not None:
+            return  # never while a download writes into the old one (the button is disabled then)
+        self.folder = Path(folder)
+        self.intro.setText(self._intro_text())
+        self._show_installed()
+        self._update_button()
 
     def chosen(self):
         return [spec for spec in self.models if self.boxes[spec.id].isEnabled() and self.boxes[spec.id].isChecked()]
@@ -122,6 +141,7 @@ class ModelDownloadDialog(QDialog):
         self._started = time.monotonic()
         self.download_button.setEnabled(False)
         self.stop_button.setEnabled(True)
+        self.folder_button.setEnabled(False)  # the download writes into this folder
         for box in self.boxes.values():
             box.setEnabled(False)
         self.status.setText('Connecting...')
@@ -149,6 +169,7 @@ class ModelDownloadDialog(QDialog):
     def _finished(self, complete, error):
         self._thread = None
         self.stop_button.setEnabled(False)
+        self.folder_button.setEnabled(True)
         for spec in self.models:
             installed = spec.id in complete
             box = self.boxes[spec.id]

@@ -97,7 +97,7 @@ def _check_clap_models():
 def _check_model_download():
     """The downloader works inside the exe: a file from a local HTTP server, resumed and checksum-checked; HTTPS
     support (ssl) is bundled. With SONGSELECTOR_VERIFY_DOWNLOAD=1 it also fetches the two small tokenizer files
-    from the real model release on GitHub."""
+    from the models' Hugging Face repos."""
     import hashlib
     import ssl
     import tempfile
@@ -124,16 +124,14 @@ def _check_model_download():
             files={'check.bin':(len(data),hashlib.sha256(data).hexdigest())}
             model_download.download('check.bin',folder,f'http://127.0.0.1:{server.server_port}/',files)
             assert Path(folder,'check.bin').read_bytes()==data
-            if os.environ.get('SONGSELECTOR_VERIFY_DOWNLOAD')=='1' and model_download.BASE_URL:
+            if os.environ.get('SONGSELECTOR_VERIFY_DOWNLOAD')=='1':
                 for name in ('clap-laion-tokenizer.json','clap-ms-tokenizer.json'):
                     model_download.download(name,folder)
-                return 'ok, local and GitHub (tokenizer files)'
+                return 'ok, local and Hugging Face (tokenizer files)'
     finally:
         server.shutdown()
         server.server_close()
-    if not model_download.BASE_URL:
-        return 'ok (local; there is no public model release to fetch from)'
-    return 'ok (local; set SONGSELECTOR_VERIFY_DOWNLOAD=1 to fetch from GitHub too)'
+    return 'ok (local; set SONGSELECTOR_VERIFY_DOWNLOAD=1 to fetch from Hugging Face too)'
 
 
 def _check_aac_decoding():
@@ -335,7 +333,7 @@ def run():
         assert baseline==0,f'A fresh install must start with an empty library, found {baseline} tracks'
         window.importer=TrackImporter(test_collection)
         window.coloring_mode='song'
-        window.bpm_slider.setValue(100)
+        window.tempo_box.setValue(100)
 
         def drop(tree,paths):
             mime=QMimeData()
@@ -420,8 +418,8 @@ def run():
         window.populate_tree()
         for view in (window.candidate_tree,window.playlist_tree):
             assert find(view,fixture).background(0).color().rgb()==OPEN_KEY_COLOR_MAPPING['1d'].rgb()
-        window.bpm_slider.setValue(150)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(150)
+        window.apply_tempo()
         assert find(window.playlist_tree,fixture).text(HEADER_INDEX['New Key'])=='G major'
         for view in (window.candidate_tree,window.playlist_tree):
             assert find(view,fixture).background(0).color().rgb()==OPEN_KEY_COLOR_MAPPING['2d'].rgb()

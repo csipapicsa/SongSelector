@@ -4,16 +4,16 @@
 [![Release](https://img.shields.io/github/v/release/csipapicsa/SongSelector)](https://github.com/csipapicsa/SongSelector/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
-![Windows](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
-A Windows desktop app that helps DJs pick the next track. It sits next to Traktor or Rekordbox, reads
-their libraries automatically, and answers three questions:
+A desktop app for Windows and Linux that helps DJs pick the next track. It sits next to Traktor or Rekordbox
+(on Windows), reads their libraries automatically, and answers three questions:
 
 - **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
   pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
-  Open Key notation, and recalculates the whole library as you move the tempo slider.
+  Open Key notation, and recalculates the whole library as you change the master tempo.
 - **What sounds like this track?** Neural audio models (PANNs CNN14, LAION CLAP, Microsoft CLAP, run
-  through ONNX Runtime on the GPU) turn every track into embeddings in the background. A similarity map
+  through ONNX Runtime; on Windows on the GPU) turn every track into embeddings in the background. A similarity map
   and a closest-matches list then show tracks that *sound* alike, whatever their tags say.
 - **Which of my tracks sound like *this*?** Type a description, *"funky breakbeat with a groovy bassline"*,
   and the CLAP models find the closest tracks in your library.
@@ -68,21 +68,34 @@ What is behind the features, and where to look:
 | Model choice by measurement | CPU and GPU cost of LAION vs Microsoft CLAP measured before any app work; a broken model (collapsed embeddings) caught and excluded | [docs/research/text_search_clap.md](docs/research/text_search_clap.md) |
 | Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
 | Testing | About 320 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
-| Release verification | Every exe runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real GPU inference) and a native-window smoke test before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1) |
-| CI/CD | GitHub Actions: ruff, pytest on Windows, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe with a SHA-256 checksum | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
+| Release verification | Every build (Windows exe, Linux AppImage) runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real inference) and a native-window smoke test (on Linux on Xvfb, closed through the X11 window protocol) before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1), [verify_release.sh](scripts/verify_release.sh) |
+| CI/CD | GitHub Actions: ruff, pytest on Windows and Linux, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe and the AppImage with SHA-256 checksums | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
 | Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
 
 ## Install
 
-1. Download `SongSelector-<version>.exe` from the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest)
-   and put it in its own folder. It is self-contained (no Python needed). Windows SmartScreen will
-   warn because the exe is not code-signed; check it against `SHA256SUMS.txt` from the same release.
-2. The embedding models (similarity map, closest matches, groups, search by description) are **not
-   distributed** with the app: build them with the export scripts ([below](#getting-the-embedding-models)) and
-   put them in the `models` folder; *Analysis → Get models…* shows which are there and opens the folder.
-   Everything else works without them.
+Both downloads are in the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest),
+self-contained (no Python needed). Check them against `SHA256SUMS.txt` from the same release.
 
-The exe stores its data **next to itself**:
+- **Windows:** `SongSelector-<version>.exe`. Put it in its own folder and start it. SmartScreen will warn because
+  the exe is not code-signed.
+- **Linux (x86_64):** `SongSelector-<version>-x86_64.AppImage`. Make it executable and start it:
+
+  ```bash
+  chmod +x SongSelector-*-x86_64.AppImage
+  ./SongSelector-*-x86_64.AppImage
+  ```
+
+  Built on Ubuntu 22.04, so it runs on distributions from about 2022 on. It mounts itself with FUSE, which desktop
+  distributions have; where FUSE is missing, start it with `--appimage-extract-and-run`. Analysis runs on the CPU.
+  Traktor and Rekordbox are Windows/macOS programs, so on Linux tracks come from their tags (*Import*).
+
+The embedding models (similarity map, closest matches, groups, search by description) are a separate, optional
+download (up to 1.6 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
+([below](#getting-the-embedding-models)). Everything else works without them.
+
+The app stores its data in one folder: on Windows **next to the exe**, on Linux in `~/.local/share/SongSelector`
+(`$XDG_DATA_HOME/SongSelector`):
 
 | File | Content |
 |---|---|
@@ -92,25 +105,32 @@ The exe stores its data **next to itself**:
 | `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite` | The same for the CLAP models |
 | `models\` | The model files (next section) |
 
-To upgrade, put the new exe in the same folder. Settings from versions before 1.1
+To upgrade, put the new exe in the same folder (Linux: replace the AppImage). Settings from versions before 1.1
 (`SpotNextTrack_settings.json`) are taken over on the first start.
 
 ## Getting the embedding models
 
-The model files are ONNX exports of published weights. They are **not redistributed** with the app: build them
-with the export scripts below (every export is checked against the original PyTorch model), in a separate
-environment, since the exports need PyTorch and the app does not. Copy them into the `models` folder next to the
-app's data (*Analysis → Get models…* → *Open models folder*); when run from source the app looks in
-`.appdata\models\`. The app checks each file's size and SHA-256 against the expected export.
+The model files are ONNX exports of published weights. They are not inside the app: *Analysis → Get models…*
+downloads them from Hugging Face, one repo per model (below), each with a model card naming the source, the
+changes and the licence. Downloads resume where they stopped, and each file's size and SHA-256 are checked before
+use. The app downloads from a fixed commit of each repo, so what a version of the app gets never changes.
 
-If you host the files yourself (a web folder serving them under their names), set `"Model download URL"` in
-`SongSelector_settings.json`: *Get models…* then downloads them (resumable, checksum-checked).
+You can also build them yourself with the export scripts below (every export is checked against the original
+PyTorch model), in a separate environment, since the exports need PyTorch and the app does not. By default the app
+looks for them in the `models` folder next to its data (`.appdata\models\` when run from source); *Get models…* →
+*Models folder…* (also in the *Analysis* menu) points it at any other folder, e.g. one that already holds the files
+or is shared by several installations, and downloads go there too. To download from your own copy instead (a web folder serving the files under their names), set
+`"Model download URL"` in `SongSelector_settings.json`.
 
-| Model | Files | Weights | Export |
-|---|---|---|---|
-| CNN14 | `cnn14.onnx` (327 MB) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
-| LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
-| Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
+| Model | Files | Download | Weights | Export |
+|---|---|---|---|---|
+| CNN14 | `cnn14.onnx` (327 MB) | [`csipapicsa/songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
+| LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`csipapicsa/songselector-clap-laion`](https://huggingface.co/csipapicsa/songselector-clap-laion) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
+| Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`csipapicsa/songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
+
+To publish a new export: `scripts\publish_models.py --folder <folder>` checks the files against the app's list and
+uploads them with the model cards (`packaging/models/hf/`); then put the printed commits into
+`src/songselector/core/model_download.py`.
 
 ```powershell
 py -3.12 -m venv .export-venv
@@ -133,23 +153,29 @@ filtered now, so narrow the List first to explore one style.
 
 | Action | Result |
 |---|---|
-| Hover / click a dot | Details; a click also lists its 15 most similar tracks (cyan rings) |
+| Hover / click a dot | Details; a click also lists its 15 most similar tracks (cyan rings). What the hover card, the selected track's label and the details panel show: *View → Map track details…* |
+| Right-click beside the map | Show or hide the selected track's details above the closest matches (also *View → Selected track details*) |
+| Shift+right-drag (2D) | Turn the map left or right about the middle of the view |
+| Shift+drag (3D) | Rotate the 3D view |
 | Double-click in the matches list | Select that track and show its own matches |
 | Drag a dot or a match | The files, e.g. onto a Traktor deck or playlist |
 | Drop a track on the map | Select it and show its closest matches |
 | Double-click a dot | Add to the playlist |
-| Scroll / drag | Zoom / move |
+| Scroll / drag | Zoom / move (anywhere, even out of view; *Fit* brings the map back) |
 | *Edges* menu | Lines to harmonic partners (tempo-adjusted keys), same colour or same rating, optionally only to the N most similar |
 | *Groups* | Colour dots by unsupervised groups (numbered along the map) |
 | Ctrl+click a dot | Compare it with the selected track (card, mix type, similarity); Ctrl+click it again or on empty space to stop |
 | Esc | First stops the comparison, then clears the selection |
 | *Closest matches* | *all*; *harmonic only* (plus tracks without a key); or *Edges selection*: only the relations checked under *Edges* |
 | Select tracks in the Playlist | Shown on the map with an amber ring, even if the List filters them out (dashed) |
-| *Own window* | The map in a separate window (e.g. a second screen); close it to get it back in the tab |
 | *Map the List only* | Map and group just the tracks the List shows; follows the List as it changes |
 | *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
 
+The map's buttons (*Map the List only*, *Groups*, *Edges*, *3D*, *Fit*, *Re-arrange map*) are below the map.
 Distances on a 2D map are approximate; the closest-matches list uses the full embeddings.
+
+*View → Search bars* (or dragging the line under them up, as the Playlist and Browser fold away on the left)
+hides the *Master tempo*, *Search* and *Describe a sound* rows above the List; a search set before stays in force.
 
 ### Search by description and choosing models
 
@@ -158,8 +184,10 @@ sound like (or pick a saved prompt from its dropdown) and press Enter. The List 
 the chosen CLAP model, best first in the `#` column, with their similarity to the description in *Match* (cosine similarity as a
 percentage, higher is closer; compare within one search). ★ saves the prompt, ✕ deletes it, and *Top* changes how
 many tracks are shown without searching again (*All* lists every analysed track). *No search: show all
-tracks* at the top of the dropdown (or Enter in an empty field, or *Show all tracks*) goes back. Choosing a model
-that has not analysed the whole library yet switches it on and analyses the rest in the background.
+tracks* at the top of the dropdown (or Enter in an empty field) goes back; Browser → *All Tracks* shows all tracks.
+The *Model* box next to it is the one model choice: it sets the model of the search and of the similarity map,
+closest matches and groups (CNN14 can drive the map but has no text side, so it cannot search by description).
+Choosing a model that has not analysed the whole library yet switches it on and analyses the rest in the background.
 With a playlist, smartlist or other Browser entry shown, the search ranks only its tracks.
 *Analysis → Search by description…* (Ctrl+Shift+F) opens the same search in its own window, with scores.
 Describe the sound (instruments, textures, energy, mood: *"warm pads, slow and dreamy"*, *"distorted
@@ -168,7 +196,7 @@ prompts you want to repeat, double-click a result to select it in the List, drag
 Only tracks already analysed with that model can be found.
 
 *Analysis → Embedding models* sets which models are kept up to date (each shows how many tracks it has
-analysed); *Similarity model* sets which one the
+analysed); *Similarity model* (the same as the *Model* box) sets which one the
 map, the closest matches and the groups use. Each model keeps its own map layout. *Parallel analysis* sets how
 many tracks are analysed at once (automatic: 2 on a GPU). On laptops with two GPUs the analysis uses the
 high-performance one, and each model's batch size is measured once on your machine.
@@ -202,7 +230,7 @@ slider). Setting a row's column to *None* switches that row off without losing i
 | Setting | How |
 |---|---|
 | Cover art | *View → Cover art*: off, cropped to the row height, or square rows; 48 / 72 / 96 px |
-| Always on top | *View → Always on top*: SongSelector (and the map in its own window) stays above other windows |
+| Always on top | *View → Always on top*: SongSelector stays above other windows |
 | Columns | Right-click a column header: show or hide columns (*Speed change*, *Match*, *Group*, *Cover*...) |
 | Sorting by *Group* | Within each group, the best *Match* of a description search comes first |
 
@@ -229,6 +257,17 @@ python -m ruff check src tests       # lint
                                      # add -Model <path>\cnn14.onnx to include GPU inference
 ```
 
+On Linux (Python 3.11; on Ubuntu also Qt's xcb libraries, see the `apt-get` line in
+[ci.yml](.github/workflows/ci.yml)):
+
+```bash
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m songselector     # run from source
+.venv/bin/python -m pytest           # tests
+scripts/build_linux.sh               # -> dist/SongSelector-<version>-x86_64.AppImage
+xvfb-run -a scripts/verify_release.sh  # self-check inside the AppImage + window test on a virtual display
+```
+
 Set `SONGSELECTOR_CNN14_ONNX` to `cnn14.onnx`, and `SONGSELECTOR_CLAP_MODELS` to the folder with the CLAP
 files, to also run the real-model tests.
 
@@ -236,8 +275,8 @@ files, to also run the real-model tests.
 [src/songselector/\_\_init\_\_.py](src/songselector/__init__.py) and rename the changelog's
 `[Unreleased]` section in a pull request, merge it, then tag the merge commit (`git tag vX.Y.Z`,
 `git push origin vX.Y.Z`). The workflow checks that the tag matches the code and is on `main`, runs
-the tests, builds and verifies the exe and publishes it with its checksum and the changelog section
-as notes. Pull requests that change the packaging run the same build as a dry run.
+the tests on both systems, builds and verifies the exe and the AppImage and publishes them with their
+checksums and the changelog section as notes. Pull requests that change the packaging run the same build as a dry run.
 
 ```text
 src/songselector/

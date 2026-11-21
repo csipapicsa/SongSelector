@@ -6,6 +6,7 @@ Two layers with the same image (splash.png, drawn by packaging/make_splash.py):
 2. Once Qt runs, StartupSplash takes over (and closes the first), while the main window is built
    (library, Traktor collection, tables: a few seconds). Also shown when running from source.
 """
+import os
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
@@ -18,7 +19,10 @@ TEXT_COLOUR = QColor('#8c9096')
 
 
 def close_exe_splash():
-    """Close the exe's own splash, if it has one. Does nothing when running from source."""
+    """Close the exe's own splash, if it has one. Does nothing when running from source or without that splash
+    (Linux): the bootloader sets _PYI_SPLASH_IPC only when it shows one, and pyi_splash prints a traceback without it."""
+    if '_PYI_SPLASH_IPC' not in os.environ:
+        return
     try:
         import pyi_splash  # exists only inside a PyInstaller exe built with a splash screen
         pyi_splash.close()

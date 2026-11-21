@@ -24,23 +24,66 @@ from that period still mention 4.x numbers.
   not have follows the other program. Automatic: the first program found (Traktor, then Mixxx).
 - A DJ program without a colour for a track no longer clears the colour read from the file's tags at the first
   sync.
+
+## [1.3.0] - 2026-11-21
+
+- **Linux.** Each release now also has `SongSelector-<version>-x86_64.AppImage`: make it executable
+  (`chmod +x`) and start it, no installation needed. It is built on Ubuntu 22.04, so it runs on distributions from
+  about 2022 on, and it is checked like the exe: a self-check inside the packaged app, then a real window. On Linux
+  the app keeps its data in `~/.local/share/SongSelector`, the analysis runs on the CPU, and tracks come from their
+  tags (Traktor and Rekordbox do not run on Linux). The tests now run on Linux too.
+- **App icon** for the window and the Linux desktop entry: dots in clusters, like tracks on the similarity map.
+- **The model download works again.** *Analysis → Get models…* → *Download* fetches CNN14 and both CLAP models
+  (resumable, checksum-checked) from Hugging Face, one repo per model, each with a model card naming the source,
+  the changes and the licence: [`songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14),
+  [`songselector-clap-laion`](https://huggingface.co/csipapicsa/songselector-clap-laion),
+  [`songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms). The app downloads from a fixed
+  commit of each, so what a version gets never changes. In 1.2.0 the window could only explain how to build them.
+  `scripts/publish_models.py` (replaces `publish_models.ps1`) checks and uploads a new export.
+- **Choose the models folder.** *Get models…* → *Models folder…* (also in the *Analysis* menu) replaces *Open models
+  folder*, which only opened it: pick any folder, e.g. one that already holds the model files or is shared by several
+  installations. The app reads the models from it and downloads into it; the window shows at once what is installed
+  there.
 - **New tagline on the startup screen:** "Track organizer for DJs and music collectors" (was "Harmonic keys and
   audio similarity for DJs"); the app is useful beyond DJing too.
-- **Similarity map: one tidy toolbar.** The controls are in one row, ordered by task: *Model* (new: choose the
-  model the map uses right there, the same as *Analysis → Similarity model*), *Map the List only*, *Groups*,
+- **A compact top: two rows instead of five.** *Master tempo* is a box at the start of the search row: the arrows or
+  the mouse wheel move it 1 BPM, or type a number and press Enter (the slider row is gone). Gone too: *Refresh*,
+  *Load CSV*, *Show all tracks* (Browser → *All Tracks* does it) and *Add Selected to Playlist* (now in the List's
+  right-click menu as *Add to Playlist*; dragging works as before).
+- **One Model box for the search and the map.** The *Model* box next to *Describe a sound* now also sets the model
+  of the similarity map, its closest matches and groups (the same as *Analysis → Similarity model*). It lists every
+  model whose files are there; CNN14 has no text side, so with CNN14 the description field says to pick a CLAP
+  model.
+- **The map moves freely.** Drag it anywhere, even fully out of view (until now it could hardly move, and not at all
+  once zoomed out, so a hover card at the edge stayed cut off); *Fit* brings it back. No scroll bars any more.
+- **Similarity map: one tidy toolbar.** The controls are in one row, ordered by task: *Map the List only*, *Groups*,
   *Edges* (now one menu with every edge setting: relations, how many partners, between all tracks, curved), then
-  *3D*, *Fit*, *Re-arrange map*, *Own window*. What does not fit folds into a » menu, so the map no longer forces
-  the window to ~1,700 px. The closest-matches filter moved next to the list it filters ("List the 50 closest | of
-  all tracks"); the how-to text moved behind a **?** at the end of the status line.
-- **The map's own window has its own search bar.** With text in it, the map shows the tracks that match it (out of
-  the List's source: All Tracks or a playlist), and the main search bar filters only the List; empty, the map
-  follows the List as before. `color:` works there too.
+  *3D*, *Fit*, *Re-arrange map*. What does not fit folds into a » menu, so the map no longer forces the window to
+  ~1,700 px. The closest-matches filter moved next to the list it filters ("List the 50 closest | of all tracks");
+  the how-to text moved behind a **?** at the end of the status line.
+- **The map has no own window any more.** *Own window* (1.2.0) is gone; a map left in its own window opens in its
+  tab again.
 - **Map info boxes stay narrow.** The hover card, the compared track's card and the selected track's label wrap
-  their text at 360 px (*View → Map hover details…*, from 200 px), so a long file name no longer makes a box as wide
+  their text at 360 px (*View → Map track details…*, from 200 px), so a long file name no longer makes a box as wide
   as the map and hides the dots under it; words without spaces break where needed. Short text keeps its own width.
 - **Time left of the embedding analysis.** The progress line says how long the analysis will still take
   ("Embeddings (CNN14+LAION CLAP, CPU): 5/200, about 39 min left - track.mp3"), from the speed of the last few
   minutes, once a few tracks have been analysed.
+- **Turn the 2D map.** Shift+right-drag turns the similarity map left or right about the middle of the view; the
+  angle is kept. Shift+drag still rotates the 3D view.
+- **Choose every detail the map shows, and where.** *View → Map track details…* (was *Map hover details…*) is a grid
+  with a column each for the hover card, the selected track's label and the details panel: the cover, *Artist -
+  Title*, the key at master tempo and BPM, the mix and similarity to the selected track (cards), the group, and
+  every List column, *Speed change* included, can be switched on or off in each. Before, only the columns could be chosen (for the card and
+  the panel together) and the rest was always shown. Columns chosen before carry over.
+- **Hide the selected track's details beside the map.** Right-click anywhere beside the map, or *View → Selected
+  track details*, shows or hides the details above the closest matches; the list gets their room.
+- **The map's buttons are below the map**, so the map starts right under the tabs.
+- **Fold the search rows away.** *View → Search bars*, or dragging the line under them up (as the Playlist and
+  Browser fold away on the left), hides *Master tempo*, *Search* and *Describe a sound*; a search set before stays
+  in force.
+- Running from source on Linux before this version: track paths keep their capitals now (on Linux `A.mp3` and
+  `a.mp3` are two files), so the library is read anew and the tracks are analysed again.
 
 ## [1.2.0] - 2026-11-17
 

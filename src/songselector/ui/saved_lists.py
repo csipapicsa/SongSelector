@@ -56,7 +56,6 @@ class SavedListsMixin:
         self.list_browser.node_activated.connect(self.load_into_playlist)
         self.list_browser.tracks_dropped.connect(self.add_tracks_to_saved_playlist)
         self.list_browser.menu_requested.connect(self._browser_menu)
-        self.source_clear_button.clicked.connect(lambda: self.show_list_source(None))
         self.source_import_button.clicked.connect(lambda: self.list_source and self.import_foreign_missing(self.list_source))
         self.refresh_saved_lists()
 

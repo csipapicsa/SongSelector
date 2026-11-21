@@ -25,6 +25,20 @@ ROW = {'File_Path': 'C:\\music\\a.mp3', 'Musical_Key_Base': 'A', 'BaseMinorOrMaj
 NOW = {'key': 'A minor', 'bpm': 128.0, 'color': 2, 'rating': 4}
 
 
+class CanonicalPathTests(unittest.TestCase):
+    def test_windows_paths_ignore_case_and_slashes_and_linux_paths_keep_their_case(self):
+        for platform in ('win32', 'linux'):
+            with self.subTest(platform), patch('sys.platform', platform):
+                self.assertEqual(canonical_path('E:/DJ/Break/../A.mp3'), 'e:\\dj\\a.mp3')  # e.g. from Traktor
+                self.assertEqual(canonical_path(r'\\nas\Music\A.mp3'), '\\\\nas\\music\\a.mp3')
+                self.assertEqual(canonical_path(' nan '), '')
+        with patch('sys.platform', 'linux'):
+            self.assertEqual(canonical_path('/home/dj/Music/./A.mp3'), '/home/dj/Music/A.mp3')
+            self.assertNotEqual(canonical_path('/music/A.mp3'), canonical_path('/music/a.mp3'))  # two files there
+        with patch('sys.platform', 'win32'):
+            self.assertEqual(canonical_path('/music/A.mp3'), '\\music\\a.mp3')
+
+
 class SyncRuleTests(unittest.TestCase):
     def test_first_sync_takes_traktors_colour_and_only_fills_empty_values(self):
         now = {'key': 'C major', 'bpm': 130.0, 'color': 5, 'rating': 2}

@@ -30,7 +30,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QPushButton,
-    QSlider,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -91,7 +91,6 @@ from songselector.core.library_store import LIBRARY_LIST, PLAYLIST_LIST, Library
 from songselector.core.mixxx_library import MixxxLibrary
 from songselector.core.mixxx_library import discover_library as discover_mixxx_library
 from songselector.core.mixxx_library import signature as mixxx_signature
-from songselector.core.model_download import BASE_URL
 from songselector.core.rekordbox_library import RekordboxLibrary, discover_library
 from songselector.core.rekordbox_library import signature as rekordbox_signature
 from songselector.core.search_filters import active_filters, matches_condition
@@ -115,17 +114,20 @@ from songselector.ui.duplicates_dialog import DuplicatesDialog
 from songselector.ui.elided_label import ElidedLabel
 from songselector.ui.embedding_worker import EmbeddingAnalyzer
 from songselector.ui.list_browser import DESCRIPTION, ORDERED_KINDS, ListBrowser, node_label
-from songselector.ui.map_settings_dialog import HoverFieldsDialog
+from songselector.ui.map_settings_dialog import MapDetailsDialog
 from songselector.ui.map_window import MapPlaceholder, MapWindow
 from songselector.ui.menu_bar import AppMenuBar
 from songselector.ui.model_download_dialog import ModelDownloadDialog
 from songselector.ui.music_paths_dialog import MusicPathsDialog
 from songselector.ui.saved_lists import SavedListsMixin, match_text
 from songselector.ui.similarity_map import (
-    DEFAULT_HOVER_FIELDS,
+    DETAIL_PLACES,
+    MAP_ITEMS,
     MAX_INFO_WIDTH,
     MIN_INFO_WIDTH,
+    NOT_APPLICABLE,
     SimilarityMapWidget,
+    detail_items,
     group_colour,
 )
 from songselector.ui.text_search_dialog import TextSearchDialog
@@ -153,6 +155,7 @@ ALL_RESULTS, MAX_RESULTS = 0, 100000
 # An import of up to this many tracks updates the List row by row; more rebuild it (then about as fast).
 INCREMENTAL_IMPORT_LIMIT = 200   # Top N of the description search: 0 is All
 NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
+DESCRIPTION_HINT = 'free text, e.g. funky breakbeat with a groovy bassline - Enter searches; or pick a saved prompt'
 
 
 
@@ -350,7 +353,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._groups_waiting = False  # before the analysis starts: its progress reads it
         self._coverage_checked, self._coverage_short = None, []  # coverage check when the analysis finishes
         self._init_analysis_menu()
-        self._refresh_description_models()
+        self._refresh_model_box()
         self.start_embedding_analysis()
         QTimer.singleShot(0, self._offer_model_download)  # after the window is shown
 
@@ -364,11 +367,14 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.similarity_map.playlist_keys = lambda: {canonical_path(path) for path in self.playlist_paths}
         self.library_tabs.addTab(self.similarity_map, 'Similarity map')
         self.library_tabs.currentChanged.connect(lambda _index: self._refresh_map())
-        # The map can live in a window of its own (its "Own window" button); the tab then shows a placeholder.
+        # The map can live in a window of its own (set_map_detached; the tab then shows a placeholder). Its "Own
+        # window" button is gone since 2026-11-20 (user's decision: it made no sense in use), so this is unreachable
+        # from the UI; the code stays in case it comes back.
         self.map_window = None
         self.map_placeholder = MapPlaceholder(self.show_map, lambda: self.set_map_detached(False))
         self.similarity_map.detach_requested.connect(self.set_map_detached)
-        self.similarity_map.model_requested.connect(self.set_similarity_model)  # the map's own Model box
+        self.similarity_map.details_shown_changed.connect(self.map_details_action.setChecked)
+        self.similarity_map.details_dialog_requested.connect(self.choose_map_details)
 
         # Cover art (View -> Cover art): thumbnails loaded in the background, only for rows that are painted.
         self.covers = CoverProvider(Path(SETTINGS_FILE).parent / 'covers', self)
@@ -389,8 +395,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._init_cover_menu()
         self.apply_cover_style()
         self.similarity_map.set_covers(self.covers)  # covers in the map's cards and closest matches too
-        if self.settings.get('Map detached', False):
-            QTimer.singleShot(0, lambda: self.set_map_detached(True))  # as it was when the app was closed
+        # A map left in its own window before 2026-11-20 is not restored: with no button there would be no way back
+        # except closing that window.
+        self.settings['Map detached'] = False
         self._map_stale = True
         self.similarity_map.groups_changed.connect(self._apply_groups)
         # Groups for the List (colours or the Group column) without opening the map first; but only once the
@@ -515,6 +522,30 @@ class MainWindow(SavedListsMixin, QMainWindow):
         # SEARCH BAR
         # -----------------
         search_layout = QHBoxLayout()
+        # Master tempo first: everything key- and speed-related follows it (asked 2026-11-20: the slider row took
+        # too much room). A spin box: arrows or the mouse wheel step 1 BPM, or type a number.
+        tempo_label = QLabel('Master tempo')
+        tempo_label.setStyleSheet('font-weight: bold;')
+        search_layout.addWidget(tempo_label)
+        self.tempo_box = QSpinBox()
+        self.tempo_box.setRange(MIN_BPM, MAX_BPM)
+        self.tempo_box.setValue(int(round(float(self.settings.get('Master Tempo', DEFAULT_BPM)))))
+        self.tempo_box.setSuffix(' BPM')
+        self.tempo_box.setKeyboardTracking(False)  # typing 128 applies once (Enter, Tab), not at 1, 12 and 128
+        self.tempo_box.setToolTip('The tempo you play at: the keys at master tempo, key matches and the speed change '
+                                  '(%) follow it.\nArrows or the mouse wheel: 1 BPM up or down; or type a number '
+                                  'and press Enter.')
+        font = self.tempo_box.font()
+        font.setBold(True)
+        font.setPointSizeF(font.pointSizeF() * 1.2)
+        self.tempo_box.setFont(font)
+        self._tempo_timer = QTimer(self)  # a burst of arrow clicks rebuilds the List once
+        self._tempo_timer.setSingleShot(True)
+        self._tempo_timer.setInterval(250)
+        self._tempo_timer.timeout.connect(self.apply_tempo)
+        self.tempo_box.valueChanged.connect(self._tempo_timer.start)
+        search_layout.addWidget(self.tempo_box)
+        search_layout.addSpacing(12)
         search_layout.addWidget(QLabel("Search:"))
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search text or color:blue; e.g. tribal color:red,orange")
@@ -522,8 +553,15 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.search_bar.setToolTip("Filter Traktor category dots: color:blue, color:red,orange, color:none, or -color:blue.\nCombine with text; Colors lets you choose several swatches. Color filters work regardless of Search Columns.")
         self.search_bar.textChanged.connect(self.filter_items)
         search_layout.addWidget(self.search_bar)
-        right_layout.addLayout(search_layout)
-        right_layout.addLayout(self._build_description_bar())
+        # The two search rows can be folded away (asked 2026-11-20: "like the Playlist/Browser tab on the left"):
+        # they sit above the List in a splitter of their own (see search_splitter below).
+        self.search_panel = QWidget()
+        search_panel_layout = QVBoxLayout(self.search_panel)
+        search_panel_layout.setContentsMargins(0, 0, 0, 0)
+        search_panel_layout.addLayout(search_layout)
+        search_panel_layout.addLayout(self._build_description_bar())
+        # Fixed height: the splitter shows the rows whole or not at all, and never stretches them apart.
+        self.search_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         # -----------------
         # DROPDOWN FOR SEARCH BAR
@@ -582,54 +620,10 @@ class MainWindow(SavedListsMixin, QMainWindow):
         search_layout.addWidget(self.btn_advanced_search)
 
 
-        
-        # Control section
-        control_widget = QWidget()
-        control_layout = QHBoxLayout(control_widget)
-        
-        # BPM slider
-        slider_layout = QHBoxLayout()
-        slider_layout.addWidget(QLabel("Master Tempo (BPM):"))
-        
-        self.bpm_slider = QSlider(Qt.Horizontal)
-        self.bpm_slider.setMinimum(MIN_BPM)
-        self.bpm_slider.setMaximum(MAX_BPM)
-        self.bpm_slider.setValue(int(self.settings.get("Master Tempo", DEFAULT_BPM)))
-        self.bpm_slider.setTickInterval(10)
-        self.bpm_slider.setTickPosition(QSlider.TicksBelow)
-        
-        # Changed to update only BPM label during sliding
-        self.bpm_slider.valueChanged.connect(self.update_bpm_label)
-        # Update tree when slider is released
-        self.bpm_slider.sliderReleased.connect(self.update_tree_after_slider)
-        
-        
-        slider_layout.addWidget(self.bpm_slider)
-        
-        self.bpm_label = QLabel(f"{self.bpm_slider.value():.1f} BPM")
-        slider_layout.addWidget(self.bpm_label)
-        
-        control_layout.addLayout(slider_layout)
-        
-        # Buttons
-        self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.setToolTip('Rebuild the library list from every track of the collection (library.sqlite)')
-        self.refresh_button.clicked.connect(self.refresh_data)
-        control_layout.addWidget(self.refresh_button)
-        
-        self.load_csv_button = QPushButton("Load CSV")
-        self.load_csv_button.setToolTip('Replace the library list with a CSV file plus all imported tracks')
-        self.load_csv_button.clicked.connect(self.load_csv)
-        control_layout.addWidget(self.load_csv_button)
-        
-        # Add control section to right layout
-        right_layout.addWidget(control_widget)
-        
-        # Add button to add selected item to playlist
-        add_to_playlist_btn = QPushButton("Add Selected to Playlist")
-        add_to_playlist_btn.clicked.connect(self.add_selected_to_playlist)
-        right_layout.addWidget(add_to_playlist_btn)
-        
+        # Removed 2026-11-20 (user's request, to save room): the tempo slider row (now the Master tempo box above),
+        # "Refresh" and "Load CSV" (refresh_data / load_csv stay; nothing else calls them in the UI), and
+        # "Add Selected to Playlist" (now in the List's right-click menu; dragging to the Playlist works as before).
+
         # Tree widget for track pool
         self.candidate_tree = PoolTreeWidget(self)
         self.candidate_tree.setColumnCount(len(HEADER_LABELS))
@@ -686,10 +680,12 @@ class MainWindow(SavedListsMixin, QMainWindow):
                                              'that exist on disk). Also in the Browser: right-click the playlist.')
         self.source_import_button.hide()
         source_layout.addWidget(self.source_import_button)
-        self.source_clear_button = QPushButton('Show all tracks')
-        source_layout.addWidget(self.source_clear_button)
+        # No "Show all tracks" button since 2026-11-20 (user's request): Browser -> All Tracks does the same.
         self.source_bar.hide()
-        right_layout.addWidget(self.source_bar)
+        list_part = QWidget()
+        list_layout = QVBoxLayout(list_part)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.source_bar)
 
         # Add tree to right layout
         self.library_tabs = QTabWidget()
@@ -710,7 +706,18 @@ class MainWindow(SavedListsMixin, QMainWindow):
         corner_layout.addSpacing(12)
         corner_layout.addWidget(self.list_count_label)
         self.library_tabs.setCornerWidget(corner, Qt.TopRightCorner)
-        right_layout.addWidget(self.library_tabs)
+        list_layout.addWidget(self.library_tabs)
+        # Search rows above, the List and the map below. Dragging the line between them up (or View -> Search bars)
+        # folds the rows away, as dragging the line on the left folds the Playlist and Browser.
+        self.search_splitter = QSplitter(Qt.Vertical)
+        self.search_splitter.addWidget(self.search_panel)
+        self.search_splitter.addWidget(list_part)
+        self.search_splitter.setStretchFactor(1, 1)
+        self.search_splitter.setCollapsible(1, False)
+        if not self.search_bars_shown():
+            self.search_splitter.setSizes([0, 1])
+        self.search_splitter.splitterMoved.connect(self._search_splitter_moved)
+        right_layout.addWidget(self.search_splitter)
         # Hovering a drag over a tab opens it (e.g. a playlist from the Browser to the Playlist tab)
         for tabs in (self.left_tabs, self.library_tabs):
             tabs.tabBar().setChangeCurrentOnDrag(True)
@@ -856,14 +863,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.status_label.setText('Playlist cleared')
 
     
-    def update_bpm_label(self):
-        """Update only the BPM label when slider moves"""
-        bpm = self.bpm_slider.value()
-        self.bpm_label.setText(f"{bpm:.1f} BPM")
-    
-    def update_tree_after_slider(self):
-        """Update the tree when slider is released"""
-            # Save current sort state
+    def apply_tempo(self):
+        """The master tempo changed: keys at master tempo, key matches and speed changes are recomputed."""
+        self._tempo_timer.stop()
         self.populate_tree()
 
 
@@ -1014,7 +1016,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         """Handle double-click on tree item"""
         file_path = item.text(HEADER_INDEX.get("Path"))
         if file_path and os.path.exists(file_path):
-            os.startfile(file_path)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))  # the system's player; os.startfile is Windows-only
             self.status_bar.showMessage(f"Opened file: {os.path.basename(file_path)}")
             message = f"Opened file: {os.path.basename(file_path)}"
             self.status_label.setStyleSheet(status_style('info'))
@@ -1290,6 +1292,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
         paths = tree.selected_paths()
         item = tree.currentItem()
         current = item.text(HEADER_INDEX['Path']) if item is not None and item.isSelected() else ''
+        if tree is self.candidate_tree:  # was the "Add Selected to Playlist" button above the List until 2026-11-20
+            add = menu.addAction('Add to Playlist' + (f' ({len(paths)} tracks)' if len(paths) > 1 else ''))
+            add.setEnabled(bool(paths))
+            add.triggered.connect(self.add_selected_to_playlist)
+            menu.addSeparator()
         edit = menu.addAction('Edit track info (Artist, Title, Genre, Comment)...')
         edit.setToolTip('Edits one track; with several rows selected, the one clicked last.')
         edit.setEnabled(bool(current))
@@ -1581,8 +1588,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.view_menu = menu
         self.on_top_action = menu.addAction('Always on top')
         self.on_top_action.setCheckable(True)
-        self.on_top_action.setToolTip('Keep SongSelector (and the map in its own window) above every other window,\n'
-                                      'e.g. on top of Traktor.')
+        self.on_top_action.setToolTip('Keep SongSelector above every other window, e.g. on top of Traktor.')
         self.on_top_action.setChecked(bool(self.settings.get('Always on top', False)))
         self.on_top_action.toggled.connect(self.set_always_on_top)
         if self.on_top_action.isChecked():
@@ -1597,6 +1603,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.hide_playlist_action.setChecked(self.settings.get('Hide playlist tracks', False))
         self.hide_playlist_action.setToolTip('Off: tracks on the playlist stay in the library list, dimmed.')
         self.hide_playlist_action.toggled.connect(self.set_hide_playlist_tracks)
+        self.search_bars_action = menu.addAction('Search bars')
+        self.search_bars_action.setCheckable(True)
+        self.search_bars_action.setChecked(self.search_bars_shown())
+        self.search_bars_action.setToolTip('The Master tempo, Search and Describe a sound rows above the List. Off '
+                                           'gives the List and the map their room;\ndragging the line under the rows '
+                                           'up or down does the same.')
+        self.search_bars_action.toggled.connect(self.set_search_bars_shown)
         menu.addSeparator()
         list_view = menu.addAction('Library list')
         list_view.setShortcut('Ctrl+1')
@@ -1604,7 +1617,14 @@ class MainWindow(SavedListsMixin, QMainWindow):
         map_view = menu.addAction('Similarity map')
         map_view.setShortcut('Ctrl+2')
         map_view.triggered.connect(self.show_map)
-        menu.addAction('Map hover details...').triggered.connect(self.choose_hover_fields)
+        menu.addAction('Map track details...').triggered.connect(self.choose_map_details)
+        # The map is made after this menu: it reads the same setting, and its signal keeps this tick in step.
+        self.map_details_action = menu.addAction('Selected track details')
+        self.map_details_action.setCheckable(True)
+        self.map_details_action.setChecked(bool(self.settings.get('Map details panel', True)))
+        self.map_details_action.setToolTip('The selected track\'s details above the closest matches, beside the '
+                                           'similarity map (also: right-click there).')
+        self.map_details_action.toggled.connect(lambda shown: self.similarity_map.set_details_shown(shown))
 
     # -- similarity map -----------------------------------------------------
 
@@ -1749,11 +1769,26 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._select_in_list(key)
         self.track_context_menu(self.candidate_tree).exec_(position)
 
-    def choose_hover_fields(self):
-        dialog = HoverFieldsDialog(self.settings.get('Map hover fields', DEFAULT_HOVER_FIELDS), FIELD_LABELS,
-                                   self.similarity_map.info_width(), MIN_INFO_WIDTH, MAX_INFO_WIDTH, parent=self)
+    def map_details_dialog(self):
+        """View -> Map track details...: what the map's cards, the selected track's label and the details panel
+        show (the map's own items and the List's columns), and how wide the boxes get. Speed change is no track
+        field (it follows the master tempo) but the List shows it, so it is offered too, after the BPM as there."""
+        columns = {}
+        for name in FIELD_LABELS:
+            columns[name] = f'The List\'s {name} column'
+            if name == 'Original BPM':
+                columns[SPEED_COLUMN] = ('The List\'s Speed change column: how much faster (+) or slower (-) the track '
+                                         'plays at the master tempo.')
+        sections = [('On the map', MAP_ITEMS), ('Columns of the List', columns)]
+        chosen = {place: detail_items(self.settings, place) for place in DETAIL_PLACES}
+        return MapDetailsDialog(chosen, DETAIL_PLACES, sections, NOT_APPLICABLE, self.similarity_map.info_width(),
+                                MIN_INFO_WIDTH, MAX_INFO_WIDTH, parent=self)
+
+    def choose_map_details(self):
+        dialog = self.map_details_dialog()
         if dialog.exec_() == QDialog.Accepted:
-            self.settings['Map hover fields'] = dialog.selected()
+            self.settings['Map details'] = dialog.selected()
+            self.settings.pop('Map hover fields', None)  # replaced by 'Map details' (its card and panel lists)
             self.settings['Map info width'] = dialog.info_width()
             self._refresh_map()
 
@@ -1764,6 +1799,29 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def set_hide_playlist_tracks(self, hide):
         self.settings['Hide playlist tracks'] = hide
         self.filter_items()
+
+    def search_bars_shown(self):
+        """The search rows above the List are on (setting `Show search bars`)."""
+        return bool(self.settings.get('Show search bars', True))
+
+    def set_search_bars_shown(self, shown):
+        """View -> Search bars: fold the search rows away (the List and the map get their room) or bring them back.
+        Searches and filters that are set stay in force while the rows are hidden."""
+        shown = bool(shown)
+        self.settings['Show search bars'] = shown
+        total = sum(self.search_splitter.sizes())
+        top = self.search_panel.sizeHint().height() if shown else 0
+        self.search_splitter.setSizes([top, max(total - top, 1)])
+        if self.search_bars_action.isChecked() != shown:
+            self.search_bars_action.setChecked(shown)
+
+    def _search_splitter_moved(self, _position=0, _index=0):
+        """The line under the search rows was dragged: folded away or back; the View menu's tick follows."""
+        shown = self.search_splitter.sizes()[0] > 0
+        self.settings['Show search bars'] = shown
+        self.search_bars_action.blockSignals(True)  # the drag already set the sizes
+        self.search_bars_action.setChecked(shown)
+        self.search_bars_action.blockSignals(False)
 
     def _show_advanced_search_state(self):
         """'Advanced Search (2 active)', highlighted, with the filters in the tooltip."""
@@ -1870,10 +1928,16 @@ class MainWindow(SavedListsMixin, QMainWindow):
         search.triggered.connect(self.open_text_search)
         menu.addSeparator()
         menu.addAction('Choose CNN14 model file (cnn14.onnx)...').triggered.connect(self.choose_embedding_model)
-        menu.addAction('Open models folder').triggered.connect(self.open_models_folder)
+        menu.addAction('Models folder...').triggered.connect(self.choose_models_folder)
+
+    def default_models_folder(self):
+        return Path(SETTINGS_FILE).with_name('models')
 
     def models_folder(self):
-        return Path(SETTINGS_FILE).with_name('models')
+        """Where the model files are read from and downloaded to: the setting `Models folder` (Models folder...),
+        else `models` next to the app's data."""
+        chosen = self.settings.get('Models folder')
+        return Path(chosen) if chosen else self.default_models_folder()
 
     def enabled_model_ids(self):
         return [model_id for model_id in self.settings.get('Embedding models', DEFAULT_MODEL_IDS) if model_id in MODELS]
@@ -1920,8 +1984,19 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.start_embedding_analysis()
 
     def set_similarity_model(self, model_id):
-        """Map, closest matches and groups switch to this model's embeddings (each keeps its own map layout)."""
+        """The Model box (or Analysis -> Similarity model): map, closest matches and groups switch to this model's
+        embeddings (each keeps its own map layout); a CLAP model also becomes the description search's model, and a
+        description search on the List runs again with it."""
         self.settings['Similarity model'] = model_id
+        if MODELS[model_id].has_text:
+            self.settings['Text search model'] = model_id
+        self._refresh_model_box()
+        if self.list_source and self.list_source['kind'] == DESCRIPTION:
+            if MODELS[model_id].has_text:
+                self.describe()
+            else:  # the results stay (e.g. to see them on this model's map); say where they came from
+                self._description_status(f'The List still shows the {MODELS[self._description_model_id].name} '
+                                         f'results; {MODELS[model_id].name} cannot search by description.')
         self.similarity_map.set_store(self.model_stores[model_id])
         self._map_stale = True
         if self.map_visible():
@@ -1966,11 +2041,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         return analysed + failed, total
 
     def _models_in_use(self):
-        """The similarity model and the description search model, if their files are there."""
-        chosen = [self.similarity_model_id()]
-        if hasattr(self, 'description_model') and self.description_model.currentData():
-            chosen.append(self.description_model.currentData())
-        return [model_id for model_id in dict.fromkeys(chosen) if self.model_file(MODELS[model_id]) is not None]
+        """The model of the Model box (map and description search), if its files are there."""
+        model_id = self.similarity_model_id()
+        return [model_id] if self.model_file(MODELS[model_id]) is not None else []
 
     def _report_model_coverage(self, library=None):
         """Which tracks each model has analysed: the embedding label's tooltip (the menus show it too)."""
@@ -2036,10 +2109,35 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._groups_waiting = False
         self._ensure_groups()
 
-    def open_models_folder(self):
-        folder = self.models_folder()
-        folder.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+    def choose_models_folder(self):
+        """Analysis -> Models folder...: a folder picker that starts in the current folder (so it shows what is
+        there). Until 2026-11-20 this was "Open models folder", which only opened it."""
+        chosen = QFileDialog.getExistingDirectory(self, 'Models folder', str(self.models_folder()))
+        if chosen:
+            self.set_models_folder(chosen)
+
+    def set_models_folder(self, folder):
+        """Read the model files from this folder from now on, and download into it. Everything that found its files
+        in the old folder looks again: menus, the Model box, the analysis, the description search."""
+        folder = Path(folder)
+        if folder == self.models_folder():
+            return
+        self.settings['Models folder'] = '' if folder == self.default_models_folder() else str(folder)
+        if self.text_search_engine is not None:  # its worker loaded the text encoders from the old folder
+            self.text_search_engine.stop()
+            self.text_search_engine = None
+        if self.text_search_dialog is not None:  # the same; opened again, it starts with the new folder
+            self.text_search_dialog.close()
+            self.text_search_dialog = None
+        if self.model_download_dialog is not None:
+            self.model_download_dialog.set_folder(folder)
+        self._update_model_menu()
+        self._refresh_model_box()
+        self.start_embedding_analysis()  # restarts with the new model files (or reports that none are there)
+        found = [spec.name for spec in MODELS.values() if self.model_file(spec) is not None]
+        self.status_label.setStyleSheet(status_style('info' if found else 'warning'))
+        self.status_label.setText(f'Models folder: {folder}. ' + (f'Found: {", ".join(found)}.' if found else
+                                  'No model files there yet: Analysis -> Get models... downloads them into it.'))
 
     def searchable_models(self):
         """CLAP models whose files are there (text search needs the text encoder)."""
@@ -2069,8 +2167,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self.model_download_dialog is None:
             self.model_download_dialog = ModelDownloadDialog(
                 list(MODELS.values()), self.models_folder(),
-                base_url=self.settings.get('Model download URL', '') or BASE_URL, parent=self)
+                base_url=self.settings.get('Model download URL', ''), parent=self)
             self.model_download_dialog.downloaded.connect(self._models_downloaded)
+            self.model_download_dialog.folder_chosen.connect(self.set_models_folder)
         self.model_download_dialog.show()
         self.model_download_dialog.raise_()
         self.model_download_dialog.activateWindow()
@@ -2080,7 +2179,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         enabled = self.enabled_model_ids()
         self.settings['Embedding models'] = [m for m in MODELS if m in enabled or m in model_ids]
         self._update_model_menu()
-        self._refresh_description_models()
+        self._refresh_model_box()
         self.start_embedding_analysis()
 
     def _offer_model_download(self):
@@ -2115,15 +2214,20 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.description_box.addItem(NO_DESCRIPTION)
         self.description_box.addItems(self.settings.get('Saved prompts', []))
         self.description_box.setCurrentIndex(-1)
-        self.description_box.lineEdit().setPlaceholderText(
-            'free text, e.g. funky breakbeat with a groovy bassline - Enter searches; or pick a saved prompt')
+        self.description_box.lineEdit().setPlaceholderText(DESCRIPTION_HINT)
         self.description_box.lineEdit().returnPressed.connect(self.describe)
         self.description_box.activated.connect(self._description_picked)
         layout.addWidget(self.description_box, 1)
-        self.description_model = QComboBox()
-        self.description_model.setToolTip('The CLAP model to search with (only tracks analysed with it can be found)')
-        self.description_model.currentIndexChanged.connect(self._description_model_changed)
-        layout.addWidget(self.description_model)
+        # One model for everything sound-based (asked 2026-11-20): the description search, and the similarity map,
+        # closest matches and groups (the same choice as Analysis -> Similarity model). Before, the map had its own
+        # Model box and this one chose only the search model.
+        layout.addWidget(QLabel('Model'))
+        self.model_box = QComboBox()
+        self.model_box.setToolTip('The model for the description search (CLAP models) and for the similarity map, '
+                                  'closest matches and groups.\nOnly tracks analysed with it can be found; missing '
+                                  'ones are analysed in the background.')
+        self.model_box.activated.connect(lambda index: self.set_similarity_model(self.model_box.itemData(index)))
+        layout.addWidget(self.model_box)
         layout.addWidget(QLabel('Top'))
         self.description_count = QSpinBox()
         # 0 shows as "All": every analysed track, ranked (one step below 1, or type "All")
@@ -2151,32 +2255,31 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._description_scope = (None, None)  # (Browser entry searched within, its path_keys); None: all tracks
         return layout
 
-    def _refresh_description_models(self):
-        """The model choice lists the CLAP models whose files are there."""
-        if not hasattr(self, 'description_model'):
+    def _refresh_model_box(self):
+        """The Model box lists the models whose files are there and shows the similarity model. The description
+        field works only with a CLAP model (CNN14 has no text side) and says so otherwise."""
+        if not hasattr(self, 'model_box'):
             return
-        models = self.searchable_models()
-        chosen = self.description_model.currentData() or self.settings.get('Text search model')
-        self.description_model.blockSignals(True)
-        self.description_model.clear()
-        for spec in models:
-            self.description_model.addItem(spec.name, spec.id)
-        index = self.description_model.findData(chosen)
-        self.description_model.setCurrentIndex(index if index >= 0 else 0)
-        self.description_model.blockSignals(False)
-        self.description_model.setVisible(len(models) > 1)
-        self.description_box.setEnabled(bool(models))
-        if not models:
-            self.description_box.lineEdit().setPlaceholderText(
-                'needs a CLAP model: Analysis -> Get models...')
-
-    def _description_model_changed(self):
-        model_id = self.description_model.currentData()
-        self.settings['Text search model'] = model_id
-        if model_id is not None:
-            self.ensure_models_analysed([model_id])  # its missing tracks are analysed in the background
-        if self.list_source and self.list_source['kind'] == DESCRIPTION:
-            self.describe()
+        chosen = self.similarity_model_id()
+        self.model_box.blockSignals(True)
+        self.model_box.clear()
+        for spec in MODELS.values():
+            if self.model_file(spec) is not None or spec.id == chosen:
+                self.model_box.addItem(spec.name if self.model_file(spec) is not None
+                                       else f'{spec.name} (files missing)', spec.id)
+                self.model_box.setItemData(self.model_box.count() - 1, spec.description, Qt.ToolTipRole)
+        self.model_box.setCurrentIndex(self.model_box.findData(chosen))
+        self.model_box.blockSignals(False)
+        spec = MODELS[chosen]
+        searchable = self.searchable_models()
+        self.description_box.setEnabled(spec in searchable)
+        if spec in searchable:
+            hint = DESCRIPTION_HINT
+        elif searchable:
+            hint = f'{spec.name} cannot search by description: choose a CLAP model under Model'
+        else:
+            hint = 'needs a CLAP model: Analysis -> Get models...'
+        self.description_box.lineEdit().setPlaceholderText(hint)
 
     def _description_picked(self, index):
         if index == 0:  # NO_DESCRIPTION
@@ -2198,11 +2301,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def describe(self):
         prompt = self.description_box.currentText().strip()
-        model_id = self.description_model.currentData()
+        model_id = self.model_box.currentData()
         if not prompt or prompt == NO_DESCRIPTION:
             self.clear_description()
             return
-        if model_id is None:
+        if model_id is None or not MODELS[model_id].has_text:
             return
         if self.text_search_engine is None:
             self.text_search_engine = TextSearchEngine(self.model_stores, self.models_folder(), parent=self)
@@ -2294,7 +2397,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def embedding_model_path(self):
         """Chosen CNN14 model, else <data folder>/models/cnn14.onnx, else the default; None if none exists."""
         for candidate in (self.settings.get('Embedding model'),
-                          Path(SETTINGS_FILE).with_name('models') / MODEL_FILE_NAME,
+                          self.models_folder() / MODEL_FILE_NAME,
                           DEFAULT_EMBEDDING_MODEL):
             if candidate and Path(candidate).is_file():
                 return Path(candidate)
@@ -2473,7 +2576,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self._group_colours_on():
             self._apply_groups()
         self.filter_items()
-        self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
+        self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.tempo_box.value()} BPM')
 
 
     def _list_view_changed(self):
@@ -2483,7 +2586,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self._group_colours_on():
             self._apply_groups()
         self.filter_items()
-        self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.bpm_slider.value()} BPM')
+        self.status_bar.showMessage(f'{len(self.all_items)} tracks at {self.tempo_box.value()} BPM')
 
     def _add_or_update_rows(self, paths):
         """Show these tracks' current table rows in the List and the Playlist: new tracks get a row, existing rows are
@@ -2613,7 +2716,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.settings["Column sizes right"] = column_sizes_right
 
         # Save BPM slider value
-        self.settings["Master Tempo"] = self.bpm_slider.value()
+        self.settings["Master Tempo"] = self.tempo_box.value()
 
         self.settings["Search columns"] = self.search_columns
 
@@ -2874,7 +2977,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
             base, scale = key
             original_key = f'{base} {scale}'
             if bpm is not None:
-                shift = self.key_calculator.calculate_semitone_shift(bpm, self.bpm_slider.value())
+                shift = self.key_calculator.calculate_semitone_shift(bpm, self.tempo_box.value())
                 shifted = self.key_calculator.key_shifter(base, shift)
                 new_key = f'{shifted} {scale}'
                 camelot = self.key_calculator.get_harmonic_key(shifted, scale)
@@ -2889,7 +2992,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
                   SS_RATING_COLUMN: self._rating_text(row.get('SS_Rating')),
                   SS_COLOR_COLUMN: self._rating_text(row.get('SS_Color')),
                   GROUP_COLUMN: self._group_text(self._text(row.get('File_Path'))),
-                  SPEED_COLUMN: speed_change_text(bpm, self.bpm_slider.value())}
+                  SPEED_COLUMN: speed_change_text(bpm, self.tempo_box.value())}
         key_source = self._text(row.get('Key_Source')) or ('Loaded CSV' if key else 'Not available')
         bpm_source = self._text(row.get('BPM_Source')) or ('Loaded CSV' if bpm else 'Not available')
         color_source = self._text(row.get('Color_Source')) or ('Saved import' if self._text(row.get('Imported')) else 'Loaded CSV')

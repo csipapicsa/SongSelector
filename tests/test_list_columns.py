@@ -1,5 +1,6 @@
 """List columns asked for on 2026-11-17: the speed change to the master tempo, sorting by group then match; the
 map's track names without a leading ' - '."""
+import os
 import unittest
 
 import pandas as pd
@@ -27,7 +28,7 @@ class TrackNameTests(unittest.TestCase):
         self.assertEqual(track_name({'Artist': 'Desimal', 'Title': 'Hyperboria'}), 'Desimal - Hyperboria')
         self.assertEqual(track_name({'Artist': '', 'Title': 'Desimal - Hyperboria'}), 'Desimal - Hyperboria')
         self.assertEqual(track_name({'Artist': 'Desimal', 'Title': ' '}), 'Desimal')
-        self.assertEqual(track_name({'Path': r'E:\music\untitled.mp3'}), 'untitled.mp3')
+        self.assertEqual(track_name({'Path': os.path.join('music', 'untitled.mp3')}), 'untitled.mp3')
 
 
 class ListColumnGuiTests(GuiTestBase):
@@ -47,8 +48,8 @@ class ListColumnGuiTests(GuiTestBase):
 
     def test_speed_change_follows_the_master_tempo_and_sorts_as_a_number(self):
         window = self.window()
-        window.bpm_slider.setValue(128)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(128)
+        window.apply_tempo()
         self.assertEqual(self.column(window, SPEED), {'slow': '+28.0%', 'even': '+0.0%', 'fast': '-8.6%', 'near': '+2.4%'})
         tree = window.candidate_tree
         self.assertFalse(tree.isColumnHidden(SPEED))
@@ -56,14 +57,14 @@ class ListColumnGuiTests(GuiTestBase):
         self.assertFalse(window.playlist_tree.isColumnHidden(SPEED))
         window.sort_by_column(SPEED, True)
         self.assertEqual(self.order(window), ['fast', 'even', 'near', 'slow'])  # -8.6 < 0 < 2.4 < 28 (not as text)
-        window.bpm_slider.setValue(140)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(140)
+        window.apply_tempo()
         self.assertEqual(self.column(window, SPEED)['fast'], '+0.0%')
 
     def test_complex_search_on_the_speed_change_follows_the_master_tempo(self):
         window = self.window()
-        window.bpm_slider.setValue(128)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(128)
+        window.apply_tempo()
         window.current_advanced_search = {'enabled': True, 'filters': [
             {'column': SPEED_COLUMN, 'condition': 'within ± (%)', 'value': '8'}]}
         window.advanced_filters = window.current_advanced_search['filters']
@@ -71,8 +72,8 @@ class ListColumnGuiTests(GuiTestBase):
         shown = lambda: sorted(title for title, _speed in self.column(window, SPEED).items()  # noqa: E731
                                if not self.item_hidden(window, title))
         self.assertEqual(shown(), ['even', 'near'])          # 0 % and +2.4 %; fast -8.6 %, slow +28 %
-        window.bpm_slider.setValue(140)
-        window.update_tree_after_slider()
+        window.tempo_box.setValue(140)
+        window.apply_tempo()
         self.assertEqual(shown(), ['fast'])                  # now near is +12 %, even +9.4 %
 
     def test_the_dialog_offers_the_speed_conditions(self):

@@ -60,7 +60,8 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
 | `text_search.py` | Free-text search: `tokenize`, `TextEncoder` (CLAP text side, onnxruntime), `rank`, `run_text_encoder` (entry point of the text search process). Must not import Qt |
-| `data_manager.py` | Loads a library CSV picked by the user (*Load CSV*) into a pandas DataFrame; `load_default_data` is the empty starting library |
+| `eta.py` | `Eta`: time left of the embedding analysis from its progress counts, over a sliding 5-minute window; `format_left` ("about 3 h 25 min left"). No Qt |
+| `data_manager.py` | Loads a library CSV (`MainWindow.load_csv`; its *Load CSV* button is gone since 2026-11-20) into a pandas DataFrame; `load_default_data` is the empty starting library |
 | `search_filters.py` | Complex Search conditions (contains, is, >, <, >=, <=), number parsing with decimal commas |
 | `color_search.py` | `color:blue,red`, `-color:x`, `color:none` query parsing and replacement |
 
@@ -68,7 +69,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 
 | Module | Responsibility |
 |---|---|
-| `main_window.py` | The main window: layout, BPM slider, search, sorting, import, settings persistence |
+| `main_window.py` | The main window: layout, master tempo box, search, the Model box, sorting, import, settings persistence |
 | `tree_widgets.py` | `PoolTreeWidget` (List view, right) and `PlaylistTreeWidget` (Playlist tab, left: reordering by drag); drag and drop between them and from Explorer |
 | `list_browser.py` | `ListBrowser`, the Browser tab: Track Collection (all, artists, albums, genres) and saved playlists / smartlists; emits what was clicked, double-clicked or dropped |
 | `saved_lists.py` | `SavedListsMixin` of the main window: shows a Browser entry in the List view (# column for playlists), loads it into the Playlist tab, saves / renames / deletes playlists and smartlists |
@@ -80,11 +81,11 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `track_info_dialog.py` | Edit Artist / Title / Genre / Comment of one file |
 | `busy_spinner.py` | `BusySpinner`: small turning arc while any of its reasons is on (`set_busy(reason, on)`); hidden, timer stopped when idle. In the status bar (saving, description search; analysis) and the map (arranging, grouping) |
 | `duplicates_dialog.py` | Preview of a duplicate search: per group the row that stays (bold) and the rows to remove (checkable) |
-| `map_window.py` | `MapWindow`: the map widget in a top-level window of its own (geometry in the settings); `MapPlaceholder` in the map's tab meanwhile. `MainWindow.set_map_detached` moves the widget |
+| `map_window.py` | `MapWindow`: the map widget in a top-level window of its own (geometry in the settings) with its own search bar: with text, it decides the map's tracks instead of the main search bar (`MainWindow._refresh_map`, matching shared via `_row_matcher`); `MapPlaceholder` in the map's tab meanwhile. `MainWindow.set_map_detached` moves the widget. **Unreachable since 2026-11-20:** the user dropped the *Own window* button (the map's `detach_button` still exists, off the toolbar) and a detached map is no longer restored at startup; the code stays in case it returns |
 | `covers.py` | `CoverProvider`: cover thumbnails (128 px) loaded by a worker thread with QImage and cached on disk (`covers/`, plus "no cover" markers), requested by painting; `CoverDelegate` paints the Cover column (cropped or square rows) |
 | `background.py` | `BackgroundWriter`: one worker thread for small updates (tag writes, single-row saves), run in order off the UI thread; results come back on the UI thread. Jobs use no widgets and open their own database connections |
-| `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread |
-| `map_settings_dialog.py` | Choose the map's hover details |
+| `similarity_map.py` | The *Similarity map* tab: dots, closest matches, edges; `build_map_data` runs in a thread. One `QToolBar` ordered by task (Model, Map the List only, Groups, Edges menu, view buttons) that folds into `>>`; info boxes wrap at `Map info width` |
+| `map_settings_dialog.py` | Choose which track details the map shows, per place (cards, label, details panel) |
 | `embedding_worker.py` | `EmbeddingAnalyzer`: starts and supervises the analysis process, turns its events into Qt signals |
 | `text_search_worker.py`, `text_search_dialog.py` | The text search process (started on the first query) and the *Search by description* window |
 
@@ -136,7 +137,8 @@ Dropped audio file ──> TrackImporter.read()
 `config.APP_DATA_DIR` resolves to (first match wins):
 
 1. `SONGSELECTOR_APP_DATA_DIR` environment variable (used by tests and verification)
-2. The folder containing the exe (when frozen by PyInstaller)
+2. When frozen by PyInstaller: on Windows the folder containing the exe; on Linux `$XDG_DATA_HOME/SongSelector`
+   (`~/.local/share/SongSelector`), because the AppImage runs from a read-only mount at a new path each start
 3. `<repo>/.appdata` when running from a source checkout
 4. `~/.songselector` otherwise (`~/.traktor_key_calculator` if only that one exists)
 
@@ -178,9 +180,9 @@ Modelled on how Traktor and Rekordbox separate the collection from playlists:
 
 On start, the window restores both lists (`_restore_lists`). Only on the very
 first start, when no `Library` list exists yet, is the library empty (plus what the old
-`imported_tracks.json` holds). Tracks come in by import. *Refresh* rebuilds the list from
-every track in the collection table (`LibraryStore.all_tracks`) on request, and *Load CSV*
-replaces it with a CSV file you pick. (Until 4.26.0 a bundled `music_test.csv` with the
+`imported_tracks.json` holds). Tracks come in by import. `refresh_data` rebuilds the list from
+every track in the collection table (`LibraryStore.all_tracks`), and `load_csv`
+replaces it with a CSV file (their *Refresh* and *Load CSV* buttons are gone since 2026-11-20). (Until 4.26.0 a bundled `music_test.csv` with the
 developer's own 2,920 tracks was the starting library; those tracks live in `library.sqlite` now.)
 SQLite was chosen after measuring on the real 5,100-track library: loading it
 takes 10 ms in SQLite vs 18 ms in JSON, and updating one track 0.1 ms vs
@@ -192,7 +194,15 @@ Every track in the library panel gets embeddings from each enabled model (`core/
 CNN14, one 2048-value vector per 5 s (background in `docs/research/audio_embeddings.md`); LAION CLAP, 512
 values per 10 s; Microsoft CLAP, 1024 values per 7 s (`docs/research/text_search_clap.md`). The settings
 `Embedding models` (which are analysed) and `Similarity model` (which one the map, closest matches and groups
-use) are set in the *Analysis* menu.
+use) are set in the *Analysis* menu. Since 2026-11-20 the main window's **Model box** (`model_box`, next to
+*Describe a sound*) is the one visible choice: it shows `Similarity model`, and choosing there calls
+`set_similarity_model`, which also sets `Text search model` for a CLAP model and re-runs a description search on the
+List; `_refresh_model_box` lists the models whose files are there and disables the description field for CNN14 (no
+text side). The map no longer has a Model box of its own.
+
+The map view only scrolls within its scene rect; `SimilarityMapWidget._set_scene_rect` makes that the map plus
+`PAN_ROOM` (3) times its size on every side, so it can be dragged anywhere (scroll bars off; *Fit* brings it back).
+Until 2026-11-20 it was the dots plus 5 %, which left almost no room to move.
 
 - **One cache file per model** (`EmbeddingStore(path, spec=...)`). The embeddings table has one row per track,
   so models cannot share it without a migration; separate files also mean the CNN14 cache of earlier versions
@@ -260,18 +270,27 @@ use) are set in the *Analysis* menu.
 
 ### Model download
 
-The model weights are not redistributed (decided 2026-11-17), so there is no public model release and `BASE_URL`
-in `core/model_download.py` is empty: *Analysis -> Get models...* (`ui/model_download_dialog.py`) then lists which
-models are installed and explains how to build the missing ones with the export scripts. If the setting
-`Model download URL` points to a web folder serving the files, the same window downloads them as below.
+Each model has its own Hugging Face repo (since 2026-11-20; `csipapicsa/songselector-cnn14`, `-clap-laion`,
+`-clap-ms`) with a model card (source, changes, licence; kept in `packaging/models/hf/<repo>/README.md`) and, for
+Apache 2.0 and MS-PL, the licence text. `HUGGING_FACE` in `core/model_download.py` names each repo, its files and the
+commit that holds them; `URLS` are `resolve/<commit>/<file>` addresses, so a later push to a repo cannot change what
+an app version downloads (a test checks that every file has a 40-hex commit, not a branch). The setting
+`Model download URL` replaces them with a web folder serving the files under their names (`url()`).
+The files go to, and are read from, `MainWindow.models_folder()`: the setting `Models folder` (empty: `models` next
+to the app's data). *Models folder…* (the Get models window's `folder_chosen`, or the Analysis menu) calls
+`set_models_folder`, which drops the text search workers (they loaded the encoders from the old folder), refreshes
+the menus, the Model box and the window, and restarts the analysis with the new files.
+Between 2026-11-17 and 2026-11-20 there was no download source and the window only explained how to build them.
 
-`core/model_download.py` fetches model files from that folder; `FILES` holds each file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
+`core/model_download.py` fetches the files; `FILES` holds each file's size and SHA-256. A download writes `<name>.part`, resumes it with an HTTP Range request (and starts over if
 the server ignores the range), and renames it only when the hash matches; a mismatch deletes the part file, so bad
 data is never resumed. `ui/model_download_dialog.py` runs it in a thread (one checkbox per model, progress, Stop)
 and reports the complete models; the main window switches them on and restarts the analysis. The window is offered
 once at the first start without any model, except when `SONGSELECTOR_EMBEDDING_MODEL=none` (tests, verification).
-`scripts/publish_models.ps1` checks exported files against `FILES` (its `-DryRun` is useful on its own to check a
-local export); it can publish them as a release, which is not done for this project.
+Resuming works through Hugging Face's redirect to its file storage (the Range header survives the redirect; tested
+2026-11-20 against the real repos). `scripts/publish_models.py` checks exported files against `FILES` (`--dry-run`
+is useful on its own to check a local export) and uploads each repo's card, licence and files in one commit,
+printing the commits to pin.
 
 ### Free-text search
 
@@ -348,7 +367,7 @@ fixed colours, so they stay readable on both backgrounds. Row tint opacity comes
 - Audio files are written **only** when the user edits Artist / Title / Genre / Comment
   (`core/tag_writer.py`). Just those tags change, and the ID3 version (v2.3 / v2.4)
   is kept. The file is then re-read like a fresh import, so the edit also survives
-  *Refresh* / *Load CSV*. If writing fails, nothing in the library changes.
+  a rebuild of the list. If writing fails, nothing in the library changes.
   Traktor shows the new tags once it re-reads the file.
 
 ## Testing
@@ -382,5 +401,18 @@ time, so it is skipped with a warning on a Python without it) appears immediatel
 splash at once in the embedding worker (the exe started again by multiprocessing) and in the self-check.
 
 `packaging/SongSelector.spec` builds a one-file, windowed exe from
-`packaging/launcher.py`. No data files are bundled (the former starting library CSV was removed in 4.26.0).
-Large unused libraries are excluded explicitly to keep the exe size down.
+`packaging/launcher.py`. No data files are bundled except the splash image and the icon (the former starting
+library CSV was removed in 4.26.0). Large unused libraries are excluded explicitly to keep the exe size down.
+
+**Linux** (since 1.3). The same spec builds one folder there (no Tcl/Tk splash, no UPX); `scripts/build_linux.sh`
+puts it into an AppDir with `packaging/linux/songselector.desktop` and the icon, and packs it with appimagetool and
+the static type-2 runtime (both pinned by SHA-256) into `SongSelector-<version>-x86_64.AppImage`. An AppImage is
+already one file and mounts itself instead of unpacking, so a one-file build inside it would only add an unpack at
+every start. It is built on ubuntu-22.04: the bundled libraries need the glibc they were built against or newer.
+`scripts/verify_release.sh` runs the same self-check inside it, then the real window on Xvfb, closed with
+`WM_DELETE_WINDOW` by `scripts/x11_window.py` (ctypes on libX11; Xvfb has no window manager).
+
+**Track keys across systems.** `canonical_path` is the identity of a track everywhere (library, embeddings,
+layouts, playlists). Windows paths (drive letter or share) are folded to lower case with backslashes on any system,
+since they also come from Traktor's and Rekordbox's files; other paths are only normalised, as Linux file names are
+case-sensitive.

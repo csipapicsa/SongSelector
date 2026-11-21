@@ -137,6 +137,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(list(matrix[:, 0]), list(range(1, 11)))
         self.assertEqual(StubSession.shapes, [(8, CHUNK_SAMPLES), (8, CHUNK_SAMPLES)])
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX niceness')
+    def test_analysis_process_is_niced_on_linux(self):
+        import subprocess
+        import sys
+        code = 'import os; from songselector.core.embeddings import _lower_process_priority; ' \
+               '_lower_process_priority(); print(os.nice(0))'
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1] / 'src'))
+        result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.stdout.strip(), str(min(os.nice(0) + 10, 19)), result.stderr)
+
     @unittest.skipUnless(os.name == 'nt', 'Windows priority classes')
     def test_analysis_process_has_below_normal_cpu_priority_but_no_background_mode(self):
         # Background mode (very low I/O and GPU priority) made CLAP on DirectML 15x slower; below-normal CPU is enough.

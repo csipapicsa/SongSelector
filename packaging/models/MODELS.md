@@ -1,7 +1,8 @@
 # SongSelector model files (v1)
 
 Embedding models for SongSelector, converted to ONNX so the app runs them with onnxruntime (no PyTorch). The app
-downloads them itself (*Analysis → Download models…*) and checks each file against `SHA256SUMS.txt`.
+downloads them itself (*Analysis → Get models…*) from one Hugging Face repo per model (model cards in `hf/`) and
+checks each file's SHA-256.
 They can also be rebuilt from the original weights with `scripts/export_cnn14_onnx.py` and
 `scripts/export_clap_onnx.py` in the SongSelector repository; every export is checked against the original
 PyTorch model (largest difference 1e-5 or less).

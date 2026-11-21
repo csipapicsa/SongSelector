@@ -24,7 +24,7 @@ from pathlib import Path
 from songselector.core.key_formats import NOTES, parse_bpm, parse_key
 from songselector.core.rekordbox_library import signature  # the same: size and time of the database and its WAL
 from songselector.core.track_colors import hex_color
-from songselector.core.traktor_collection import canonical_path
+from songselector.core.traktor_collection import canonical_path, native_path
 from songselector.env import getenv
 
 DATABASE = 'mixxxdb.sqlite'
@@ -72,9 +72,7 @@ def _rating(value):
 def _local_path(location):
     """The track's path as this system writes it (Mixxx on Windows stores 'E:/DJ/a.mp3')."""
     text = (location or '').strip()
-    if not text:
-        return ''
-    return ntpath.normpath(text) if ntpath.splitdrive(text)[0] else os.path.normpath(text)
+    return native_path(text) if text else ''
 
 
 class MixxxLibrary:

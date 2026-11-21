@@ -261,22 +261,22 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertEqual(self.window.playlist_tree.topLevelItem(0).text(1), 'breaks 5')
         self.assertTrue(dot.isVisible())  # playlist tracks stay in the library view (dimmed in the list)
 
-    def test_one_toolbar_by_task_with_the_model_box(self):
+    def test_one_toolbar_by_task(self):
         # UI review 2026-11-20: one toolbar (what is mapped -> colours -> view) that folds into its >> menu
-        # instead of forcing a width (the two rows before made the map at least ~1,700 px wide).
-        from songselector.core.embedding_models import LAION_CLAP
+        # instead of forcing a width (the two rows before made the map at least ~1,700 px wide). Later that day the
+        # user moved the model choice to the main window (next to "Describe a sound") and dropped "Own window".
         self.assertLess(self.map.minimumSizeHint().width(), 900)
         toolbar_widgets = [self.map.toolbar.widgetForAction(action) for action in self.map.toolbar.actions()]
-        order = [self.map.model_box, self.map.only_button, self.map.grouping, self.map.edges_button,
-                 self.map.view_3d_button, self.map.detach_button]
+        order = [self.map.only_button, self.map.grouping, self.map.edges_button, self.map.view_3d_button,
+                 self.map.rearrange_button]
         self.assertEqual([widget for widget in toolbar_widgets if widget in order], order)
         self.assertNotIn(self.map.match_filter, toolbar_widgets)  # it sits with the closest matches it filters
-        self.assertEqual(self.map.model_box.currentText(), 'CNN14')  # the model the map uses
-        requested = []
-        self.map.model_requested.connect(requested.append)
-        self.map.model_box.activated.emit(self.map.model_box.findData(LAION_CLAP.id))
-        self.assertEqual(requested, [LAION_CLAP.id])
-        self.assertEqual(self.window.settings['Similarity model'], LAION_CLAP.id)  # same as Analysis -> Similarity model
+        self.assertNotIn(self.map.detach_button, toolbar_widgets)
+        self.assertFalse(hasattr(self.map, 'model_box'))
+        # Later that day: the toolbar moved below the map, the last row (user's request).
+        layout = self.map.layout()
+        self.assertEqual(layout.indexOf(self.map.toolbar), layout.count() - 1)
+        self.assertGreater(layout.indexOf(self.map.toolbar), layout.indexOf(self.map.splitter))
         self.assertNotIn('Scroll: zoom', self.map.status.text())  # the how-to is behind the ? button
         self.assertIn('Scroll: zoom', self.map.help_button.toolTip())
 
@@ -302,11 +302,15 @@ class SimilarityMapGuiTests(MapWindowTestBase):
     def title(self, key):
         return self.window._fields_for_key(key).get('Title', '')
 
-    def test_hover_fields_dialog_returns_checked_columns_in_table_order(self):
-        from songselector.ui.map_settings_dialog import HoverFieldsDialog
-        dialog = HoverFieldsDialog(['Title', 'Artist'], ['Artist', 'Title', 'Genre'], width=50)
-        dialog.boxes['Genre'].setChecked(True)
-        self.assertEqual(dialog.selected(), ['Artist', 'Title', 'Genre'])
+    def test_map_details_dialog_returns_each_places_checked_items_in_row_order(self):
+        from songselector.ui.map_settings_dialog import MapDetailsDialog
+        dialog = MapDetailsDialog({'card': ['Title', 'Artist'], 'panel': ['Cover art']},
+                                  {'card': 'Card', 'panel': 'Panel'},
+                                  [('On the map', {'Cover art': 'tip'}), ('Columns', {'Artist': '', 'Title': '', 'Genre': ''})],
+                                  {'panel': {'Genre'}}, width=50)
+        dialog.boxes['card', 'Genre'].setChecked(True)
+        self.assertNotIn(('panel', 'Genre'), dialog.boxes)  # does not apply there: no box
+        self.assertEqual(dialog.selected(), {'card': ['Artist', 'Title', 'Genre'], 'panel': ['Cover art']})
         self.assertEqual(dialog.info_width(), 200)  # never narrower than the minimum
 
     def test_info_boxes_wrap_long_file_names_at_the_set_width(self):
@@ -323,7 +327,7 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertLessEqual(width, 300)
         self.assertGreater(height, one_line * 1.5)  # wrapped onto more lines instead
         label = MapLabel()
-        label.set_text(f'{name}\nF minor (4A) at master tempo, 130 BPM', 300)
+        label.set_html(f'{name}<br>F minor (4A) at master tempo, 130 BPM', 300)
         self.assertLessEqual(label.box_size()[0], 300)
         self.assertEqual(self.map.info_width(), 360)  # the default
         self.window.settings['Map info width'] = 50
@@ -391,6 +395,26 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertIsNone(self.map.preview_key)
         self.assertFalse(self.map.preview_card.isVisible())
         self.assertEqual(self.map.selected_key, self.key(0))  # the selection stays
+
+    def test_the_map_can_be_dragged_anywhere_and_fit_brings_it_back(self):
+        # Reported 2026-11-20: the map could hardly be moved (a view scrolls only within its scene rect, which was
+        # the dots plus 5 %), so a hover card at the edge stayed cut off. Dragging stands in for the scroll bars.
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+        self.map.fit()
+        view = self.map.view
+        dots = self.map._dots_rect()
+        shown = lambda: view.mapToScene(view.viewport().rect()).boundingRect()  # noqa: E731
+        self.assertTrue(shown().intersects(dots))
+        for bar in (view.horizontalScrollBar(), view.verticalScrollBar()):
+            bar.setValue(bar.maximum())  # as far right and down as a drag goes
+        self.assertFalse(shown().intersects(dots))  # the dots can leave the view entirely
+        view.scale(0.5, 0.5)  # zoomed out, it still moves
+        bar = view.horizontalScrollBar()
+        self.assertGreater(bar.maximum() - bar.minimum(), 0)
+        self.map.fit()
+        self.assertTrue(shown().contains(dots.center()))
 
     def test_label_and_cards_never_overlap(self):
         # Asked 2026-11-17. Zoomed far out, the selected, compared and hovered dots lie on nearly the same pixel:
@@ -498,7 +522,10 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.window.show()
         self.application.processEvents()
         self.map.select(self.key(0))
-        other = self.key(3)  # same tempo-adjusted key as track 0, same style
+        index = 3
+        other = self.key(index)  # same tempo-adjusted key as track 0 (keys repeat every 3 tracks), same style
+        # Lifted to the compared track's tier, above its neighbours: a style's fake tracks can land on one another.
+        self.map.dots[other].setZValue(3.5)
         view = self.map.view
         view.centerOn(self.map.dots[other])
         self.application.processEvents()
@@ -510,7 +537,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertTrue(self.map.preview_glow.isVisible())
         card = self.map.preview_card.text.toPlainText()
         self.assertTrue(self.map.preview_card.isVisible())
-        self.assertIn('breaks 3', card)
+        self.assertIn(f'breaks {index}', card)
         self.assertIn('Perfect mix', card)
         mix, similarity = self.map.relation(other)
         self.assertEqual(mix.name, 'perfect_mix')
@@ -524,6 +551,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertIsNone(self.map.preview_key)
         self.assertFalse(self.map.preview_card.isVisible())
         self.assertFalse([item for item in self.map.edge_items if item.pen().style() == Qt.DashLine])
+        self.map.dots[other].setZValue(3.5)  # back in the matches' tier: lifted again, as above
         QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, point)  # a plain click selects
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, other)
@@ -704,7 +732,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.wait_for_map()
         with patch.object(similarity_map, 'build_map_data', wraps=similarity_map.build_map_data) as build:
             self.window.filter_items()                 # filtered again: same rows
-            self.window.update_tree_after_slider()     # the tempo moved: same rows, new texts
+            self.window.apply_tempo()     # the tempo moved: same rows, new texts
             self.wait_for_map()
         build.assert_not_called()
 
@@ -832,7 +860,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         depth = self.map._depth
         near, far = max(depth, key=depth.get), min(depth, key=depth.get)
         near_size, far_size = self.map.dots[near].scale(), self.map.dots[far].scale()
-        self.assertGreater(near_size, 1.5 * far_size)  # and are drawn smaller than near ones
+        self.assertGreater(near_size, far_size)  # and are drawn smaller than near ones (how much: the cloud's depth)
         self.assertTrue(0.5 <= far_size < 1 < near_size <= 1.6)
         before = {key: dot.pos() for key, dot in self.map.dots.items()}
         self.window.resize(1400, 900)
@@ -857,6 +885,231 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual({key: dot.pos() for key, dot in self.map.dots.items()}, flat)
         self.assertEqual({dot.opacity() for dot in self.map.dots.values()}, {1.0})
         self.assertEqual({dot.scale() for dot in self.map.dots.values()}, {1.0})
+
+
+class MapViewOptionsTests(MapWindowTestBase):
+    """Asked 2026-11-20: turn the 2D map, choose every detail the map shows and where, hide the details panel, the
+    map's buttons below it, the search rows folded away."""
+
+    def show_window(self):
+        self.window.resize(1400, 900)
+        self.window.show()
+        self.application.processEvents()
+
+    def wait_for(self, condition, seconds=30):
+        deadline = time.monotonic() + seconds
+        while not condition() and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.02)
+        self.application.processEvents()
+
+    def test_shift_right_drag_turns_the_2d_map_about_the_middle_of_the_view(self):
+        from PyQt5.QtCore import QEvent, QPoint, QPointF, Qt
+        from PyQt5.QtGui import QContextMenuEvent, QMouseEvent
+        from PyQt5.QtWidgets import QApplication, QGraphicsView
+
+        from songselector.ui.similarity_map import ROTATE_SPEED
+        self.show_window()
+        view, viewport = self.map.view, self.map.view.viewport()
+        first, other = self.map.dots[self.key(0)], self.map.dots[self.key(13)]
+        before = other.pos() - first.pos()
+        view.centerOn(first)
+        self.application.processEvents()
+        start = view.mapFromScene(first.pos())  # the press lands on a dot: it turns, it does not select or open a menu
+        menus = []
+        self.map.request_context_menu.connect(lambda key, _pos: menus.append(key))
+
+        def send(kind, right, button, buttons):  # QTest.mouseMove sends no event offscreen
+            event = QMouseEvent(kind, QPointF(start + QPoint(right, 0)), button, buttons, Qt.ShiftModifier)
+            QApplication.sendEvent(viewport, event)
+        send(QEvent.MouseButtonPress, 0, Qt.RightButton, Qt.RightButton)
+        send(QEvent.MouseMove, 60, Qt.NoButton, Qt.RightButton)
+        send(QEvent.MouseMove, 100, Qt.NoButton, Qt.RightButton)
+        send(QEvent.MouseButtonRelease, 100, Qt.RightButton, Qt.NoButton)
+        self.application.processEvents()  # the moves are drawn once
+        angle = 100 * ROTATE_SPEED          # to the right: clockwise
+        self.assertAlmostEqual(self.map.turn_angle, angle)
+        self.assertAlmostEqual(self.window.settings['Map 2D turn'], angle)
+        after = other.pos() - first.pos()
+        cos, sin = np.cos(angle), np.sin(angle)
+        self.assertAlmostEqual(after.x(), before.x() * cos - before.y() * sin, places=3)  # y points down: clockwise
+        self.assertAlmostEqual(after.y(), before.x() * sin + before.y() * cos, places=3)
+        self.assertLessEqual((view.mapFromScene(first.pos()) - start).manhattanLength(), 2)  # the middle stays
+        self.assertIsNone(self.map.selected_key)
+        self.assertEqual(menus, [])
+        with patch.object(QGraphicsView, 'contextMenuEvent') as base:
+            QApplication.sendEvent(viewport, QContextMenuEvent(QContextMenuEvent.Mouse, start))
+            base.assert_not_called()   # the context menu event of the turn's right button
+            QApplication.sendEvent(viewport, QContextMenuEvent(QContextMenuEvent.Mouse, start))
+            base.assert_called_once()  # a later right-click goes on as before
+        self.map.fit()  # fits the turned map: the dots keep their turned positions
+        self.assertAlmostEqual((other.pos() - first.pos()).x(), after.x(), places=3)
+
+    def test_every_detail_can_be_switched_off_in_each_place(self):
+        from songselector.ui.similarity_map import (
+            CARD,
+            DEFAULT_DETAILS,
+            GROUP_ITEM,
+            KEY_ITEM,
+            LABEL,
+            NAME_ITEM,
+            PANEL,
+            RELATION_ITEM,
+        )
+        self.map.grouping.setCurrentIndex(self.map.grouping.findData('kmeans'))
+        self.wait_for(lambda: bool(self.map.groups))
+        self.map.select(self.key(4))
+        card = lambda: self.map.hover_card.text.toPlainText()  # noqa: E731
+        texts = {NAME_ITEM: 'breaks artist - breaks 5', KEY_ITEM: '128 BPM', RELATION_ITEM: '% similar',
+                 GROUP_ITEM: 'Group ', 'Genre': 'Genre'}
+        self.map.hover(self.key(5))
+        for text in texts.values():
+            self.assertIn(text, card())  # the defaults: as before
+        for item, text in texts.items():
+            self.window.settings['Map details'] = {CARD: [name for name in DEFAULT_DETAILS[CARD] if name != item]}
+            self.window._refresh_map()  # as after the dialog
+            self.assertNotIn(text, card(), item)
+            self.assertTrue(all(other in card() for other in texts.values() if other != text), item)
+        # Nothing chosen: no card, no label (the ring and the glow still mark the selected track), an empty panel
+        self.window.settings['Map details'] = {CARD: [], LABEL: [], PANEL: []}
+        self.window._refresh_map()
+        self.assertFalse(self.map.hover_card.isVisible())
+        self.assertFalse(self.map.label.isVisible())
+        self.assertTrue(self.map.selected_glow.isVisible())
+        self.assertEqual(self.map.details.text(), '')
+        # Columns on the label too, and only the key line in the panel
+        self.window.settings['Map details'] = {CARD: [], LABEL: ['Genre'], PANEL: [KEY_ITEM]}
+        self.window._refresh_map()
+        self.assertIn('Genre\nbreaks', self.map.label_text.toPlainText())
+        self.assertNotIn('master tempo', self.map.label_text.toPlainText())
+        self.assertIn('Key now: ', self.map.details.text())
+        self.assertNotIn('breaks artist', self.map.details.text())
+
+    def test_hover_columns_chosen_before_carry_over_and_the_dialog_saves_each_place(self):
+        from PyQt5.QtWidgets import QDialog
+
+        from songselector.ui.similarity_map import (
+            CARD,
+            COVER_ITEM,
+            DEFAULT_DETAILS,
+            GROUP_ITEM,
+            KEY_ITEM,
+            LABEL,
+            NAME_ITEM,
+            PANEL,
+            RELATION_ITEM,
+            detail_items,
+        )
+        before = {'Map hover fields': ['Original Key']}  # up to 2026-11-20: the columns, card and panel alike
+        self.assertEqual(detail_items(before, CARD),
+                         [COVER_ITEM, NAME_ITEM, KEY_ITEM, RELATION_ITEM, GROUP_ITEM, 'Original Key'])
+        self.assertEqual(detail_items(before, PANEL), [COVER_ITEM, NAME_ITEM, KEY_ITEM, GROUP_ITEM, 'Original Key'])
+        self.assertEqual(detail_items(before, LABEL), [NAME_ITEM, KEY_ITEM])
+        self.assertEqual(detail_items({}, CARD), DEFAULT_DETAILS[CARD])
+        self.window.settings['Map hover fields'] = ['Original Key']
+        dialog = self.window.map_details_dialog()
+        self.assertTrue(dialog.boxes[CARD, 'Original Key'].isChecked())
+        self.assertFalse(dialog.boxes[CARD, 'Genre'].isChecked())
+        self.assertNotIn((LABEL, RELATION_ITEM), dialog.boxes)  # the selected track has no mix with itself
+        self.assertNotIn((PANEL, RELATION_ITEM), dialog.boxes)
+        dialog.boxes[CARD, COVER_ITEM].setChecked(False)
+        dialog.boxes[LABEL, 'Genre'].setChecked(True)
+        chosen = dialog.selected()
+        self.assertEqual(chosen[CARD], [NAME_ITEM, KEY_ITEM, RELATION_ITEM, GROUP_ITEM, 'Original Key'])
+        self.assertEqual(chosen[LABEL], [NAME_ITEM, KEY_ITEM, 'Genre'])
+        with patch.object(dialog, 'exec_', return_value=QDialog.Accepted), \
+                patch.object(self.window, 'map_details_dialog', return_value=dialog):
+            self.window.choose_map_details()
+        self.assertEqual(self.window.settings['Map details'], chosen)
+        self.assertNotIn('Map hover fields', self.window.settings)
+
+    def test_speed_change_can_be_chosen_for_the_map_details(self):
+        from songselector.config import SPEED_COLUMN
+        from songselector.ui.similarity_map import CARD, DEFAULT_DETAILS, LABEL, PANEL
+        dialog = self.window.map_details_dialog()
+        bpm = dialog.items.index('Original BPM')
+        self.assertEqual(dialog.items[bpm + 1], SPEED_COLUMN)  # next to the BPM it comes from, as in the List
+        self.assertTrue(all((place, SPEED_COLUMN) in dialog.boxes for place in (CARD, LABEL, PANEL)))
+        self.assertFalse(dialog.boxes[CARD, SPEED_COLUMN].isChecked())  # not shown by default
+        dialog.boxes[CARD, SPEED_COLUMN].setChecked(True)
+        self.assertIn(SPEED_COLUMN, dialog.selected()[CARD])
+        self.window.settings['Map details'] = {CARD: DEFAULT_DETAILS[CARD] + [SPEED_COLUMN]}
+        self.window._refresh_map()
+        self.map.hover(self.key(5))
+        speed = self.window._fields_for_key(self.key(5))[SPEED_COLUMN]
+        self.assertTrue(speed.endswith('%'))
+        self.assertIn(f'{SPEED_COLUMN}\n{speed}', self.map.hover_card.text.toPlainText())
+
+    def test_the_details_panel_hides_by_right_click_beside_the_map_or_the_view_menu(self):
+        from PyQt5.QtCore import QPoint
+        from PyQt5.QtGui import QContextMenuEvent
+        from PyQt5.QtWidgets import QApplication, QMenu
+
+        from songselector.ui.similarity_map import SimilarityMapWidget
+        details, action = self.map.details, self.window.map_details_action
+        self.assertTrue(action.isChecked())
+        self.assertTrue(details.isVisibleTo(self.map))
+        self.map.select(self.key(0))
+        menus, chosen = [], []
+
+        def show(menu, *_args):
+            menus.append([entry.text() for entry in menu.actions()])
+            if chosen:
+                next(entry for entry in menu.actions() if entry.text() == chosen[0]).trigger()
+        chosen.append('Show selected track details')
+        with patch.object(QMenu, 'exec_', show):
+            # a right-click on a closest match's row: the list passes it on to the panel beside the map
+            QApplication.sendEvent(self.map.suggestions.viewport(), QContextMenuEvent(QContextMenuEvent.Mouse, QPoint(5, 5)))
+        self.assertEqual(menus[-1], ['Show selected track details', 'Choose track details...'])
+        self.assertFalse(details.isVisibleTo(self.map))
+        self.assertFalse(action.isChecked())  # the View menu follows
+        self.assertFalse(self.window.settings['Map details panel'])
+        self.assertTrue(SimilarityMapWidget(self.map.store, {'Map details panel': False}).details.isHidden())  # kept
+        action.setChecked(True)  # View -> Selected track details
+        self.assertTrue(details.isVisibleTo(self.map))
+        self.assertTrue(self.window.settings['Map details panel'])
+        requested = []
+        self.map.details_dialog_requested.connect(lambda: requested.append(True))
+        chosen[:] = ['Choose track details...']
+        details.setSelection(0, 4)
+        from PyQt5.QtWidgets import QDialog
+
+        from songselector.ui.map_settings_dialog import MapDetailsDialog
+        with patch.object(QMenu, 'exec_', show), patch.object(MapDetailsDialog, 'exec_', return_value=QDialog.Rejected):
+            self.map._side_menu(details, QPoint(1, 1))  # "Choose track details..." opens View -> Map track details...
+        self.assertIn('Copy', menus[-1])  # selected details text can still be copied
+        self.assertEqual(requested, [True])
+
+    def test_the_search_rows_fold_away_and_come_back(self):
+        from songselector.ui.main_window import MainWindow
+        self.show_window()
+        splitter, panel, action = self.window.search_splitter, self.window.search_panel, self.window.search_bars_action
+        self.assertTrue(action.isChecked())
+        self.assertEqual(splitter.sizes()[0], panel.sizeHint().height())  # the rows whole, never stretched
+        action.setChecked(False)  # View -> Search bars
+        self.assertEqual(splitter.sizes()[0], 0)
+        self.assertFalse(self.window.settings['Show search bars'])
+        action.setChecked(True)
+        self.assertEqual(splitter.sizes()[0], panel.sizeHint().height())
+        splitter.moveSplitter(0, 1)  # dragging the line up folds them away too, as on the left; the menu follows
+        self.assertEqual(splitter.sizes()[0], 0)
+        self.assertFalse(action.isChecked())
+        self.window.close()  # saves the settings: the next start begins without the rows
+        self.application.processEvents()
+        self.window = MainWindow()
+        self.map = self.window.similarity_map
+        self.show_window()
+        self.assertEqual(self.window.search_splitter.sizes()[0], 0)
+        self.assertFalse(self.window.search_bars_action.isChecked())
+
+
+class TurnTests(unittest.TestCase):
+    def test_points_turn_clockwise_on_screen(self):
+        import math
+
+        from songselector.ui.similarity_map import turned
+        np.testing.assert_allclose(turned([(1, 0), (0, 1)], math.pi / 2), [(0, 1), (-1, 0)], atol=1e-12)  # right -> down
+        np.testing.assert_allclose(turned([(3, 4)], 0), [(3, 4)])
 
 
 class ShownFieldsTests(unittest.TestCase):
@@ -915,7 +1168,8 @@ class MapWindowTests(MapWindowTestBase):
         self.window.set_map_detached(True)
         self.application.processEvents()
         self.assertEqual(self.window.map_window.size().width(), width)
-        # Closing the app with the map detached: it opens detached next time.
+        # Closing the app with the map detached: since 2026-11-20 (no "Own window" button any more) it opens docked
+        # next time, as there would be no button to bring it back.
         self.window.close()
         self.application.processEvents()
         self.assertTrue(self.window.settings['Map detached'])
@@ -923,7 +1177,8 @@ class MapWindowTests(MapWindowTestBase):
         restarted = MainWindow()
         try:
             self.application.processEvents()
-            self.assertIsNotNone(restarted.map_window)
+            self.assertIsNone(restarted.map_window)
+            self.assertFalse(restarted.settings['Map detached'])
         finally:
             restarted.close()
             self.application.processEvents()
@@ -994,6 +1249,16 @@ class MapCoverTests(MapWindowTestBase):
         self.assertIn('<img', self.map.details.text())
         self.map.hover(self.key(1))                                # no cover: no picture
         self.assertNotIn('<img', self.map.hover_card.text.toHtml())
+        # Asked 2026-11-20: the cover can be switched off, for each place on its own
+        from songselector.ui.similarity_map import CARD, COVER_ITEM, DEFAULT_DETAILS, LABEL, NAME_ITEM, PANEL
+        self.window.settings['Map details'] = {CARD: [item for item in DEFAULT_DETAILS[CARD] if item != COVER_ITEM],
+                                               LABEL: [COVER_ITEM, NAME_ITEM], PANEL: DEFAULT_DETAILS[PANEL]}
+        self.window._refresh_map()
+        self.map.hover(self.key(0))
+        self.assertTrue(self.map.hover_card.isVisible())
+        self.assertNotIn('<img', self.map.hover_card.text.toHtml())
+        self.assertIn('<img', self.map.label_text.toHtml())
+        self.assertIn('<img', self.map.details.text())
 
     def test_closest_matches_have_a_cover_column(self):
         # Reported 2026-11-17: covers as icons in the first column looked messy; they get a column of their own.
