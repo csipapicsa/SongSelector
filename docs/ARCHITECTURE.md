@@ -133,7 +133,8 @@ Dropped audio file ──> TrackImporter.read()
 `config.APP_DATA_DIR` resolves to (first match wins):
 
 1. `SONGSELECTOR_APP_DATA_DIR` environment variable (used by tests and verification)
-2. The folder containing the exe (when frozen by PyInstaller)
+2. When frozen by PyInstaller: on Windows the folder containing the exe; on Linux `$XDG_DATA_HOME/SongSelector`
+   (`~/.local/share/SongSelector`), because the AppImage runs from a read-only mount at a new path each start
 3. `<repo>/.appdata` when running from a source checkout
 4. `~/.songselector` otherwise (`~/.traktor_key_calculator` if only that one exists)
 
@@ -396,5 +397,18 @@ time, so it is skipped with a warning on a Python without it) appears immediatel
 splash at once in the embedding worker (the exe started again by multiprocessing) and in the self-check.
 
 `packaging/SongSelector.spec` builds a one-file, windowed exe from
-`packaging/launcher.py`. No data files are bundled (the former starting library CSV was removed in 4.26.0).
-Large unused libraries are excluded explicitly to keep the exe size down.
+`packaging/launcher.py`. No data files are bundled except the splash image and the icon (the former starting
+library CSV was removed in 4.26.0). Large unused libraries are excluded explicitly to keep the exe size down.
+
+**Linux** (since 1.3). The same spec builds one folder there (no Tcl/Tk splash, no UPX); `scripts/build_linux.sh`
+puts it into an AppDir with `packaging/linux/songselector.desktop` and the icon, and packs it with appimagetool and
+the static type-2 runtime (both pinned by SHA-256) into `SongSelector-<version>-x86_64.AppImage`. An AppImage is
+already one file and mounts itself instead of unpacking, so a one-file build inside it would only add an unpack at
+every start. It is built on ubuntu-22.04: the bundled libraries need the glibc they were built against or newer.
+`scripts/verify_release.sh` runs the same self-check inside it, then the real window on Xvfb, closed with
+`WM_DELETE_WINDOW` by `scripts/x11_window.py` (ctypes on libX11; Xvfb has no window manager).
+
+**Track keys across systems.** `canonical_path` is the identity of a track everywhere (library, embeddings,
+layouts, playlists). Windows paths (drive letter or share) are folded to lower case with backslashes on any system,
+since they also come from Traktor's and Rekordbox's files; other paths are only normalised, as Linux file names are
+case-sensitive.

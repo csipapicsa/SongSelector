@@ -551,6 +551,7 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertIsNone(self.map.preview_key)
         self.assertFalse(self.map.preview_card.isVisible())
         self.assertFalse([item for item in self.map.edge_items if item.pen().style() == Qt.DashLine])
+        self.map.dots[other].setZValue(3.5)  # back in the matches' tier: lifted again, as above
         QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, point)  # a plain click selects
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, other)

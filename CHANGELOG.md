@@ -10,6 +10,14 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **Linux.** Each release now also has `SongSelector-<version>-x86_64.AppImage`: make it executable
+  (`chmod +x`) and start it, no installation needed. It is built on Ubuntu 22.04, so it runs on distributions from
+  about 2022 on, and it is checked like the exe: a self-check inside the packaged app, then a real window. On Linux
+  the app keeps its data in `~/.local/share/SongSelector`, the analysis runs on the CPU, and tracks come from their
+  tags (Traktor and Rekordbox do not run on Linux). The tests now run on Linux too.
+- **App icon** for the window and the Linux desktop entry: dots in clusters, like tracks on the similarity map.
+- Running from source on Linux before this version: track paths keep their capitals now (on Linux `A.mp3` and
+  `a.mp3` are two files), so the library is read anew and the tracks are analysed again.
 - **The model download works again.** *Analysis → Get models…* → *Download* fetches CNN14 and both CLAP models
   (resumable, checksum-checked) from Hugging Face, one repo per model, each with a model card naming the source,
   the changes and the licence: [`songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14),

@@ -32,9 +32,14 @@ CHANGELOG when they ship.
        yourself (how)." is missing, seen on Linux/WSLg). Likely `resize(560, sizeHint().height())` sizing before the
        wrapped rich-text label knows its height; give the label a height for the window's width (or let the layout
        set the minimum size) and test that the whole text is visible.
-3. **Linux release** (plan of 2026-11-20 in the worklog): Linux in the CI test matrix first (`os.startfile` ->
-   `QDesktopServices`, environment markers for `onnxruntime` vs `onnxruntime-directml`), then a release matrix
-   (Windows + Linux on `ubuntu-22.04` for an older glibc) with an AppImage, verified with `xvfb-run`.
+3. [x] **Linux release** (2026-11-21, PR #52, shipped in 1.3.0): tests on Linux in CI, AppImage built on
+   ubuntu-22.04 and verified with `xvfb-run`. Follow-ups:
+   - pip-audit runs on Windows only, so `onnxruntime` (the Linux line of `requirements.txt`) is not audited; an
+     audit leg on Linux (keep the required check name, like the `test` gate).
+   - The user's test of the released AppImage on a real Linux desktop (not WSL): menu entry/icon via an AppImage
+     integration tool, opening a file by double-click (`xdg-open`), drag and drop into the playlist.
+   - Linux has no DJ program integration until Mixxx (item 1); `discover_collection()` still looks for
+     `E:\DJ\TRAKTOR\collection.nml` first (harmless there, see Distribution item 3).
 4. **Idea, to discuss later (user, 2026-11-20; "not now"):** single-key shortcuts while the app is active, e.g.
    *F* fits the map. Needs a plan for keys typed into text fields (search, description, tempo box).
 
