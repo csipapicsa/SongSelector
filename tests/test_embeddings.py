@@ -423,7 +423,10 @@ class WindowAnalysisTests(unittest.TestCase):
             (root / 'settings.json').write_text(json.dumps(settings))
             library = pd.DataFrame([{'Artist': 'T', 'Title': p.stem, 'BPM': 120, 'File_Path': str(p),
                                      'Musical_Key_Base': 'C', 'BaseMinorOrMajor': 'major'} for p in tracks])
+            import hashlib
+            stand_in = {'cnn14.onnx': (4, hashlib.sha256(b'fake').hexdigest())}  # the app checks size and SHA-256
             with patch('songselector.ui.main_window.SETTINGS_FILE', str(root / 'settings.json')), \
+                    patch.dict('songselector.core.model_download.FILES', stand_in), \
                     patch('songselector.ui.main_window.DataManager.load_default_data', return_value=library), \
                     patch('songselector.ui.main_window.EmbeddingAnalyzer',
                           lambda store, path, parent=None: EmbeddingAnalyzer(store, path, BriefEmbedder, parent)):

@@ -4,6 +4,7 @@ The real models are large and not in the repo; scripts/export_clap_onnx.py check
 are made. Here: the model definitions, decoding for several sample rates, one analysis process feeding several
 caches, tokenising, ranking, the text search process and the search window, all with stand-ins.
 """
+import hashlib
 import json
 import os
 import tempfile
@@ -17,6 +18,7 @@ import soundfile
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QLabel
 
+from songselector.core import model_download
 from songselector.core.embedding_models import CNN14, LAION_CLAP, MODELS, MS_CLAP, model, store_path
 from songselector.core.embeddings import EmbeddingStore, load_audio, load_audio_rates
 from songselector.core.text_search import clap_track_vector, rank, tokenize, unit
@@ -273,6 +275,11 @@ class SearchWindowTests(unittest.TestCase):
             dialog.close()
 
 
+# The tests stand in a one-byte file b'x' for each model file; the app checks a model file's size and SHA-256
+# (core/model_download.py), so here those are the stand-in's.
+STAND_IN_FILES = {name: (1, hashlib.sha256(b'x').hexdigest()) for name in model_download.FILES}
+
+
 class WindowCase(unittest.TestCase):
     """A main window on a one-track library with grouping on."""
 
@@ -296,7 +303,8 @@ class WindowCase(unittest.TestCase):
                                  'Musical_Key_Base': 'A', 'BaseMinorOrMajor': 'minor'}])
         self.patches = [patch('songselector.ui.main_window.SETTINGS_FILE', str(self.root / 'settings.json')),
                         patch('songselector.ui.main_window.DataManager.load_default_data',
-                              side_effect=lambda: library.copy())]
+                              side_effect=lambda: library.copy()),
+                        patch.dict('songselector.core.model_download.FILES', STAND_IN_FILES)]
         for active in self.patches:
             active.start()
         from songselector.ui.main_window import MainWindow
@@ -316,6 +324,38 @@ class MainWindowModelTests(WindowCase):
         self.assertTrue(self.window._groups_waiting)
         self.assertIn('Groups wait', self.window.status_label.text())
         self.assertIsNone(self.window.similarity_map.data)  # no map loaded for nothing
+
+    def test_model_files_are_checked_once_in_the_background_and_a_damaged_model_is_switched_off(self):
+        # Asked 2026-11-21: a proper check of the model files at start, not just "a file of that name is there".
+        window = self.window
+        models = self.root / 'models'
+        models.mkdir()
+        for name in LAION_CLAP.files():
+            (models / name).write_bytes(b'x')  # copied in by hand: right size, checksum not computed yet
+
+        def check():
+            window.check_model_files()
+            deadline = time.monotonic() + 20
+            while window._model_check_thread is not None and time.monotonic() < deadline:
+                self.application.processEvents()
+                time.sleep(0.01)
+
+        with patch.object(window, 'start_embedding_analysis'):  # the stand-in files are not real models
+            self.assertEqual(model_download.model_state(window.model_file_states(LAION_CLAP)), model_download.CHECKING)
+            self.assertIsNotNone(window.model_file(LAION_CLAP))  # usable while it is being checked
+            check()
+            self.assertEqual(model_download.model_state(window.model_file_states(LAION_CLAP)), model_download.INSTALLED)
+            self.assertTrue(all(window.settings['Model file checks'][str(models / name)][2]
+                                for name in LAION_CLAP.files()))  # remembered: not computed again at the next start
+            damaged = models / LAION_CLAP.text_file
+            damaged.write_bytes(b'y')  # same size, other bytes
+            stat = damaged.stat()
+            os.utime(damaged, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+            check()
+        self.assertIsNone(window.model_file(LAION_CLAP))
+        self.assertIn('damaged', window.model_actions[LAION_CLAP.id].text())
+        self.assertIn('Damaged model files', window.status_label.text())
+        self.assertIn(f'{LAION_CLAP.text_file}: wrong checksum', window.status_label.text())
 
     def test_models_without_files_cannot_be_switched_on_and_the_map_follows_the_chosen_model(self):
         window = self.window

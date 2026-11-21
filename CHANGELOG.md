@@ -27,6 +27,14 @@ from that period still mention 4.x numbers.
 - **The Browser lists only the DJ programs that are there.** *Traktor Playlists* appears once a Traktor collection
   is found or linked, like *Mixxx Playlists* and *Rekordbox Playlists*; before, it was always shown, also on Linux
   and on computers without Traktor.
+- **Model files are checked properly, at start.** Each model file must be there with the right size and the right
+  SHA-256. Files the app downloads are checked as they arrive; files copied in by hand, or in a folder chosen with
+  *Models folder…*, are checked once in the background after the start (a model can be used meanwhile) and again
+  only if they change. A model with a damaged file is switched off, the status line says which file, and *Get
+  models* downloads it again.
+- **Get models shows each model's state:** a check mark and *Installed* for an installed model (it was a greyed-out,
+  empty check box, which read as "not available"), *Checking the files*, *Not installed*, *Incomplete* or
+  *Damaged*. The window is sized for its whole intro text, also after choosing another folder.
 
 ## [1.3.0] - 2026-11-21
 

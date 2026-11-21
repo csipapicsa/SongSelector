@@ -1242,7 +1242,9 @@ class MapCoverTests(MapWindowTestBase):
 
     def test_cards_and_details_show_the_cover_once_it_is_loaded(self):
         self.map.hover(self.key(0))
-        self.assertNotIn('<img', self.map.card_html(self.key(0)).split('<b>')[0])  # requested, not there yet
+        # The card as hover() drew it: the cover was requested then, not there yet. (Building the card again here
+        # raced the loader thread, which can be done by then; the redraw itself needs the event loop.)
+        self.assertNotIn('<img', self.map.hover_card.text.toHtml())
         self.wait_for_cover(0)
         self.assertIn('<img', self.map.hover_card.text.toHtml())  # the open card was drawn again
         self.map.select(self.key(0))
