@@ -1,5 +1,5 @@
 # Runtime dependencies, pinned to the versions the release was verified with.
-# Python 3.11 (64-bit, Windows).
+# Python 3.11, 64-bit: Windows and Linux (x86_64). Platform-specific lines carry an environment marker.
 PyQt5==5.15.11
 PyQt5-Qt5==5.15.2
 PyQt5-sip==12.17.1
@@ -9,12 +9,13 @@ numpy==2.3.4
 sqlcipher3-wheels==0.5.7  # reads Rekordbox's encrypted library (playlists); binary wheel
 
 # Audio embeddings (analysis runs in a separate process, see core/embeddings.py)
-onnxruntime-directml==1.24.4  # GPU via DirectX 12 (any vendor) with CPU fallback; CUDA: requirements-gpu.txt
+onnxruntime-directml==1.24.4; sys_platform == 'win32'  # GPU via DirectX 12 (any vendor) with CPU fallback; CUDA: requirements-gpu.txt
+onnxruntime==1.24.4; sys_platform != 'win32'           # Linux: CPU (DirectML is Windows-only)
 soundfile==0.14.0          # bundles libsndfile 1.2 (MP3, FLAC, WAV decoding)
 soxr==1.1.0                # resampling, same algorithm as librosa's default
 av==18.1.0                 # PyAV: FFmpeg, second decoder for AAC (.m4a, .mp4) and damaged MP3s; large binary wheel
 flatbuffers==25.12.19
-sympy==1.14.0              # required by onnxruntime-directml; not bundled into the exe
+sympy==1.14.0              # required by onnxruntime; not bundled into the exe
 mpmath==1.3.0
 protobuf==7.36.2
 packaging==26.3

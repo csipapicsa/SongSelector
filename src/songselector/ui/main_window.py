@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 from mutagen import MutagenError
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
     QActionGroup,
@@ -990,7 +990,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         """Handle double-click on tree item"""
         file_path = item.text(HEADER_INDEX.get("Path"))
         if file_path and os.path.exists(file_path):
-            os.startfile(file_path)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))  # the system's player; os.startfile is Windows-only
             self.status_bar.showMessage(f"Opened file: {os.path.basename(file_path)}")
             message = f"Opened file: {os.path.basename(file_path)}"
             self.status_label.setStyleSheet(status_style('info'))
