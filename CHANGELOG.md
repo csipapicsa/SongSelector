@@ -83,7 +83,8 @@ from that period still mention 4.x numbers.
   Browser fold away on the left), hides *Master tempo*, *Search* and *Describe a sound*; a search set before stays
   in force.
 - Running from source on Linux before this version: track paths keep their capitals now (on Linux `A.mp3` and
-  `a.mp3` are two files), so the library is read anew and the tracks are analysed again.
+  `a.mp3` are two files), and the data folder still holds the old keys. Start with a fresh `.appdata` (keep its
+  `models` folder); the tracks are then imported and analysed again. Windows is not affected.
 
 ## [1.2.0] - 2026-11-17
 
