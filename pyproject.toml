@@ -30,7 +30,7 @@ songselector = "songselector.app:main"
 version = { attr = "songselector.__version__" }
 
 [tool.setuptools.package-data]
-songselector = ["ui/splash.png"]
+songselector = ["ui/splash.png", "ui/icon.png"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

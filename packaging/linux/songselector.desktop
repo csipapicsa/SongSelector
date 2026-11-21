@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SongSelector
+GenericName=Track organizer
+Comment=Track organizer for DJs and music collectors: harmonic keys, audio similarity map, playlists
+Exec=songselector
+Icon=songselector
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=DJ;music;playlist;key;BPM;

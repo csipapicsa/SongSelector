@@ -4,16 +4,16 @@
 [![Release](https://img.shields.io/github/v/release/csipapicsa/SongSelector)](https://github.com/csipapicsa/SongSelector/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
-![Windows](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
-A Windows desktop app that helps DJs pick the next track. It sits next to Traktor or Rekordbox, reads
-their libraries automatically, and answers three questions:
+A desktop app for Windows and Linux that helps DJs pick the next track. It sits next to Traktor or Rekordbox
+(on Windows), reads their libraries automatically, and answers three questions:
 
 - **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
   pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
   Open Key notation, and recalculates the whole library as you change the master tempo.
 - **What sounds like this track?** Neural audio models (PANNs CNN14, LAION CLAP, Microsoft CLAP, run
-  through ONNX Runtime on the GPU) turn every track into embeddings in the background. A similarity map
+  through ONNX Runtime; on Windows on the GPU) turn every track into embeddings in the background. A similarity map
   and a closest-matches list then show tracks that *sound* alike, whatever their tags say.
 - **Which of my tracks sound like *this*?** Type a description, *"funky breakbeat with a groovy bassline"*,
   and the CLAP models find the closest tracks in your library.
@@ -68,20 +68,34 @@ What is behind the features, and where to look:
 | Model choice by measurement | CPU and GPU cost of LAION vs Microsoft CLAP measured before any app work; a broken model (collapsed embeddings) caught and excluded | [docs/research/text_search_clap.md](docs/research/text_search_clap.md) |
 | Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
 | Testing | About 320 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
-| Release verification | Every exe runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real GPU inference) and a native-window smoke test before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1) |
-| CI/CD | GitHub Actions: ruff, pytest on Windows, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe with a SHA-256 checksum | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
+| Release verification | Every build (Windows exe, Linux AppImage) runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real inference) and a native-window smoke test (on Linux on Xvfb, closed through the X11 window protocol) before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1), [verify_release.sh](scripts/verify_release.sh) |
+| CI/CD | GitHub Actions: ruff, pytest on Windows and Linux, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe and the AppImage with SHA-256 checksums | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
 | Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
 
 ## Install
 
-1. Download `SongSelector-<version>.exe` from the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest)
-   and put it in its own folder. It is self-contained (no Python needed). Windows SmartScreen will
-   warn because the exe is not code-signed; check it against `SHA256SUMS.txt` from the same release.
-2. The embedding models (similarity map, closest matches, groups, search by description) are a separate,
-   optional download (up to 1.6 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and
-   checks each file ([below](#getting-the-embedding-models)). Everything else works without them.
+Both downloads are in the [latest release](https://github.com/csipapicsa/SongSelector/releases/latest),
+self-contained (no Python needed). Check them against `SHA256SUMS.txt` from the same release.
 
-The exe stores its data **next to itself**:
+- **Windows:** `SongSelector-<version>.exe`. Put it in its own folder and start it. SmartScreen will warn because
+  the exe is not code-signed.
+- **Linux (x86_64):** `SongSelector-<version>-x86_64.AppImage`. Make it executable and start it:
+
+  ```bash
+  chmod +x SongSelector-*-x86_64.AppImage
+  ./SongSelector-*-x86_64.AppImage
+  ```
+
+  Built on Ubuntu 22.04, so it runs on distributions from about 2022 on. It mounts itself with FUSE, which desktop
+  distributions have; where FUSE is missing, start it with `--appimage-extract-and-run`. Analysis runs on the CPU.
+  Traktor and Rekordbox are Windows/macOS programs, so on Linux tracks come from their tags (*Import*).
+
+The embedding models (similarity map, closest matches, groups, search by description) are a separate, optional
+download (up to 1.6 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
+([below](#getting-the-embedding-models)). Everything else works without them.
+
+The app stores its data in one folder: on Windows **next to the exe**, on Linux in `~/.local/share/SongSelector`
+(`$XDG_DATA_HOME/SongSelector`):
 
 | File | Content |
 |---|---|
@@ -91,7 +105,7 @@ The exe stores its data **next to itself**:
 | `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite` | The same for the CLAP models |
 | `models\` | The model files (next section) |
 
-To upgrade, put the new exe in the same folder. Settings from versions before 1.1
+To upgrade, put the new exe in the same folder (Linux: replace the AppImage). Settings from versions before 1.1
 (`SpotNextTrack_settings.json`) are taken over on the first start.
 
 ## Getting the embedding models
@@ -243,6 +257,17 @@ python -m ruff check src tests       # lint
                                      # add -Model <path>\cnn14.onnx to include GPU inference
 ```
 
+On Linux (Python 3.11; on Ubuntu also Qt's xcb libraries, see the `apt-get` line in
+[ci.yml](.github/workflows/ci.yml)):
+
+```bash
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m songselector     # run from source
+.venv/bin/python -m pytest           # tests
+scripts/build_linux.sh               # -> dist/SongSelector-<version>-x86_64.AppImage
+xvfb-run -a scripts/verify_release.sh  # self-check inside the AppImage + window test on a virtual display
+```
+
 Set `SONGSELECTOR_CNN14_ONNX` to `cnn14.onnx`, and `SONGSELECTOR_CLAP_MODELS` to the folder with the CLAP
 files, to also run the real-model tests.
 
@@ -250,8 +275,8 @@ files, to also run the real-model tests.
 [src/songselector/\_\_init\_\_.py](src/songselector/__init__.py) and rename the changelog's
 `[Unreleased]` section in a pull request, merge it, then tag the merge commit (`git tag vX.Y.Z`,
 `git push origin vX.Y.Z`). The workflow checks that the tag matches the code and is on `main`, runs
-the tests, builds and verifies the exe and publishes it with its checksum and the changelog section
-as notes. Pull requests that change the packaging run the same build as a dry run.
+the tests on both systems, builds and verifies the exe and the AppImage and publishes them with their
+checksums and the changelog section as notes. Pull requests that change the packaging run the same build as a dry run.
 
 ```text
 src/songselector/

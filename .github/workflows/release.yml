@@ -1,7 +1,7 @@
 name: Release
 
 on:
-  # A version tag (v1.2.3) builds, verifies and publishes a GitHub Release.
+  # A version tag (v1.2.3) builds, verifies and publishes a GitHub Release: the Windows exe and the Linux AppImage.
   push:
     tags: ["v*.*.*"]
   # A PR that changes the packaging runs the same build and verification as a dry run (nothing is published),
@@ -15,6 +15,9 @@ on:
       - "scripts/verify_release.ps1"
       - "scripts/update_qt_msvc_runtime.ps1"
       - "scripts/release_notes.ps1"
+      - "scripts/build_linux.sh"
+      - "scripts/verify_release.sh"
+      - "scripts/x11_window.py"
       - "requirements.txt"
 
 permissions:
@@ -26,7 +29,7 @@ concurrency:
 
 jobs:
   build:
-    # Read-only: this job runs third-party code (pip packages, PyInstaller), so it gets no write access.
+    # Windows. Read-only: this job runs third-party code (pip packages, PyInstaller), so it gets no write access.
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -71,14 +74,12 @@ jobs:
         shell: pwsh
         run: .\scripts\verify_release.ps1
 
-      - name: Checksum and release notes
+      - name: Release notes
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release | Out-Null
           $exe = Get-ChildItem dist -Filter 'SongSelector-*.exe' | Select-Object -First 1
           Copy-Item -LiteralPath $exe.FullName -Destination release
-          $hash = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLower()
-          Set-Content -LiteralPath release/SHA256SUMS.txt -Value "$hash  $($exe.Name)" -Encoding ascii
           $version = (Select-String -LiteralPath src/songselector/__init__.py -Pattern "__version__ = '([^']+)'").Matches[0].Groups[1].Value
           if ($env:IS_RELEASE -eq 'true') {
             # A release must have its own changelog section; the script fails if it is missing.
@@ -93,12 +94,66 @@ jobs:
       # Hand the files to the publish job. The exe that is published is the one verified above.
       - uses: actions/upload-artifact@v4
         with:
-          name: release
+          name: release-windows
+          path: release/
+          retention-days: 7
+
+  build-linux:
+    # Linux: the AppImage. Read-only, like the Windows build. ubuntu-22.04 has the oldest glibc on GitHub's runners;
+    # the bundled libraries need at least the glibc they were built against, so this one starts on more systems.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Release tag must match the code
+        if: env.IS_RELEASE == 'true'
+        run: |
+          code="$(sed -n "s/^__version__ = '\(.*\)'$/\1/p" src/songselector/__init__.py)"
+          [ "v$code" = "$TAG" ] || { echo "Tag $TAG does not match __version__ = '$code' in the code." >&2; exit 1; }
+
+      # Qt's system libraries for its xcb platform (the real window), and Xvfb, a display without a screen.
+      - name: System libraries
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends xvfb xauth libegl1 libgl1 libfontconfig1 libdbus-1-3 \
+            libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xfixes0 libxcb-shape0 libxcb-xkb1
+
+      - name: Set up the build environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -q -r requirements-dev.txt
+
+      - name: Tests
+        run: .venv/bin/python -m pytest -m "not local_data"
+
+      - name: Build the AppImage
+        run: scripts/build_linux.sh
+
+      - name: Verify the AppImage (self-check inside it, then a real window on Xvfb)
+        run: xvfb-run -a scripts/verify_release.sh
+
+      - run: |
+          mkdir release
+          cp dist/SongSelector-*-x86_64.AppImage release/
+          ls -l release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
           path: release/
           retention-days: 7
 
   publish:
-    needs: build
+    needs: [build, build-linux]
     if: startsWith(github.ref, 'refs/tags/v')
     # Write access only here, only for releases, and this job runs no third-party code.
     runs-on: ubuntu-latest
@@ -108,14 +163,20 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: release
+          pattern: release-*
           path: release
+          merge-multiple: true
+      # One checksum file for both downloads (the files verified in the build jobs).
+      - name: Checksums
+        run: |
+          cd release
+          sha256sum SongSelector-* | tee SHA256SUMS.txt
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" release/*.exe release/SHA256SUMS.txt \
+          gh release create "$TAG" release/SongSelector-* release/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --title "SongSelector ${TAG#v}" \
             --notes-file release/notes.md \

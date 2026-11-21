@@ -499,8 +499,13 @@ def _lower_process_priority():
 
     Not Windows' background mode (PROCESS_MODE_BACKGROUND_BEGIN), which this used until 1.1.0: it also lowers
     memory and GPU scheduling priority, and made Microsoft CLAP on DirectML 15x slower (36 s instead of 2.4 s for
-    a 6-minute track, model load 20 s instead of 1 s). Reading one file every few seconds needs no low I/O priority."""
+    a 6-minute track, model load 20 s instead of 1 s). Reading one file every few seconds needs no low I/O priority.
+    Linux: niceness +10, about the same step (there the analysis runs on the CPU, so it matters even more)."""
     if os.name != 'nt':
+        try:
+            os.nice(10)
+        except OSError:
+            pass  # e.g. a sandbox that forbids it: the analysis still runs, at normal priority
         return
     import ctypes
     from ctypes import wintypes

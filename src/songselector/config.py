@@ -107,14 +107,17 @@ MAX_BPM = 200
 def _default_app_data_dir():
     """Where settings and imported tracks are stored.
 
-    Priority: SONGSELECTOR_APP_DATA_DIR env var, then the folder of the frozen exe,
-    then <repo>/.appdata when running from a source checkout, then ~/.songselector
-    (~/.traktor_key_calculator if only that one exists, from before the rename).
+    Priority: SONGSELECTOR_APP_DATA_DIR env var, then the folder of the frozen exe (Windows; on Linux the frozen
+    app runs from a read-only AppImage mounted at a new path each start, so it uses $XDG_DATA_HOME/SongSelector,
+    by default ~/.local/share/SongSelector), then <repo>/.appdata when running from a source checkout, then
+    ~/.songselector (~/.traktor_key_calculator if only that one exists, from before the rename).
     """
     if getenv('APP_DATA_DIR'):
         return Path(getenv('APP_DATA_DIR'))
     if getattr(sys, 'frozen', False):
-        return Path(sys.executable).resolve().parent
+        if sys.platform == 'win32':
+            return Path(sys.executable).resolve().parent
+        return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share') / 'SongSelector'
     repo_root = Path(__file__).resolve().parents[2]
     if (repo_root / 'pyproject.toml').is_file():
         return repo_root / '.appdata'
