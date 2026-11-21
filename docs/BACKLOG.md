@@ -16,8 +16,8 @@ CHANGELOG when they ship.
      the text-search worker may hold the ONNX file open (on Windows an open file cannot be deleted). Keep its
      embeddings cache (`embeddings-*.sqlite`) by default, so a re-download does not re-analyse; offer to delete it
      too in the same dialog.
-   - Cleanup, waiting for the user's OK: the local branch `fix/model-download-release` (replaced by the Hugging Face
-     download) and the leftover **draft** GitHub release `models-v1` (one tokenizer asset, never public).
+   - [x] Cleanup (2026-11-21, user's OK): the local branch `fix/model-download-release` (replaced by the Hugging Face
+     download) and the leftover draft GitHub release `models-v1` (one tokenizer asset, never public) are deleted.
    - Later: a manual GitHub Actions workflow that re-exports and uploads (pinned CPU PyTorch, verify, checksums);
      `scripts/publish_models.py` is the upload half of it.
 3. [x] **Linux release** (1.3.0, PR #52). Follow-ups:
