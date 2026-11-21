@@ -7,12 +7,13 @@ Main window for the SongSelector
 import json
 import os
 import sqlite3
+import threading
 from functools import partial
 from pathlib import Path
 
 import pandas as pd
 from mutagen import MutagenError
-from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtCore import QObject, Qt, QTimer, QUrl, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
@@ -64,6 +65,7 @@ from songselector.config import (
     WINDOW_SIZE,
     track_qcolor,
 )
+from songselector.core import model_download
 from songselector.core.color_search import (
     COLOR_NAMES,
     SS_COLOR_TOKEN,
@@ -157,6 +159,12 @@ INCREMENTAL_IMPORT_LIMIT = 200   # Top N of the description search: 0 is All
 NO_DESCRIPTION = '\u2014 no search: show all tracks \u2014'   # first entry of the description dropdown
 DESCRIPTION_HINT = 'free text, e.g. funky breakbeat with a groovy bassline - Enter searches; or pick a saved prompt'
 
+
+
+class _ModelCheckEvents(QObject):
+    """From the thread that checks the model files' SHA-256 (MainWindow.check_model_files)."""
+    checked = pyqtSignal(str, list)   # path, record [size, mtime_ns, ok] (model_download.file_state)
+    finished = pyqtSignal()
 
 
 def speed_change_text(bpm, master):
@@ -350,12 +358,20 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self.text_search_dialog = None
         self.model_download_dialog = None
         self.text_search_engine = None
+        # The model files' checksum results, {path: [size, mtime_ns, ok]}, kept in the settings: each file is checked
+        # once (check_model_files), again only if it changes. Read by the menus, the Model box and Get models.
+        self.model_checks = self.settings.setdefault('Model file checks', {})
+        self._model_check_events = _ModelCheckEvents()
+        self._model_check_events.checked.connect(self._model_file_checked)
+        self._model_check_events.finished.connect(self._model_checks_finished)
+        self._model_check_thread, self._model_check_again = None, False
         self._groups_waiting = False  # before the analysis starts: its progress reads it
         self._coverage_checked, self._coverage_short = None, []  # coverage check when the analysis finishes
         self._init_analysis_menu()
         self._refresh_model_box()
         self.start_embedding_analysis()
-        QTimer.singleShot(0, self._offer_model_download)  # after the window is shown
+        QTimer.singleShot(0, self.check_model_files)  # after the window is shown, in the background
+        QTimer.singleShot(0, self._offer_model_download)
 
         # Similarity map: second tab of the library panel; uses the model chosen under Analysis -> Similarity model
         self.similarity_map = SimilarityMapWidget(self.model_stores[self.similarity_model_id()], self.settings, self)
@@ -1946,12 +1962,64 @@ class MainWindow(SavedListsMixin, QMainWindow):
         model_id = self.settings.get('Similarity model', CNN14.id)
         return model_id if model_id in MODELS else CNN14.id
 
+    def model_file_states(self, spec):
+        """{file name: state} of the model's files in the models folder (model_download.file_state): there, with
+        the right size, and the right SHA-256 once checked."""
+        return model_download.file_states(spec, self.models_folder(), checked=self.model_checks)
+
     def model_file(self, spec):
-        """The model's audio file if all its files exist, else None."""
+        """The model's audio file if all its files are there and none is damaged, else None."""
         if spec is CNN14:
             return self.embedding_model_path()
         folder = self.models_folder()
-        return folder / spec.audio_file if not spec.missing_files(folder) else None
+        return folder / spec.audio_file if model_download.usable(self.model_file_states(spec)) else None
+
+    def check_model_files(self):
+        """At start, and after a new models folder or a download: compute the SHA-256 of every model file that is
+        there with the right size but was not checked yet (copied in by hand, a shared folder), in the background.
+        The models can be used meanwhile; one that fails is switched off and Get models offers it again."""
+        if self._model_check_thread is not None:
+            self._model_check_again = True  # e.g. the folder changed during a check: check the new one after it
+            return
+        folder = self.models_folder()
+        todo = [(folder / name, name) for spec in MODELS.values()
+                for name, state in self.model_file_states(spec).items() if state == model_download.UNCHECKED]
+        if not todo:
+            return
+        events = self._model_check_events
+
+        def work():
+            for path, name in todo:
+                try:
+                    record = model_download.check_file(path, name)
+                except OSError:
+                    record = None  # gone or unreadable meanwhile: the next check looks again
+                if record is not None:
+                    events.checked.emit(str(path), record)
+            events.finished.emit()
+        self._model_check_thread = threading.Thread(target=work, name='model-check', daemon=True)
+        self._model_check_thread.start()
+
+    def _model_file_checked(self, path, record):
+        self.model_checks[path] = record
+
+    def _model_checks_finished(self):
+        self._model_check_thread = None
+        damaged = [f'{spec.name} ({model_download.problems(states)})' for spec in MODELS.values()
+                   for states in [self.model_file_states(spec)]
+                   if model_download.model_state(states) == model_download.DAMAGED]
+        self._update_model_menu()
+        self._refresh_model_box()
+        if self.model_download_dialog is not None:
+            self.model_download_dialog.refresh()
+        self.start_embedding_analysis()  # without a model that failed (it restarts only if the models changed)
+        if damaged:
+            self.status_label.setStyleSheet(status_style('warning'))
+            self.status_label.setText('Damaged model files, switched off: ' + '; '.join(damaged) +
+                                      '. Analysis -> Get models... downloads them again.')
+        if self._model_check_again:
+            self._model_check_again = False
+            self.check_model_files()
 
     def _update_model_menu(self):
         """Check marks and availability; a model whose files are missing cannot be switched on."""
@@ -1959,7 +2027,9 @@ class MainWindow(SavedListsMixin, QMainWindow):
         library = self.library_keys()
         for spec in MODELS.values():
             present = self.model_file(spec) is not None
-            missing = ', '.join(spec.missing_files(self.models_folder())) if spec is not CNN14 else MODEL_FILE_NAME
+            states = self.model_file_states(spec)
+            damaged = model_download.model_state(states) == model_download.DAMAGED
+            missing = model_download.problems(states) or ', '.join(spec.files())
             analysed, _failed, total = self.model_coverage(spec.id, library)
             coverage = f' ({analysed:,} of {total:,} tracks)' if total and (present or analysed) else ''
             action = self.model_actions[spec.id]
@@ -1967,10 +2037,11 @@ class MainWindow(SavedListsMixin, QMainWindow):
             action.setChecked(spec.id in enabled)
             action.blockSignals(False)
             action.setEnabled(present or spec.id in enabled)
-            action.setText(spec.name + coverage if present else f'{spec.name} (model files missing)')
+            action.setText(spec.name + coverage if present else
+                           f'{spec.name} (model files {"damaged" if damaged else "missing"})')
             tip = spec.description
             if not present:
-                tip += f' Missing in the models folder: {missing}. Get them with Analysis -> Get models...'
+                tip += f' In the models folder: {missing}. Get them with Analysis -> Get models...'
             action.setToolTip(tip)
             self.similarity_actions[spec.id].setChecked(spec.id == similarity)
             self.similarity_actions[spec.id].setText(spec.name + coverage)
@@ -2134,6 +2205,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._update_model_menu()
         self._refresh_model_box()
         self.start_embedding_analysis()  # restarts with the new model files (or reports that none are there)
+        self.check_model_files()  # files there that were never checked (e.g. a folder shared with another PC)
         found = [spec.name for spec in MODELS.values() if self.model_file(spec) is not None]
         self.status_label.setStyleSheet(status_style('info' if found else 'warning'))
         self.status_label.setText(f'Models folder: {folder}. ' + (f'Found: {", ".join(found)}.' if found else
@@ -2167,7 +2239,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self.model_download_dialog is None:
             self.model_download_dialog = ModelDownloadDialog(
                 list(MODELS.values()), self.models_folder(),
-                base_url=self.settings.get('Model download URL', ''), parent=self)
+                base_url=self.settings.get('Model download URL', ''), checked=self.model_checks, parent=self)
+            self.model_download_dialog.file_checked.connect(self._model_file_checked)
             self.model_download_dialog.downloaded.connect(self._models_downloaded)
             self.model_download_dialog.folder_chosen.connect(self.set_models_folder)
         self.model_download_dialog.show()
@@ -2396,11 +2469,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def embedding_model_path(self):
         """Chosen CNN14 model, else <data folder>/models/cnn14.onnx, else the default; None if none exists."""
-        for candidate in (self.settings.get('Embedding model'),
-                          self.models_folder() / MODEL_FILE_NAME,
-                          DEFAULT_EMBEDDING_MODEL):
-            if candidate and Path(candidate).is_file():
-                return Path(candidate)
+        chosen = self.settings.get('Embedding model')
+        if chosen and Path(chosen).is_file():
+            return Path(chosen)  # the user's own file: not necessarily the published export, so no checksum
+        if model_download.usable(self.model_file_states(CNN14)):
+            return self.models_folder() / MODEL_FILE_NAME
+        if DEFAULT_EMBEDDING_MODEL and Path(DEFAULT_EMBEDDING_MODEL).is_file():
+            return Path(DEFAULT_EMBEDDING_MODEL)
         return None
 
     def start_embedding_analysis(self):

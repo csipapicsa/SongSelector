@@ -56,13 +56,76 @@ def download_size(spec, files=FILES):
     return sum(files[name][0] for name in spec.files())
 
 
-def installed(spec, folder, files=FILES):
-    """All of the model's files are present with the expected size (hashes were checked when they were downloaded)."""
-    for name in spec.files():
-        path = Path(folder) / name
-        if not path.is_file() or (name in files and path.stat().st_size != files[name][0]):
-            return False
-    return True
+# One model file in the models folder. A file the app downloaded had its SHA-256 checked then; any other (copied in,
+# or in a folder chosen with Models folder...) is checked once in the background (check_file). `checked` keeps the
+# results, {path: [size, mtime_ns, ok]}: a file changed since its check is unchecked again.
+OK, UNCHECKED, MISSING, WRONG_SIZE, WRONG_CHECKSUM = 'ok', 'unchecked', 'missing', 'wrong size', 'wrong checksum'
+# A whole model: every file ok; usable while its checksums are still being checked; or what is wrong with it.
+INSTALLED, CHECKING, NOT_INSTALLED, INCOMPLETE, DAMAGED = 'installed', 'checking', 'not installed', 'incomplete', \
+    'damaged'
+
+
+def file_state(folder, name, files=FILES, checked=None):
+    path = Path(folder) / name
+    try:
+        stat = path.stat()
+    except OSError:
+        return MISSING
+    if not path.is_file():
+        return MISSING
+    if name not in files:
+        return OK  # no checksum known for it: being there is all that can be checked
+    if stat.st_size != files[name][0]:
+        return WRONG_SIZE
+    record = (checked or {}).get(str(path))
+    if record and list(record[:2]) == [stat.st_size, stat.st_mtime_ns]:
+        return OK if record[2] else WRONG_CHECKSUM
+    return UNCHECKED
+
+
+def file_states(spec, folder, files=FILES, checked=None):
+    """{file name: state} of the model's files, in the model's order."""
+    return {name: file_state(folder, name, files, checked) for name in spec.files()}
+
+
+def model_state(states):
+    values = set(states.values())
+    if values <= {OK}:
+        return INSTALLED
+    if values <= {OK, UNCHECKED}:
+        return CHECKING
+    if values & {WRONG_SIZE, WRONG_CHECKSUM}:
+        return DAMAGED
+    return NOT_INSTALLED if values == {MISSING} else INCOMPLETE
+
+
+def usable(states):
+    """All files there with the right size and none failed its checksum: the model can be used (also while the
+    checksums are still being checked)."""
+    return all(state in (OK, UNCHECKED) for state in states.values())
+
+
+def problems(states):
+    """'clap-ms-text.onnx: missing, cnn14.onnx: wrong checksum'; '' if there are none."""
+    return ', '.join(f'{name}: {state}' for name, state in states.items() if state in (MISSING, WRONG_SIZE,
+                                                                                       WRONG_CHECKSUM))
+
+
+def installed(spec, folder, files=FILES, checked=None):
+    """The model's files are all there with the expected size, and none failed its checksum."""
+    return usable(file_states(spec, folder, files, checked))
+
+
+def check_file(path, name, files=FILES):
+    """Compute the file's SHA-256 (slow: hundreds of MB) and compare it: the record for `checked`, or None if the file
+    changed meanwhile (e.g. it was still being copied)."""
+    path = Path(path)
+    before = path.stat()
+    ok = sha256(path) == files[name][1]
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        return None
+    return [after.st_size, after.st_mtime_ns, ok]
 
 
 def sha256(path):
@@ -117,15 +180,21 @@ def download(name, folder, base_url='', files=FILES, progress=lambda done, total
 
 
 def download_models(specs, folder, base_url='', files=FILES, progress=lambda name, done, total: None,
-                    should_stop=lambda: False):
-    """Download every missing file of these models. progress(name, bytes done in all, bytes in all).
-    Returns the models that are complete afterwards."""
-    todo = [name for spec in specs for name in spec.files()
-            if not (Path(folder) / name).is_file() or (Path(folder) / name).stat().st_size != files[name][0]]
+                    should_stop=lambda: False, checked=None, on_checked=lambda path, record: None):
+    """Download every file of these models that is missing, has the wrong size or failed its checksum.
+    progress(name, bytes done in all, bytes in all); on_checked(path, record) for each downloaded file (its checksum
+    was checked by the download). Returns the models that are complete afterwards."""
+    checked = dict(checked or {})
+    todo = [name for spec in specs for name, state in file_states(spec, folder, files, checked).items()
+            if state in (MISSING, WRONG_SIZE, WRONG_CHECKSUM)]
     total = sum(files[name][0] for name in todo)
     finished = 0
     for name in todo:
-        download(name, folder, base_url, files,
-                 lambda done, _size, name=name, before=finished: progress(name, before + done, total), should_stop)
+        target = download(name, folder, base_url, files,
+                          lambda done, _size, name=name, before=finished: progress(name, before + done, total),
+                          should_stop)
+        stat = target.stat()
+        checked[str(target)] = [stat.st_size, stat.st_mtime_ns, True]
+        on_checked(str(target), checked[str(target)])
         finished += files[name][0]
-    return [spec for spec in specs if installed(spec, folder, files)]
+    return [spec for spec in specs if installed(spec, folder, files, checked)]

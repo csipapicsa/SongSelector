@@ -117,6 +117,67 @@ class DownloadTests(ServerCase):
         self.assertNotIn(first, {name for name, _done, _total in totals})
         self.assertEqual(totals[-1][1], totals[-1][2])  # ends at 100 %
 
+    def test_each_file_is_checked_for_presence_size_and_once_its_checksum(self):
+        contents = {name: os.urandom(1000 + index) for index, name in enumerate(LAION_CLAP.files())}
+        files = manifest(contents)
+        audio, text, tokenizer = LAION_CLAP.files()
+        self.folder.mkdir()
+        states = lambda checked=None: model_download.file_states(LAION_CLAP, self.folder, files, checked)  # noqa: E731
+        state = lambda checked=None: model_download.model_state(states(checked))  # noqa: E731
+        self.assertEqual(state(), model_download.NOT_INSTALLED)
+        (self.folder / audio).write_bytes(contents[audio])
+        self.assertEqual(state(), model_download.INCOMPLETE)
+        (self.folder / text).write_bytes(contents[text][:-1])  # one byte short, e.g. an interrupted copy
+        (self.folder / tokenizer).write_bytes(contents[tokenizer])
+        self.assertEqual(states()[text], model_download.WRONG_SIZE)
+        self.assertEqual(state(), model_download.DAMAGED)
+        self.assertFalse(model_download.installed(LAION_CLAP, self.folder, files))
+        (self.folder / text).write_bytes(contents[text])
+        self.assertEqual(state(), model_download.CHECKING)  # right sizes: usable, checksums not computed yet
+        self.assertTrue(model_download.installed(LAION_CLAP, self.folder, files))
+        checked = {str(self.folder / name): model_download.check_file(self.folder / name, name, files)
+                   for name in LAION_CLAP.files()}
+        self.assertEqual(state(checked), model_download.INSTALLED)
+        self.assertEqual(model_download.problems(states(checked)), '')
+
+    def test_a_file_with_a_wrong_checksum_is_damaged_and_downloaded_again(self):
+        contents = {name: os.urandom(1000 + index) for index, name in enumerate(LAION_CLAP.files())}
+        Handler.files = contents
+        files = manifest(contents)
+        self.folder.mkdir()
+        for name, data in contents.items():
+            (self.folder / name).write_bytes(data)
+        bad = LAION_CLAP.files()[1]
+        (self.folder / bad).write_bytes(bytes(len(contents[bad])))  # right size, wrong bytes
+        checked = {str(self.folder / name): model_download.check_file(self.folder / name, name, files)
+                   for name in LAION_CLAP.files()}
+        states = model_download.file_states(LAION_CLAP, self.folder, files, checked)
+        self.assertEqual(states[bad], model_download.WRONG_CHECKSUM)
+        self.assertEqual(model_download.model_state(states), model_download.DAMAGED)
+        self.assertEqual(model_download.problems(states), f'{bad}: wrong checksum')
+        self.assertFalse(model_download.installed(LAION_CLAP, self.folder, files, checked))
+        reported = {}
+        complete = download_models([LAION_CLAP], self.folder, self.url, files, checked=checked,
+                                   on_checked=reported.__setitem__)
+        self.assertEqual(complete, [LAION_CLAP])
+        self.assertEqual(list(reported), [str(self.folder / bad)])  # only the damaged file was fetched
+        self.assertEqual((self.folder / bad).read_bytes(), contents[bad])
+        checked.update(reported)
+        self.assertEqual(model_download.model_state(model_download.file_states(LAION_CLAP, self.folder, files, checked)),
+                         model_download.INSTALLED)
+
+    def test_a_file_changed_after_its_check_is_checked_again(self):
+        data = os.urandom(500)
+        files = manifest({'cnn14.onnx': data})
+        self.folder.mkdir()
+        path = self.folder / 'cnn14.onnx'
+        path.write_bytes(data)
+        checked = {str(path): model_download.check_file(path, 'cnn14.onnx', files)}
+        self.assertEqual(model_download.file_state(self.folder, 'cnn14.onnx', files, checked), model_download.OK)
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))  # e.g. replaced by a copy
+        self.assertEqual(model_download.file_state(self.folder, 'cnn14.onnx', files, checked), model_download.UNCHECKED)
+
     def test_the_release_files_cover_every_model(self):
         from songselector.core.embedding_models import MODELS
         for spec in MODELS.values():
@@ -175,14 +236,55 @@ class DownloadWindowTests(ServerCase):
         dialog.folder_chosen.connect(chosen.append)
         try:
             self.assertEqual(dialog.folder_button.text(), 'Models folder...')
-            self.assertNotIn('installed', dialog.boxes[LAION_CLAP.id].text())
+            self.assertFalse(dialog.boxes[LAION_CLAP.id].isHidden())  # not there: offered for download
+            self.assertEqual(dialog.state_labels[LAION_CLAP.id].text(), 'Not installed')
             with patch('PyQt5.QtWidgets.QFileDialog.getExistingDirectory', return_value=str(shared)) as picker:
                 dialog.folder_button.click()
             self.assertEqual(picker.call_args[0][2], str(self.folder))  # starts in the current folder
             self.assertEqual(chosen, [str(shared)])
-            self.assertIn('(installed)', dialog.boxes[LAION_CLAP.id].text())
-            self.assertFalse(dialog.boxes[LAION_CLAP.id].isEnabled())
+            self.assertTrue(dialog.boxes[LAION_CLAP.id].isHidden())  # there: a check mark instead of a box
+            self.assertFalse(dialog.done_labels[LAION_CLAP.id].isHidden())
+            self.assertIn('checking the files', dialog.state_labels[LAION_CLAP.id].text())  # copied in: not checked yet
             self.assertIn(str(shared), dialog.intro.text())  # downloads would go there
+        finally:
+            dialog.close()
+
+    def test_installed_models_show_a_check_mark_and_damaged_ones_are_offered_again(self):
+        # 2026-11-21: an installed model was a greyed-out, empty check box, which read as "cannot be selected".
+        from songselector.core.embedding_models import MS_CLAP
+        from songselector.ui.model_download_dialog import ModelDownloadDialog
+        contents = {name: os.urandom(1200) for name in LAION_CLAP.files() + MS_CLAP.files()}
+        files = manifest(contents)
+        self.folder.mkdir()
+        for name, data in contents.items():
+            (self.folder / name).write_bytes(data)
+        damaged = MS_CLAP.files()[0]
+        (self.folder / damaged).write_bytes(bytes(1200))
+        checked = {str(self.folder / name): model_download.check_file(self.folder / name, name, files)
+                   for name in contents}
+        dialog = ModelDownloadDialog([LAION_CLAP, MS_CLAP], self.folder, self.url, files, checked)
+        try:
+            self.assertTrue(dialog.boxes[LAION_CLAP.id].isHidden())
+            self.assertFalse(dialog.done_labels[LAION_CLAP.id].isHidden())
+            self.assertIn('&#10004;', dialog.done_labels[LAION_CLAP.id].text())  # the check mark
+            self.assertIn('Installed', dialog.state_labels[LAION_CLAP.id].text())
+            self.assertFalse(dialog.boxes[MS_CLAP.id].isHidden())
+            self.assertTrue(dialog.boxes[MS_CLAP.id].isChecked())  # damaged: downloaded again
+            self.assertIn('Damaged', dialog.state_labels[MS_CLAP.id].text())
+            self.assertIn(f'{damaged}: wrong checksum', dialog.state_labels[MS_CLAP.id].toolTip())
+            self.assertEqual(dialog.chosen(), [MS_CLAP])
+        finally:
+            dialog.close()
+
+    def test_the_whole_intro_is_visible(self):
+        # Seen on Linux (2026-11-20): the window was sized before the wrapped intro knew its height, so its end
+        # ("...You can also build them yourself (how).") was cut off.
+        from songselector.ui.model_download_dialog import ModelDownloadDialog
+        dialog = ModelDownloadDialog([LAION_CLAP], self.folder / ('a long folder name ' * 4))
+        try:
+            dialog.show()
+            self.application.processEvents()
+            self.assertGreaterEqual(dialog.intro.height(), dialog.intro.heightForWidth(dialog.intro.width()))
         finally:
             dialog.close()
 
@@ -191,8 +293,9 @@ class DownloadWindowTests(ServerCase):
         contents = {name: os.urandom(1500) for name in LAION_CLAP.files()}
         Handler.files = contents
         dialog = ModelDownloadDialog([LAION_CLAP], self.folder, self.url, manifest(contents))
-        reported = []
+        reported, checked = [], []
         dialog.downloaded.connect(reported.extend)
+        dialog.file_checked.connect(lambda path, record: checked.append(Path(path).name))
         try:
             self.assertTrue(dialog.boxes[LAION_CLAP.id].isChecked())  # missing: checked by default
             dialog.start()
@@ -201,8 +304,10 @@ class DownloadWindowTests(ServerCase):
                 self.application.processEvents()
                 time.sleep(0.01)
             self.assertEqual(reported, [LAION_CLAP.id])
-            self.assertIn('installed', dialog.boxes[LAION_CLAP.id].text())
-            self.assertFalse(dialog.boxes[LAION_CLAP.id].isEnabled())
+            self.assertEqual(sorted(checked), sorted(LAION_CLAP.files()))  # the download checked each one
+            self.assertTrue(dialog.boxes[LAION_CLAP.id].isHidden())
+            self.assertIn('Installed', dialog.state_labels[LAION_CLAP.id].text())
+            self.assertNotIn('checking', dialog.state_labels[LAION_CLAP.id].text())
         finally:
             dialog.close()
 

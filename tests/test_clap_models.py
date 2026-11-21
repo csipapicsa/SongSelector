@@ -4,6 +4,7 @@ The real models are large and not in the repo; scripts/export_clap_onnx.py check
 are made. Here: the model definitions, decoding for several sample rates, one analysis process feeding several
 caches, tokenising, ranking, the text search process and the search window, all with stand-ins.
 """
+import hashlib
 import json
 import os
 import tempfile
@@ -17,6 +18,7 @@ import soundfile
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QLabel
 
+from songselector.core import model_download
 from songselector.core.embedding_models import CNN14, LAION_CLAP, MODELS, MS_CLAP, model, store_path
 from songselector.core.embeddings import EmbeddingStore, load_audio, load_audio_rates
 from songselector.core.text_search import clap_track_vector, rank, tokenize, unit
@@ -273,6 +275,11 @@ class SearchWindowTests(unittest.TestCase):
             dialog.close()
 
 
+# The tests stand in a one-byte file b'x' for each model file; the app checks a model file's size and SHA-256
+# (core/model_download.py), so here those are the stand-in's.
+STAND_IN_FILES = {name: (1, hashlib.sha256(b'x').hexdigest()) for name in model_download.FILES}
+
+
 class WindowCase(unittest.TestCase):
     """A main window on a one-track library with grouping on."""
 
@@ -296,7 +303,8 @@ class WindowCase(unittest.TestCase):
                                  'Musical_Key_Base': 'A', 'BaseMinorOrMajor': 'minor'}])
         self.patches = [patch('songselector.ui.main_window.SETTINGS_FILE', str(self.root / 'settings.json')),
                         patch('songselector.ui.main_window.DataManager.load_default_data',
-                              side_effect=lambda: library.copy())]
+                              side_effect=lambda: library.copy()),
+                        patch.dict('songselector.core.model_download.FILES', STAND_IN_FILES)]
         for active in self.patches:
             active.start()
         from songselector.ui.main_window import MainWindow
