@@ -1668,9 +1668,15 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
     def map_details_dialog(self):
         """View -> Map track details...: what the map's cards, the selected track's label and the details panel
-        show (the map's own items and the List's columns), and how wide the boxes get."""
-        sections = [('On the map', MAP_ITEMS),
-                    ('Columns of the List', {name: f'The List\'s {name} column' for name in FIELD_LABELS})]
+        show (the map's own items and the List's columns), and how wide the boxes get. Speed change is no track
+        field (it follows the master tempo) but the List shows it, so it is offered too, after the BPM as there."""
+        columns = {}
+        for name in FIELD_LABELS:
+            columns[name] = f'The List\'s {name} column'
+            if name == 'Original BPM':
+                columns[SPEED_COLUMN] = ('The List\'s Speed change column: how much faster (+) or slower (-) the track '
+                                         'plays at the master tempo.')
+        sections = [('On the map', MAP_ITEMS), ('Columns of the List', columns)]
         chosen = {place: detail_items(self.settings, place) for place in DETAIL_PLACES}
         return MapDetailsDialog(chosen, DETAIL_PLACES, sections, NOT_APPLICABLE, self.similarity_map.info_width(),
                                 MIN_INFO_WIDTH, MAX_INFO_WIDTH, parent=self)
