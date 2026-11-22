@@ -186,8 +186,9 @@ One PR per block below, in this order; each with tests (a failing test first for
       `docs/research/allmusiccaps_clap.md`; notebook `docs/research/experiments/clap/allmusiccaps.ipynb` (side-by-side
       search, precision of the top 10 and AP per genre tag). Result 2026-11-22 on 990 tracks: `all_layers` mean AP
       0.33 vs LAION 0.21 (better on 22 of 27 prompts; DnB 0.90 vs 0.41); `te_trained_sigreg` second (0.29). Both
-      towers export to ONNX matching PyTorch. Next: DirectML (STFT node), int8, CPU time with sampled windows, a
-      model entry. Weights CC BY-NC-SA 4.0 (publishing the conversion is the user's call).
+      towers export to ONNX matching PyTorch, and it runs on DirectML (no STFT in the graph; 24 ms per window at
+      batch 4 vs LAION 62; `experiments/clap/amclap_onnx.py`). Next: int8, CPU time with sampled windows, a model
+      entry. Weights CC BY-NC-SA 4.0 (publishing the conversion is the user's call).
 - [ ] Research, low priority: a better similarity than cosine for CNN14 (classifier features, not trained for
       similarity; CLAP is trained on cosine, so it stays): PCA whitening, hubness reduction (CSLS), window-set
       comparison (Chamfer / Fréchet), or a learned metric from the user's playlists and sets. Evaluate with the user's
