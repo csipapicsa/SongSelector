@@ -1,9 +1,9 @@
 # AllMusicCaps CLAP (MTG) vs LAION CLAP
 
-Desk research, 2026-11-21: nothing here has been run on the library yet. Sources: the model and dataset cards on
+Desk research, 2026-11-21; first hands-on checks 2026-11-22 (section *Hands-on, 2026-11-22* below). Sources: the model and dataset cards on
 Hugging Face, the GitHub repo `MTG/allmusiccaps`, the OMAR-RQ paper (links at the end). The model card has **no
 benchmark numbers**, and the paper (ISMIR 2026) was not found online, so every quality claim below is a hypothesis to
-measure.
+measure. Try it: [experiments/clap/allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb).
 
 ## The question
 
@@ -21,12 +21,12 @@ The user's point: LAION CLAP is trained on sounds, not music; a music-trained CL
 
 | | LAION `clap-htsat-unfused` (in the app) | MTG `allmusiccaps_all_layers` |
 |---|---|---|
-| Audio encoder | HTSAT-tiny, 28 M parameters, trained on general audio | OMAR-RQ: self-supervised (masked token prediction, BEST-RQ style) on 330 k hours of music, then CLAP training on top |
+| Audio encoder | HTSAT-tiny, 28 M parameters, trained on general audio | OMAR-RQ (`clap_omarrq_mp_small_music`, Conformer, 77.6 M parameters with the projection): self-supervised (masked token prediction, BEST-RQ style) on 330 k hours of music, then CLAP training on top |
 | Text encoder | RoBERTa, trained with the audio side | `all-mpnet-base-v2` (sentence-transformers), **frozen** |
 | Captions | Mostly sound descriptions; AudioSet tags turned into sentences | ~540 k (YouTube track, Discogs release) pairs with captions written by an LLM from AllMusic album reviews: style, mood, tempo, energy, instrumentation, production |
-| Input | 48 kHz, 10 s windows | 24 kHz mono; window length not stated (the README example uses 10 s) |
+| Input | 48 kHz, 10 s windows | 24 kHz mono, raw waveform (the mel is inside the network); 10 s windows in the README and MTG's evaluation code, any length works |
 | Embedding | 512, cosine | 512, cosine |
-| Runtime | ONNX, in the app | PyTorch only: `amclap` package (lightning, gin-config, sentence-transformers <5.2, omar-rq ~0.2, torch >= 2.6). No ONNX export exists |
+| Runtime | ONNX, in the app | PyTorch: `amclap` package (lightning, gin-config, sentence-transformers <5.2, omar-rq ~0.2, torch >= 2.6). MTG publishes no ONNX, but both towers export cleanly (probe below) |
 | File | 122 MB audio + 501 MB text (ONNX) | `model.ckpt` 296 MB; text encoder weights downloaded separately at construction |
 | License | Apache 2.0 | Weights CC BY-NC-SA 4.0, code AGPL-3.0, dataset CC BY-NC-SA 4.0 (non-commercial research) |
 | Published results | Yes (LAION paper) | None on the card or in the repo |
@@ -56,8 +56,10 @@ Models with a trained text encoder overfit after ~40-80 k steps, hence the 60 k 
 - **The captions use a DJ's vocabulary.** The dataset sample has deep house, tech house, techno, breakbeat, e.g.
   *"A tech house track with deep minimal beats."* Discogs styles split electronic music finely; LAION's captions
   never mention a reese bassline.
-- **All layers, weighted.** Middle layers of music models tend to hold timbre and rhythm, which matter for genre;
-  `all_layers` learns how much of each layer to use instead of only the last one.
+- **All layers.** Middle layers of music models tend to hold timbre and rhythm, which matter for genre;
+  `all_layers` uses all 12 instead of only the last one. Correction (2026-11-22, from the code): it is a plain mean of
+  the 12 layers (`OMARRQ.layers = (0..11)` in `config.gin`, `.mean(axis=0)` in `amclap/clap_modules/omarrq.py`), not
+  a learned weighting; then a mean over time frames and the projection.
 
 ## Caveats
 
@@ -66,9 +68,8 @@ Models with a trained text encoder overfit after ~40-80 k steps, hence the 60 k 
    bass did not appear in the part of the 50-row sample we could read: its coverage is unknown.
 3. **Frozen text encoder.** A general sentence model may not separate "reese" from "wobble"; probably why the
    trained-text-encoder variant wins.
-4. **Integration cost.** A new ONNX export (Conformer encoder plus OMAR-RQ's front end), expect tracing problems like
-   msclap's frozen batch size. Speed *to measure*: the 296 MB checkpoint suggests ~75 M audio parameters, close to
-   LAION's music model (69 M), which ran ~2x slower than LAION light in eager PyTorch.
+4. **Integration cost.** Smaller than feared: see *ONNX export probe* below. Still open: DirectML (the mel front end
+   is an STFT inside the graph), int8, and the app-side model entry.
 5. **License.** Non-commercial terms are workable for a free GPL tool that downloads models separately (as concluded
    for the other MTG models in [model_candidates.md](model_candidates.md)). Share-alike: our ONNX conversion on
    Hugging Face would be published under CC BY-NC-SA 4.0 with credit to MTG.
@@ -78,13 +79,81 @@ Models with a trained text encoder overfit after ~40-80 k steps, hence the 60 k 
 Step 1 of [text_search_clap.md](text_search_clap.md) (precision of the top 10 per label) was never run, so there is
 no number for LAION either. In order:
 
-1. Add `amclap` (`all_layers`, `te_trained_sigreg`) to
-   [experiments/clap/extract_embeddings.py](experiments/clap/extract_embeddings.py), same 998-track set (Traktor
-   rating 4-5 with a colour), in the WSL research venv (torch >= 2.6).
-2. ~3 prompts per folder genre (DnB, breakbeat, ...), precision of the top 10 for LAION light, MS CLAP 2023 and the
-   two MTG variants. Also the similarity-map question from the backlog: neighbour purity with the user's labels,
-   CNN14 vs the MTG audio embedding.
-3. Only if it wins: ONNX export checked against PyTorch, speed on DirectML and CPU, then a model entry in the app.
+1. Done 2026-11-22: `amc-all-layers` and `amc-te-sigreg` in the shared model interface
+   ([experiments/clap/benchmark_cpu.py](experiments/clap/benchmark_cpu.py)), extracted with
+   [extract_embeddings.py](experiments/clap/extract_embeddings.py) in the Windows research venv (CUDA).
+2. ~3 prompts per genre tag (DnB, breakbeat, ...), precision of the top 10 and average precision for LAION light,
+   MS CLAP 2023 and the two MTG variants: the genre-tag section of
+   [allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb). Also the similarity-map question from the backlog:
+   neighbour purity with the user's labels, CNN14 vs the MTG audio embedding.
+3. It wins (step 2, 2026-11-22), so next: the ONNX export of `all_layers` (works, see the probe), DirectML (STFT node),
+   int8, CPU time with sampled windows, then a model entry in the app. Publishing the conversion means
+   CC BY-NC-SA 4.0 with credit to MTG: the user's call.
+
+## Hands-on, 2026-11-22
+
+Setup: `pip install amclap==0.1.0` into `.research_cacheenv-clap` (torch 2.7.1+cu118, transformers 4.57.6; the venv
+gets sentence-transformers 5.1.2, the system Python keeps 5.6). Laptop GPU with 4 GB (CUDA), fp32.
+
+- **Loads and runs, no collapse.** Both `all_layers` and `te_trained_sigreg`: 512-d outputs, text-to-text cosines
+  spread from -0.03 to 0.49 over four genre prompts (LAION's music model gave ~1.0 everywhere). The trained text
+  encoder of `te_trained_sigreg` really loads: its weights equal the checkpoint's and differ from stock mpnet (the
+  sentence-transformers >= 5.2 trap the authors warn about).
+- **Speed (GPU):** batch of 8 x 10 s in ~165 ms, about 20 ms per window. Extraction of the test set is bound by
+  decoding: 1.7 s per track for both models together.
+- **Test set:** grown to 1,408 tracks (rating 4-5 with a colour) since the LAION / MS run (990); the notebook compares
+  on the tracks every model has.
+
+### Genre-tag retrieval: the MTG models win
+
+Run 2026-11-22 with the genre-tag section of [allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb). Data: the
+990 test-set tracks that all four models have (rating 4-5 with a colour), of which 744 carry a genre tag; labels from
+the DJ's own `genre` tags (9 labels with at least 5 tracks). Every 10 s window embedded, track = mean of the
+normalised windows. 27 prompts (3 styles x 9 labels), written before any result was seen. Metric: average precision
+(AP) of the whole ranking per prompt, then the mean; chance is the share of tagged tracks with the label.
+Per-prompt numbers: [experiments/results/2026-11-22_allmusiccaps_genre_ap.json](experiments/results/2026-11-22_allmusiccaps_genre_ap.json).
+
+| Mean AP | LAION light (app) | MS CLAP 2023 | AMC `all_layers` | AMC `te_trained_sigreg` | chance |
+|---|---|---|---|---|---|
+| drum and bass (n 257) | 0.41 | 0.70 | 0.90 | **0.92** | 0.35 |
+| breakbeat (345) | 0.45 | 0.44 | **0.62** | 0.59 | 0.46 |
+| downtempo (99) | **0.19** | 0.11 | 0.18 | 0.14 | 0.13 |
+| electro (100) | **0.36** | 0.18 | 0.23 | 0.14 | 0.13 |
+| house (69) | 0.23 | 0.13 | **0.34** | 0.22 | 0.09 |
+| jungle (19) | 0.19 | 0.14 | **0.37** | 0.21 | 0.03 |
+| liquid (26) | 0.04 | 0.07 | 0.16 | **0.20** | 0.03 |
+| neurofunk (12) | 0.02 | 0.03 | 0.06 | **0.11** | 0.02 |
+| psy (33) | 0.05 | 0.03 | **0.11** | 0.05 | 0.04 |
+| **all 27 prompts** | 0.214 | 0.203 | **0.328** | 0.285 | 0.143 |
+| 95% interval (bootstrap over tracks, 500) | 0.201-0.237 | 0.189-0.222 | 0.306-0.366 | 0.267-0.320 | |
+
+- **`all_layers` is the best on this library**: +0.11 AP over LAION (interval +0.09 to +0.15), better on 22 of the
+  27 prompts. `te_trained_sigreg` is second (+0.07 over LAION, 18 of 27), and below `all_layers` by +0.02 to +0.06:
+  MTG's "best overall" is not the best here.
+- **Drum and bass is solved** by both MTG models (AP ~0.9, top 10 all DnB for most prompts) where LAION is near
+  chance (0.41 vs 0.35). This is the user's biggest genre.
+- **Prompt style:** `all_layers` likes bare tags (0.355) and LAION's template (0.340) more than review-style
+  captions (0.288); `te_trained_sigreg` is best with captions (0.308). LAION and MS hardly care (0.20-0.22).
+- **Where LAION still wins:** electro and downtempo. The `electro` tag is ambiguous in this library (electro breaks
+  vs electro), downtempo is close (0.19 vs 0.18).
+- **Sub-genres stay hard:** liquid and neurofunk are 2-4x chance for the MTG models but AP is still at most 0.2.
+- **Limits:** the interval covers the choice of tracks, not of prompts (27 hand-written prompts are another source
+  of variance); tags are sparse and inconsistent (an untagged downtempo track counts as a miss). One library, one DJ.
+
+### ONNX export probe
+
+Scratch script, not committed: `torch.onnx.export` (TorchScript exporter, opset 17), dynamic batch, then onnxruntime
+1.28 on the CPU against PyTorch.
+
+| Tower | Export | Size | ORT vs PyTorch | CPU speed (4 threads) |
+|---|---|---|---|---|
+| Audio: 10 s waveform at 24 kHz -> 512 (mel, Conformer, layer mean, time mean, projection) | first try, 9 s | 296 MB | max abs diff 5e-6, cosine 1.000000 at batch 2 and 5 | 217 ms per window (PyTorch 247 ms) |
+| Text: token ids + mask -> 512 (MPNet, mean pooling, normalise, projection MLP) | first try | 437 MB | max abs diff 1e-5, cosine 1.000000 | 20 ms per query |
+
+The tokenizer is `MPNetTokenizerFast`, so a `tokenizer.json` for the `tokenizers` library the app already uses
+(`core/text_search.py`). Fixed 10 s input is fine: the app embeds fixed windows anyway. To check before shipping:
+DirectML support for the STFT node (else compute the mel in numpy, as for LAION), int8 size and accuracy, CPU time per
+track (~217 ms x 36 windows = ~8 s for a 6-minute track if every window is embedded: sample windows on CPU).
 
 ## Sources
 
