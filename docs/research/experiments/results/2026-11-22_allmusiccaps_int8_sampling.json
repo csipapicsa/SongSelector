@@ -1,0 +1,89 @@
+{
+ "date": "2026-11-22",
+ "question": "AllMusicCaps all_layers: does dynamic int8 (audio) or embedding only 6 windows per track change genre-tag retrieval?",
+ "setup": {
+  "tracks": 990,
+  "tagged": 744,
+  "prompts": 27,
+  "labels": "DJ genre tags (as allmusiccaps.ipynb)",
+  "sampled_windows": "6 evenly spaced 10 s windows per track ((i + 0.5) / 6 of the track)",
+  "fp32": "ONNX audio.onnx on DirectML (onnxruntime-directml 1.24.4)",
+  "int8": "quantize_dynamic, QInt8 weights, per tensor, only the 72 MatMuls with a weight input, front layer /audio_encoder/embedding_layer/MatMul (raw waveform patches) kept float; CPU",
+  "text": "fp32 PyTorch (text int8 not used: breaks, see note)",
+  "bootstrap": "500 resamples of tracks, seed 0"
+ },
+ "mean_ap": {
+  "laion_all_windows": 0.214,
+  "amc_fp32_all_windows": 0.327,
+  "amc_fp32_6_windows": 0.321,
+  "amc_int8_6_windows": 0.322
+ },
+ "mean_ap_ci95": {
+  "laion_all_windows": [
+   0.201,
+   0.237
+  ],
+  "amc_fp32_all_windows": [
+   0.306,
+   0.366
+  ],
+  "amc_fp32_6_windows": [
+   0.299,
+   0.357
+  ],
+  "amc_int8_6_windows": [
+   0.3,
+   0.358
+  ]
+ },
+ "differences_ci95": {
+  "int8_6 - fp32_6": [
+   0.001,
+   -0.002,
+   0.003
+  ],
+  "fp32_6 - fp32_all": [
+   -0.006,
+   -0.016,
+   0.002
+  ],
+  "int8_6 - laion_all": [
+   0.108,
+   0.08,
+   0.138
+  ]
+ },
+ "top10_overlap_int8_vs_fp32": {
+  "mean": 9.4,
+  "min": 8
+ },
+ "window_cosine_int8_vs_fp32": {
+  "windows": 5940,
+  "mean": 0.9984,
+  "p1": 0.9929,
+  "min": 0.1635
+ },
+ "reference_windows_24": {
+  "audio_int8_weight_matmuls": {
+   "cos_mean": 0.998,
+   "cos_min": 0.9895,
+   "size_mb": 107,
+   "cpu_ms_per_window": 104.5,
+   "fp32_cpu_ms_same_run": 134.6
+  },
+  "audio_int8_incl_front_layer": {
+   "cos_mean": 0.9938,
+   "cos_min": 0.9449
+  },
+  "audio_int8_on_directml_ms_per_window_b4": 39.1,
+  "audio_fp32_on_directml_ms_per_window_b4": 23.4,
+  "text_int8_all_weight_matmuls_cos_min": 0.678,
+  "text_int8_ffn_down_only_cos_min": 0.651,
+  "text_int8_attention_only": {
+   "cos_min": 0.9953,
+   "size_mb": 353,
+   "fp32_size_mb": 437
+  }
+ },
+ "int8_cpu_ms_per_window_during_run": 145.2
+}

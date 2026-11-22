@@ -140,6 +140,37 @@ Per-prompt numbers: [experiments/results/2026-11-22_allmusiccaps_genre_ap.json](
 - **Limits:** the interval covers the choice of tracks, not of prompts (27 hand-written prompts are another source
   of variance); tags are sparse and inconsistent (an untagged downtempo track counts as a miss). One library, one DJ.
 
+### int8 and sampled windows, 2026-11-22
+
+Asked: try int8 (the 2026-11-20 int8 test broke LAION and CNN14 because the front end was quantized, see
+[2026-11-20_int8_benchmark.md](experiments/results/2026-11-20_int8_benchmark.md)). Numbers:
+[2026-11-22_allmusiccaps_int8_sampling.json](experiments/results/2026-11-22_allmusiccaps_int8_sampling.json).
+
+- **Audio int8 works if the first layer stays float.** `quantize_dynamic` (QInt8, per tensor) on the 72 MatMuls that
+  multiply by a weight, keeping `embedding_layer/MatMul` (the layer that reads raw waveform patches) and the
+  convolutions in float: 296 -> 107 MB, cosine to fp32 0.998 mean / 0.990 worst on the 24 reference windows.
+  Quantizing the first layer too drops the worst window to 0.945 (0.89 on DirectML): the same lesson as 2026-11-20.
+- **Text int8 does not work:** the FFN down-projections (input right after GELU, outlier activations) break it
+  (cosine 0.65 with only those quantized). Attention-only int8 keeps 0.995 but only saves 437 -> 353 MB. Not worth
+  it; fp16 for the text file is the better idea for size (not tried).
+- **Speed:** int8 is slower on DirectML (39 vs 23 ms per window) and only ~1.3x faster on the CPU in a quiet run
+  (105 vs 135 ms), with no gain while the decoder threads ran (145 ms). Not worth shipping for speed.
+- **Retrieval (990 tracks, 27 prompts, genre tags):**
+
+  | | Mean AP | 95% interval |
+  |---|---|---|
+  | AMC fp32, all windows | 0.327 | 0.306-0.366 |
+  | AMC fp32, **6 evenly spaced windows** | 0.321 | 0.299-0.357 |
+  | AMC int8, 6 windows | 0.322 | 0.300-0.358 |
+  | LAION, all windows (the app today) | 0.214 | 0.201-0.237 |
+
+  int8 vs fp32 (6 windows): +0.001 (-0.002 to +0.003), top 10 per prompt overlaps 9.4 of 10 on average. 6 windows vs
+  all: -0.006 (-0.016 to +0.002). Over 5,940 windows int8 keeps cosine 0.998 mean, 0.993 at the 1st percentile; one
+  window fell to 0.16 (not investigated; likely near-silence).
+- **For CPU-only machines this is the useful result:** 6 windows per track search as well as every window, so a
+  CPU needs ~6 x 110-170 ms = about 1 s of model time per track (plus decoding) instead of ~5-6 s. int8 adds
+  nothing on top. Decision for the app: sample windows on the CPU, keep fp32 files.
+
 ### ONNX export probe
 
 Scratch script, not committed: `torch.onnx.export` (TorchScript exporter, opset 17), dynamic batch, then onnxruntime
