@@ -19,7 +19,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QLabel
 
 from songselector.core import model_download
-from songselector.core.embedding_models import CNN14, LAION_CLAP, MODELS, MS_CLAP, model, store_path
+from songselector.core.embedding_models import AMC_CLAP, CNN14, LAION_CLAP, MODELS, MS_CLAP, model, store_path
 from songselector.core.embeddings import EmbeddingStore, load_audio, load_audio_rates
 from songselector.core.text_search import clap_track_vector, rank, tokenize, unit
 from songselector.core.traktor_collection import canonical_path
@@ -61,7 +61,9 @@ class FakeTextEncoder:
 
 class ModelDefinitionTests(unittest.TestCase):
     def test_models_and_their_files(self):
-        self.assertEqual(list(MODELS), [CNN14.id, LAION_CLAP.id, MS_CLAP.id])
+        self.assertEqual(list(MODELS), [CNN14.id, LAION_CLAP.id, MS_CLAP.id, AMC_CLAP.id])
+        self.assertEqual((AMC_CLAP.chunk_samples, AMC_CLAP.dim), (240000, 512))
+        self.assertTrue(AMC_CLAP.has_text and not AMC_CLAP.downloadable and LAION_CLAP.downloadable)
         self.assertEqual((LAION_CLAP.chunk_samples, MS_CLAP.chunk_samples, CNN14.chunk_samples), (480000, 308700, 160000))
         self.assertFalse(CNN14.has_text)
         self.assertTrue(LAION_CLAP.has_text and MS_CLAP.has_text)

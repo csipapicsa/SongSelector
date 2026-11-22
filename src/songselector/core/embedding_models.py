@@ -29,6 +29,7 @@ class EmbeddingModel:
     tokenizer_file: str = ''
     text_length: int = 0    # fixed token count (padded with id 0), 0 for the text's own length
     text_suffix: str = ''   # appended to every query, as in training
+    downloadable: bool = True  # offered by Get models (core/model_download.py has its files); else copy them in
 
     @property
     def chunk_samples(self):
@@ -73,7 +74,19 @@ MS_CLAP = EmbeddingModel(
     text_file='clap-ms-text.onnx', tokenizer_file='clap-ms-tokenizer.json',
     text_length=77, text_suffix=' <|endoftext|>')
 
-MODELS = {model.id: model for model in (CNN14, LAION_CLAP, MS_CLAP)}
+# Experiment (docs/research/allmusiccaps_clap.md): MTG's music-trained CLAP, OMAR-RQ audio encoder on raw 24 kHz audio
+# + all-mpnet-base-v2 text encoder. Better than LAION on the DJ's genre tags (mean AP 0.33 vs 0.21) and faster on
+# DirectML (24 ms per window at batch 4). Weights CC BY-NC-SA 4.0, so not on Get models yet: the files come from
+# docs/research/experiments/clap/amclap_onnx.py export (audio.onnx, text.onnx, tokenizer.json renamed as below).
+AMC_CLAP = EmbeddingModel(
+    id='mtg-allmusiccaps-all-layers', name='AllMusicCaps CLAP (MTG, experimental)',
+    description='MTG AllMusicCaps CLAP (all_layers): trained on music with captions from album reviews, '
+                '10 s windows. Enables free-text search. Non-commercial licence (CC BY-NC-SA 4.0).',
+    audio_file='clap-amc-audio.onnx', sample_rate=24000, chunk_seconds=10, dim=512,
+    store_file='embeddings-amc-clap.sqlite', batch_sizes=CLAP_BATCH_SIZES,
+    text_file='clap-amc-text.onnx', tokenizer_file='clap-amc-tokenizer.json', downloadable=False)
+
+MODELS = {model.id: model for model in (CNN14, LAION_CLAP, MS_CLAP, AMC_CLAP)}
 DEFAULT_MODEL_IDS = [CNN14.id]
 
 
