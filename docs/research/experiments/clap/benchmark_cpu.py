@@ -44,6 +44,9 @@ MODELS = {
     'laion-unfused': 'laion/clap-htsat-unfused',   # HTSAT-tiny + RoBERTa, general audio, 615 MB
     'laion-music': 'laion/larger_clap_music',      # HTSAT-base + RoBERTa, music, 776 MB
     'ms-2023': 'microsoft/msclap 2023',            # HTSAT + GPT-2, general audio, 690 MB
+    # MTG AllMusicCaps (docs/research/allmusiccaps_clap.md): OMAR-RQ + all-mpnet-base-v2, music, `pip install amclap`
+    'amc-all-layers': 'mtg-upf/allmusiccaps_all_layers',        # frozen text encoder
+    'amc-te-sigreg': 'mtg-upf/allmusiccaps_te_trained_sigreg',  # trained text encoder, MTG's best
 }
 
 PROMPTS = [
@@ -125,8 +128,43 @@ class MsClap:
         return self.clap.get_text_embeddings(texts).numpy()
 
 
+class AmClap:
+    """MTG AllMusicCaps CLAP. Raw 24 kHz mono in (the mel is inside the network), 10 s windows as in MTG's README
+    and downstream code. The audio tower averages all 12 OMAR-RQ layers, then the time frames, then projects."""
+    rate = 24000
+    window = 24000 * 10
+    device = 'cpu'
+
+    def __init__(self, repo):
+        from amclap import get_model
+        self.model = get_model(model_id=repo, device='cpu')
+        self.audio_parts = (self.model.audio_encoder, self.model.proj_a)
+        self.text_parts = (self.model.text_encoder, self.model.proj_t)
+
+    def prepare(self, windows):
+        import torch
+        return torch.from_numpy(np.ascontiguousarray(windows, dtype=np.float32))
+
+    def audio_to(self, device):
+        """The whole model: forward_text follows the module's device, and the text half is small next to 4 GB."""
+        self.model.to(device)
+        self.device = device
+
+    def embed_prepared(self, audio):
+        import torch
+        with torch.inference_mode():
+            return self.model.forward_audio(audio.to(self.device)).float().cpu().numpy()
+
+    def embed_text(self, texts):
+        import torch
+        with torch.inference_mode():
+            return self.model.forward_text(list(texts)).float().cpu().numpy()
+
+
 def load_model(key):
-    return MsClap('2023') if key == 'ms-2023' else LaionClap(MODELS[key])
+    if key == 'ms-2023':
+        return MsClap('2023')
+    return AmClap(MODELS[key]) if key.startswith('amc-') else LaionClap(MODELS[key])
 
 
 # ---- Helpers ------------------------------------------------------------------------------
