@@ -24,7 +24,7 @@ The user's point: LAION CLAP is trained on sounds, not music; a music-trained CL
 | Audio encoder | HTSAT-tiny, 28 M parameters, trained on general audio | OMAR-RQ (`clap_omarrq_mp_small_music`, Conformer, 77.6 M parameters with the projection): self-supervised (masked token prediction, BEST-RQ style) on 330 k hours of music, then CLAP training on top |
 | Text encoder | RoBERTa, trained with the audio side | `all-mpnet-base-v2` (sentence-transformers), **frozen** |
 | Captions | Mostly sound descriptions; AudioSet tags turned into sentences | ~540 k (YouTube track, Discogs release) pairs with captions written by an LLM from AllMusic album reviews: style, mood, tempo, energy, instrumentation, production |
-| Input | 48 kHz, 10 s windows | 24 kHz mono, raw waveform (the mel is inside the network); 10 s windows in the README and MTG's evaluation code, any length works |
+| Input | 48 kHz, 10 s windows | 24 kHz mono raw waveform, cut into 1,280-sample patches (53 ms) inside the network: no spectrogram at inference (the mel was only a pre-training target); 10 s windows in the README and MTG's evaluation code, any length works |
 | Embedding | 512, cosine | 512, cosine |
 | Runtime | ONNX, in the app | PyTorch: `amclap` package (lightning, gin-config, sentence-transformers <5.2, omar-rq ~0.2, torch >= 2.6). MTG publishes no ONNX, but both towers export cleanly (probe below) |
 | File | 122 MB audio + 501 MB text (ONNX) | `model.ckpt` 296 MB; text encoder weights downloaded separately at construction |
@@ -68,8 +68,8 @@ Models with a trained text encoder overfit after ~40-80 k steps, hence the 60 k 
    bass did not appear in the part of the 50-row sample we could read: its coverage is unknown.
 3. **Frozen text encoder.** A general sentence model may not separate "reese" from "wobble"; probably why the
    trained-text-encoder variant wins.
-4. **Integration cost.** Smaller than feared: see *ONNX export probe* below. Still open: DirectML (the mel front end
-   is an STFT inside the graph), int8, and the app-side model entry.
+4. **Integration cost.** Smaller than feared: the export works and runs on DirectML (*ONNX export probe* and
+   *DirectML* below). Still open: int8 and the app-side model entry.
 5. **License.** Non-commercial terms are workable for a free GPL tool that downloads models separately (as concluded
    for the other MTG models in [model_candidates.md](model_candidates.md)). Share-alike: our ONNX conversion on
    Hugging Face would be published under CC BY-NC-SA 4.0 with credit to MTG.
@@ -86,8 +86,8 @@ no number for LAION either. In order:
    MS CLAP 2023 and the two MTG variants: the genre-tag section of
    [allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb). Also the similarity-map question from the backlog:
    neighbour purity with the user's labels, CNN14 vs the MTG audio embedding.
-3. It wins (step 2, 2026-11-22), so next: the ONNX export of `all_layers` (works, see the probe), DirectML (STFT node),
-   int8, CPU time with sampled windows, then a model entry in the app. Publishing the conversion means
+3. It wins (step 2, 2026-11-22), so next: the ONNX export of `all_layers` (works, see the probe), DirectML (works,
+   2.6x faster than LAION), int8, CPU time with sampled windows, then a model entry in the app. Publishing the conversion means
    CC BY-NC-SA 4.0 with credit to MTG: the user's call.
 
 ## Hands-on, 2026-11-22
@@ -147,13 +147,40 @@ Scratch script, not committed: `torch.onnx.export` (TorchScript exporter, opset 
 
 | Tower | Export | Size | ORT vs PyTorch | CPU speed (4 threads) |
 |---|---|---|---|---|
-| Audio: 10 s waveform at 24 kHz -> 512 (mel, Conformer, layer mean, time mean, projection) | first try, 9 s | 296 MB | max abs diff 5e-6, cosine 1.000000 at batch 2 and 5 | 217 ms per window (PyTorch 247 ms) |
+| Audio: 10 s waveform at 24 kHz -> 512 (waveform patches, Conformer, layer mean, time mean, projection) | first try, 9 s | 296 MB | max abs diff 5e-6, cosine 1.000000 at batch 2 and 5 | 217 ms per window (PyTorch 247 ms) |
 | Text: token ids + mask -> 512 (MPNet, mean pooling, normalise, projection MLP) | first try | 437 MB | max abs diff 1e-5, cosine 1.000000 | 20 ms per query |
 
 The tokenizer is `MPNetTokenizerFast`, so a `tokenizer.json` for the `tokenizers` library the app already uses
 (`core/text_search.py`). Fixed 10 s input is fine: the app embeds fixed windows anyway. To check before shipping:
-DirectML support for the STFT node (else compute the mel in numpy, as for LAION), int8 size and accuracy, CPU time per
-track (~217 ms x 36 windows = ~8 s for a 6-minute track if every window is embedded: sample windows on CPU).
+int8 size and accuracy, CPU time per track (~217 ms x 36 windows = ~8 s for a 6-minute track if every window is
+embedded: sample windows on CPU).
+
+### DirectML, 2026-11-22
+
+[experiments/clap/amclap_onnx.py](experiments/clap/amclap_onnx.py) (`export` in the research venv, `check` in the
+app's `.venv`): `all_layers` exported, then run with the app's runtime (onnxruntime-directml 1.24.4) and the app's
+session settings (`DML_OPTIONS`, no memory pattern, sequential). GTX 1650 Ti (4 GB) / i5-10300H. References: 24 real
+10 s windows from 6 test-set tracks and 8 prompts, embedded by PyTorch on the CPU.
+
+- **It runs, and matches PyTorch:** audio max abs diff 1e-6, cosine 1.000000; text cosine 1.000000; the best of the
+  24 windows is the same for all 8 prompts. CPU provider the same.
+- **No spectrogram, so no STFT worry:** the graph has no STFT/DFT node (the model reads waveform patches). Every
+  node runs on DirectML except the rotary-position table in each of the 12 attention layers (`Range` -> `Einsum` ->
+  `Sqrt`, tiny), which runs on the CPU with 3 small copies per layer. With a fixed 10 s input it is a constant and
+  could be folded in later.
+- **Speed** (ms per window, median of 20 runs, each batch size in a fresh process):
+
+  | | batch 1 | 2 | 4 | 8 | 16 | CPU, 4 threads |
+  |---|---|---|---|---|---|---|
+  | AMC `all_layers` | 45.7 | 30.6 | **23.8** | 20.6 | 19.5 | 112-142 |
+  | LAION light (app, table above in [text_search_clap.md](text_search_clap.md)) | 69 | **62** | | 244 | | 104-106 |
+
+  About 2.6x faster than LAION on this GPU at the app's batch 4 (LAION is the slower one: 48 kHz input and its own
+  spectrogram + Swin). A 6-minute track (36 windows): ~0.9 s on DirectML vs LAION ~2.2 s.
+- **Memory:** CNN14 (batch 8) + AMC audio (batch 4 or 8) + AMC text in one process, 25 interleaved rounds: no error
+  (223 / 348 ms per round). One run that loaded LAION after AMC batch 16 in the same process hung the GPU
+  (DXGI 887A0006); LAION at batch 8+ is already known not to fit this card.
+- On the CPU it is slower than LAION per window (112-142 vs ~105 ms), so CPU-only machines need sampled windows.
 
 ## Sources
 
