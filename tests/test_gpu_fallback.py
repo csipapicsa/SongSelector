@@ -5,11 +5,14 @@ and failures are remembered, so those tracks were not analysed again until their
 """
 import os
 import queue
+import sys
 import tempfile
 import threading
+import types
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import soundfile
@@ -55,6 +58,17 @@ def gpu_embedder(session):
     return embedder
 
 
+@contextmanager
+def fake_onnxruntime(session=None):
+    """A stand-in onnxruntime module whose InferenceSession returns `session`. The real package is not imported:
+    onnxruntime-directml's DLL does not initialise on a CI runner without a DirectX 12 GPU."""
+    create = Mock(return_value=session)
+    module = types.SimpleNamespace(InferenceSession=create, SessionOptions=types.SimpleNamespace,
+                                   ExecutionMode=types.SimpleNamespace(ORT_SEQUENTIAL=0))
+    with patch.dict(sys.modules, {'onnxruntime': module}):
+        yield create
+
+
 def audio(chunks):
     return np.zeros(chunks * CNN14.chunk_samples, dtype=np.float32)
 
@@ -63,7 +77,7 @@ class EmbedFallbackTests(unittest.TestCase):
     def test_a_gpu_failure_redoes_the_track_on_the_cpu_and_stays_there(self):
         gpu, cpu = GpuSession(), CpuSession()
         embedder = gpu_embedder(gpu)
-        with patch('onnxruntime.InferenceSession', return_value=cpu) as create:
+        with fake_onnxruntime(cpu) as create:
             first = embedder.embed(audio(3))
             second = embedder.embed(audio(2))
         self.assertEqual(first.shape, (3, CNN14.dim))
@@ -78,7 +92,7 @@ class EmbedFallbackTests(unittest.TestCase):
     def test_a_track_the_cpu_cannot_do_either_keeps_the_gpu(self):
         gpu = GpuSession()
         embedder = gpu_embedder(gpu)
-        with patch('onnxruntime.InferenceSession', return_value=CpuSession(broken=True)):
+        with fake_onnxruntime(CpuSession(broken=True)):
             with self.assertRaisesRegex(ValueError, 'the track itself is bad'):
                 embedder.embed(audio(2))
         self.assertIs(embedder.session, gpu)
@@ -87,7 +101,7 @@ class EmbedFallbackTests(unittest.TestCase):
 
     def test_stopping_is_not_a_gpu_failure(self):
         embedder = gpu_embedder(GpuSession(works_for=100))
-        with patch('onnxruntime.InferenceSession') as create:
+        with fake_onnxruntime() as create:
             with self.assertRaises(Cancelled):
                 embedder.embed(audio(2), should_stop=lambda: True)
         create.assert_not_called()
@@ -96,7 +110,7 @@ class EmbedFallbackTests(unittest.TestCase):
     def test_a_cpu_failure_is_raised_as_before(self):
         embedder = gpu_embedder(CpuSession(broken=True))
         embedder.provider, embedder.batch_size = 'CPUExecutionProvider', 1
-        with patch('onnxruntime.InferenceSession') as create:
+        with fake_onnxruntime() as create:
             with self.assertRaises(ValueError):
                 embedder.embed(audio(2))
         create.assert_not_called()
@@ -123,7 +137,7 @@ class AnalysisRunTests(unittest.TestCase):
         for job in tracks:
             jobs.put(job)
         models = [(CNN14.id, self.root / 'cnn14.onnx', store_path, lambda _path: gpu_embedder(GpuSession(1)))]
-        with patch('onnxruntime.InferenceSession', return_value=CpuSession()), \
+        with fake_onnxruntime(CpuSession()), \
                 patch('songselector.core.embeddings._lower_process_priority'):
             thread = threading.Thread(target=run_analysis, args=(models, jobs, events, stop))
             thread.start()
