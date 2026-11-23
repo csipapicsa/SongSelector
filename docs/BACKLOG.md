@@ -266,15 +266,37 @@ Do 1–2 first; they matter even without an installer.
 - [ ] 3. Remove machine-specific defaults: the default embedding model
       `E:\GITHUB_E\MusicFindBoundaries\cnn14.onnx` (`config.DEFAULT_EMBEDDING_MODEL`), the `E:\DJ\TRAKTOR\collection.nml` default
       (keep the Documents\Native Instruments auto-detection) and the real-file test samples.
-- [ ] 4. Test on a clean Windows 10/11 VM (no Python, no Traktor).
+- [ ] 4. Test on a clean Windows 10/11 VM (no Python, no Traktor). Also note what Defender and Smart App Control
+      do with the unsigned exe (postponed 2026-11-23).
 - [ ] 5. Installer: PyInstaller one-folder build (faster start, fewer antivirus false positives
       than one-file) + Inno Setup script `packaging/installer.iss`, giving
       `SongSelector-Setup-<version>.exe` with Start menu entry and uninstaller.
       MSI (WiX) or MSIX only if needed for corporate or Store distribution.
-- [ ] 6. Code signing, to avoid the SmartScreen "Windows protected your PC" warning.
+- [ ] 6. Code signing, to avoid the SmartScreen "Windows protected your PC" warning. **Decided 2026-11-23: not
+      now**; the blue SmartScreen screen is acceptable, a red antivirus alert is not. Free route if ever wanted:
+      SignPath Foundation (apply; ask whether the bundled DirectML DLL counts as a system library). Self-signing
+      gives nothing. Instead: SECURITY.md, the *Is it safe?* page, build provenance and VirusTotal (PR #67).
 - [ ] 7. Large optional components (the models, 1.6 GB) as a separate download on demand, never inside the
       installer: see "Download the models from inside the app" above.
 - [ ] 8. Update check (later): compare with the latest GitHub release tag.
+- [ ] 9. **Antivirus false positives (found 2026-11-23).** VirusTotal on v1.4.0: AppImage clean; the exe flagged by
+      3 of ~70 engines, all ML / heuristic, **not Microsoft**: Arctic Wolf "Unsafe", Bkav Pro
+      "W32.Malware.75BD3EEF", SecureAge "Malicious"
+      ([report](https://www.virustotal.com/gui/file/a51c78fb699f7bf921c96c71cc9b4b43d37924ebda9f4beb4a9d44ed0dbe7529)).
+      Typical for an unsigned PyInstaller one-file exe. In order:
+      - [ ] (User) Report the false positive to Arctic Wolf, SecureAge and Bkav with the VirusTotal and release links.
+      - [ ] Packaging PR: `upx=False` explicitly in `packaging/SongSelector.spec` (UPX was not installed on the
+            Windows runner, so it never ran; make that deterministic) and Windows **version information** in the
+            exe (product, version, description, licence): files without metadata score worse with ML engines.
+      - [ ] *Is it safe?* page: one honest line on the result (3 of ~70, ML / heuristic, Microsoft clean), updated
+            per release.
+      - [ ] Then compare the next release's report. If still flagged: the one-folder build (item 5), then a
+            PyInstaller bootloader built from source in CI (helps against hash-based labels like Bkav's).
+- [ ] 10. VirusTotal in the release notes, optional: wait for the analysis to finish
+      (`GET /api/v3/analyses/<id>`) and write the result next to each link ("3 / 71 engines, Microsoft: clean")
+      instead of only the link. Today `.github/workflows/virustotal.yml` links the report right after the upload.
+- [ ] 11. First release after 2026-11-23: check the new steps really ran. `gh attestation verify <exe> --repo
+      csipapicsa/SongSelector` passes, and the notes have "Verify this download" and the VirusTotal links.
 
 ## Code health
 
