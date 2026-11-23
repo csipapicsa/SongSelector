@@ -1,6 +1,7 @@
 """Downloads the model files into the models folder.
 
-The files are the ONNX exports made by scripts/export_cnn14_onnx.py and scripts/export_clap_onnx.py. Each model has
+The files are the ONNX exports made by scripts/export_cnn14_onnx.py, scripts/export_clap_onnx.py and (AllMusicCaps)
+docs/research/experiments/clap/amclap_onnx.py. Each model has
 its own Hugging Face repo (since 2026-11-20) with a model card naming the source, the changes and the licence
 (packaging/models/hf/). The app downloads from the commit that added the files, so a later change to a repo cannot
 change what this version downloads. `Model download URL` in the settings points the app at another copy instead: a
@@ -26,6 +27,8 @@ HUGGING_FACE = {
                                             'clap-laion-tokenizer.json']),
     'csipapicsa/songselector-clap-ms': ('73b59b5999bac9db8a2c15c786759f2005ecf657',
                                         ['clap-ms-audio.onnx', 'clap-ms-text.onnx', 'clap-ms-tokenizer.json']),
+    'csipapicsa/songselector-clap-amc': ('b349da373ac4a83a814982453e41693f4272eb62', ['clap-amc-audio.onnx', 'clap-amc-text.onnx',
+                                                     'clap-amc-tokenizer.json']),
 }
 URLS = {name: f'https://huggingface.co/{repo}/resolve/{commit}/{name}'
         for repo, (commit, names) in HUGGING_FACE.items() for name in names}
@@ -39,8 +42,12 @@ FILES = {
     'clap-ms-audio.onnx': (126555913, 'e9b5c1cc2e43cd870a3df94535774bd4aed5456f0a7cc8c519a82e80c84b7ff2'),
     'clap-ms-text.onnx': (505456227, '0a26534f6e03c32312836c0f9b83aa358ddac0852a7bfd1e50136ea4bc6b6715'),
     'clap-ms-tokenizer.json': (3557853, '0fa4827ec39265089e822a6491293827737093c837ad8fa3ad9f20f2d76308cf'),
+    'clap-amc-audio.onnx': (295550979, '1fb193cbddef664e95303fef3b4cbf0b3c7519b42c61b4bd16f3e86be5c6b378'),
+    'clap-amc-text.onnx': (437419780, 'b75c45c5d7581ac9899b01c1def30019782ba777f9aa6ee2da78dbd5a1de2068'),
+    'clap-amc-tokenizer.json': (710932, '46fb1f735006f52c1f9744bb05f7bc1544ec8475955af30396212c7737558d1e'),
 }
-LICENCES = {'panns-cnn14-mAP0.431': 'CC BY 4.0', 'laion-clap-htsat-unfused': 'Apache 2.0', 'ms-clap-2023': 'MS-PL'}
+LICENCES = {'panns-cnn14-mAP0.431': 'CC BY 4.0', 'laion-clap-htsat-unfused': 'Apache 2.0', 'ms-clap-2023': 'MS-PL',
+            'mtg-allmusiccaps-all-layers': 'CC BY-NC-SA 4.0, non-commercial'}
 BLOCK = 1 << 20
 
 

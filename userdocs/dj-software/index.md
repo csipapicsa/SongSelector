@@ -20,6 +20,11 @@ have to close your DJ software. When it saves, SongSelector picks up the changes
    you curated there, not a second analysis.
 3. Your DJ software's **playlists** appear in the **Browser** tab, read-only and kept up to date.
 
+<figure markdown="span">
+  ![The Browser tab](../images/browser.png){ width="300" }
+  <figcaption>The Browser tab: your own playlists and smartlists, and below them the playlists from Traktor, Mixxx and Rekordbox.</figcaption>
+</figure>
+
 ## If more than one program knows a track
 
 **Import → Primary DJ program** decides whose values win when Traktor and Mixxx both know a track: the primary

@@ -65,6 +65,7 @@ nav:
       - The List view: using/list-view.md
   - Sound-based features:
       - Getting the models: sound/models.md
+      - AllMusicCaps CLAP (MTG): sound/allmusiccaps.md
       - Similarity map: sound/similarity-map.md
       - Search by description: sound/describe.md
   - Troubleshooting: troubleshooting.md

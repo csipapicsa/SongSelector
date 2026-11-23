@@ -3,7 +3,10 @@
 The **Similarity map** tab (++ctrl+2++) places every analysed track on a map: tracks that sound alike end up close
 together. It maps the List as it is filtered now, so narrow the List first to explore one style.
 
-<!-- screenshot: 2D map with a selected track, cyan rings on its matches, harmonic edges -->
+<figure markdown="span">
+  ![The similarity map with a selected track](../images/similarity-map.png)
+  <figcaption>One playlist (416 tracks) on the map, coloured by group. The selected track's closest matches have cyan rings and are listed on the right; lines go to harmonic partners.</figcaption>
+</figure>
 
 ## Exploring
 

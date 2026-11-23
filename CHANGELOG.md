@@ -10,6 +10,11 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **New model: AllMusicCaps CLAP by MTG** (Music Technology Group, Universitat Pompeu Fabra), a CLAP model trained on
+  music with captions written from album reviews. In a test on a real DJ library it found genres clearly better than
+  LAION CLAP (average precision 0.33 vs 0.21) and runs faster on the GPU. Download it from *Analysis → Get models…*;
+  it enables search by description. The weights are MTG's, licensed CC BY-NC-SA 4.0: **non-commercial use only**.
+  SongSelector downloads an ONNX conversion from `csipapicsa/songselector-clap-amc`, credited to MTG.
 - **A GPU that stops working mid-analysis no longer fails the rest of the library.** If the graphics driver resets
   (or the GPU runs out of memory) during embedding analysis, the track is analysed again on the CPU and the run goes
   on there; the status shows *CPU* and a warning says why. The next start tries the GPU again. Before, every
