@@ -239,6 +239,16 @@ One PR per block below, in this order; each with tests (a failing test first for
       list from SQLite is only ~0.05 s. Options: QTreeView with a model instead of QTreeWidget items;
       cache the NML index keyed by the file's mtime.
 - [ ] `_rows_by_path` uses `DataFrame.iterrows` (~0.5 s on 5k rows); use vectorised lookups.
+- [ ] **TODO (asked 2026-11-23): analyse on the best available backend, measured, not assumed.** Today the order is
+      fixed (CUDA, DirectML, CPU) and the first that starts wins; the GPU fallback mid-run is done (PR #63). Open:
+      - Measure once per machine, like `OnnxEmbedder.tune()` does for the batch size: a few windows on each available
+        provider, keep the fastest, cache by model + provider + onnxruntime version. An integrated GPU can be slower
+        than the CPU (MS CLAP on Intel UHD ~250 ms/window shared vs 42 ms on the GeForce; CPU not measured).
+      - Check agreement in the same pass (GPU vs CPU embeddings within tolerance), to catch a driver that returns
+        wrong numbers without an error.
+      - A setting to force the CPU (gaming, battery, a broken driver).
+      - Later, maybe: OpenVINO (Intel CPU / iGPU / NPU). It cannot sit next to `onnxruntime-directml` in one
+        environment, so it means a second build or a separate loader; try int8 on the CPU first.
 - [x] (1.2.0, F2) Saving the library list after each import rewrites all 5k tracks (~0.2 s); upsert only the
       changed tracks and rewrite only the list order.
 
