@@ -10,6 +10,7 @@ Needs `hf auth login` with a write token (in your own terminal). Run with the pr
 
     .venv\\Scripts\\python scripts\\publish_models.py --folder dist\\models --dry-run
     .venv\\Scripts\\python scripts\\publish_models.py --folder dist\\models
+    .venv\\Scripts\\python scripts\\publish_models.py --folder dist\\models --repo csipapicsa/songselector-clap-amc
 """
 import argparse
 import sys
@@ -22,11 +23,13 @@ from songselector.core.model_download import FILES, HUGGING_FACE, sha256  # noqa
 PACKAGING = REPO / 'packaging' / 'models'
 # The licence text that must go with the files; CNN14's CC BY 4.0 needs attribution, which its model card gives.
 LICENCE_TEXTS = {'csipapicsa/songselector-clap-laion': 'LICENSE-Apache-2.0.txt',
-                 'csipapicsa/songselector-clap-ms': 'LICENSE-MS-PL.txt'}
+                 'csipapicsa/songselector-clap-ms': 'LICENSE-MS-PL.txt',
+                 'csipapicsa/songselector-clap-amc': 'LICENSE-CC-BY-NC-SA-4.0.txt'}
 
 
-def check(folder):
-    for name, (size, digest) in FILES.items():
+def check(folder, names):
+    for name in names:
+        size, digest = FILES[name]
         path = folder / name
         if not path.is_file():
             sys.exit(f'Missing: {path}')
@@ -42,15 +45,19 @@ def main():
     parser.add_argument('--folder', required=True, help='folder with cnn14.onnx and the clap-* files')
     parser.add_argument('--message', default='Model files (float32 ONNX), model card, licence')
     parser.add_argument('--dry-run', action='store_true', help='only check the files; upload nothing')
+    parser.add_argument('--repo', action='append', choices=sorted(HUGGING_FACE),
+                        help='only this repo (repeat for several); default: all. A new model needs only its own')
     args = parser.parse_args()
     folder = Path(args.folder)
-    check(folder)
+    repos = args.repo or list(HUGGING_FACE)
+    check(folder, [name for repo in repos for name in HUGGING_FACE[repo][1]])
     if args.dry_run:
         print('Dry run: the files match; nothing uploaded.')
         return
     from huggingface_hub import CommitOperationAdd, HfApi
     api = HfApi()
-    for repo, (_pinned, names) in HUGGING_FACE.items():
+    for repo in repos:
+        names = HUGGING_FACE[repo][1]
         operations = [CommitOperationAdd('README.md', str(PACKAGING / 'hf' / repo.split('/')[1] / 'README.md'))]
         if repo in LICENCE_TEXTS:
             operations.append(CommitOperationAdd('LICENSE', str(PACKAGING / LICENCE_TEXTS[repo])))

@@ -182,10 +182,7 @@ class DownloadTests(ServerCase):
         from songselector.core.embedding_models import MODELS
         for spec in MODELS.values():
             for name in spec.files():
-                if spec.downloadable:
-                    self.assertIn(name, FILES)
-                else:  # copied in by hand: no checksum, never fetched
-                    self.assertNotIn(name, FILES)
+                self.assertIn(name, FILES)
         self.assertGreater(model_download.download_size(CNN14), 300e6)
 
     def test_every_file_comes_from_its_models_hugging_face_repo_at_a_pinned_commit(self):

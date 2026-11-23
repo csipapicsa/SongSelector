@@ -63,7 +63,7 @@ class ModelDefinitionTests(unittest.TestCase):
     def test_models_and_their_files(self):
         self.assertEqual(list(MODELS), [CNN14.id, LAION_CLAP.id, MS_CLAP.id, AMC_CLAP.id])
         self.assertEqual((AMC_CLAP.chunk_samples, AMC_CLAP.dim), (240000, 512))
-        self.assertTrue(AMC_CLAP.has_text and not AMC_CLAP.downloadable and LAION_CLAP.downloadable)
+        self.assertTrue(AMC_CLAP.has_text)
         self.assertEqual((LAION_CLAP.chunk_samples, MS_CLAP.chunk_samples, CNN14.chunk_samples), (480000, 308700, 160000))
         self.assertFalse(CNN14.has_text)
         self.assertTrue(LAION_CLAP.has_text and MS_CLAP.has_text)

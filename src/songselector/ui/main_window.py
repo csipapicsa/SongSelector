@@ -2238,7 +2238,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
     def open_model_download(self):
         if self.model_download_dialog is None:
             self.model_download_dialog = ModelDownloadDialog(
-                [spec for spec in MODELS.values() if spec.downloadable], self.models_folder(),
+                list(MODELS.values()), self.models_folder(),
                 base_url=self.settings.get('Model download URL', ''), checked=self.model_checks, parent=self)
             self.model_download_dialog.file_checked.connect(self._model_file_checked)
             self.model_download_dialog.downloaded.connect(self._models_downloaded)
