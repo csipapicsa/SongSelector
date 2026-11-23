@@ -201,6 +201,12 @@ class EmbeddingAnalyzer(QObject):
                 self.track_analyzed.emit(key)
             self._top_up()
             self._report()
+        elif kind == 'device':  # a process moved from the GPU to the CPU mid-run
+            device = DEVICE_NAMES.get(event[1], event[1])
+            if device != self.device:  # every process may report it: warn once
+                self.device = device
+                self.warning.emit(event[2])
+                self._report()
         elif kind == 'warning':
             if worker == 0:  # every process would report the same
                 self.warning.emit(event[1])
