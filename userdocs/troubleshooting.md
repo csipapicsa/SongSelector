@@ -1,7 +1,8 @@
 # Troubleshooting
 
 ??? question "Windows says *Windows protected your PC*"
-    The exe is not code-signed yet. Click **More info → Run anyway**. See [Install](getting-started/install.md).
+    The exe is not code-signed. Click **More info → Run anyway**. See [Is it safe?](safety.md) for why, and how
+    to check your download.
 
 ??? question "My Traktor / Rekordbox / Mixxx library is not found"
     Link it by hand from the **Import** menu: *Link Traktor collection…*, *Link Rekordbox library…* or

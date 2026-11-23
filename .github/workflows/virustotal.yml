@@ -1,0 +1,67 @@
+# Scans a release's published files on VirusTotal and (optionally) links the reports in its release notes.
+# Called by release.yml after publishing; also runs by hand: Actions -> VirusTotal -> Run workflow, or
+#   gh workflow run virustotal.yml -f tag=v1.4.0 -f update_notes=false
+# The API key is a secret of the VIRUSTOTAL_API_KEY environment, so only this job can read it.
+name: VirusTotal
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v1.4.0
+        required: true
+      update_notes:
+        description: Append the report links to the release notes
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      update_notes:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true   # a failed scan never marks a published release as failed
+    environment: VIRUSTOTAL_API_KEY
+    permissions:
+      contents: write   # editing the release notes
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      # The files users download, straight from the release (not the build artifacts).
+      - name: Download the release files
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SongSelector-*' --dir release
+      - name: Upload to VirusTotal
+        env:
+          VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          if [ -z "$VT_API_KEY" ]; then
+            echo "::notice::No VIRUSTOTAL_API_KEY secret in the VIRUSTOTAL_API_KEY environment: no scan."
+            exit 0
+          fi
+          bash scripts/virustotal_scan.sh release/SongSelector-* | tee links.md
+          { echo "### VirusTotal reports for $TAG"; echo; cat links.md; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Link the reports in the release notes
+        if: inputs.update_notes && hashFiles('links.md') != ''
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          {
+            echo
+            echo "### Antivirus scan"
+            echo
+            echo "Each download was uploaded to VirusTotal (results appear there after a few minutes):"
+            echo
+            cat links.md
+          } >> notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

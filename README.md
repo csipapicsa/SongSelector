@@ -11,7 +11,8 @@
 > [install](https://csipapicsa.github.io/SongSelector/getting-started/install/),
 > [connect Traktor, Rekordbox or Mixxx](https://csipapicsa.github.io/SongSelector/dj-software/),
 > everyday use and [troubleshooting](https://csipapicsa.github.io/SongSelector/troubleshooting/).
-> This README is the technical overview.
+> This README is the technical overview. Wondering whether the exe is safe? See [SECURITY.md](SECURITY.md): what the app
+> does and doesn't do, and how to verify a download (checksums, GitHub build provenance, VirusTotal).
 
 A desktop app for Windows and Linux that helps DJs pick the next track. It sits next to Traktor, Rekordbox or
 Mixxx, reads their libraries automatically, and answers three questions:
@@ -76,7 +77,7 @@ What is behind the features, and where to look:
 | Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
 | Testing | About 320 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
 | Release verification | Every build (Windows exe, Linux AppImage) runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real inference) and a native-window smoke test (on Linux on Xvfb, closed through the X11 window protocol) before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1), [verify_release.sh](scripts/verify_release.sh) |
-| CI/CD | GitHub Actions: ruff, pytest on Windows and Linux, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe and the AppImage with SHA-256 checksums | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
+| CI/CD | GitHub Actions: ruff, pytest on Windows and Linux, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe and the AppImage with SHA-256 checksums, signed build provenance (`gh attestation verify`) and VirusTotal reports ([SECURITY.md](SECURITY.md)) | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
 | Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
 
 ## Install

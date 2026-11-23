@@ -11,7 +11,8 @@ downloads are self-contained: no Python or anything else to install.
     3. Double-click it.
 
     !!! warning "Windows protected your PC"
-        The exe is not code-signed yet, so SmartScreen warns the first time. Click **More info → Run anyway**.
+        The exe is not code-signed, so SmartScreen warns the first time. Click **More info → Run anyway**.
+        Why that's fine, and how to check the download: [Is it safe?](../safety.md)
         To check that the download is genuine, compare its SHA-256 with `SHA256SUMS.txt` from the same release:
         `Get-FileHash .\SongSelector-*.exe` in PowerShell.
 

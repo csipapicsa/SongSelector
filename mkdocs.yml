@@ -45,6 +45,9 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.tabbed:
       alternate_style: true
 
@@ -68,4 +71,5 @@ nav:
       - AllMusicCaps CLAP (MTG): sound/allmusiccaps.md
       - Similarity map: sound/similarity-map.md
       - Search by description: sound/describe.md
+  - Is it safe?: safety.md
   - Troubleshooting: troubleshooting.md
