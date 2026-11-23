@@ -21,6 +21,17 @@ together. It maps the List as it is filtered now, so narrow the List first to ex
 | Scroll / drag | Zoom / move; *Fit* brings the map back |
 | ++esc++ | Stop comparing, then clear the selection |
 
+### Comparing two tracks
+
+Select a track, then ++ctrl++ + click another dot: a card shows how they mix (here a *perfect mix*, both in G minor
+at the master tempo) and how similar they sound. The panel above the closest matches shows the selected track's
+details (right-click beside the map, or *View → Selected track details*).
+
+<figure markdown="span">
+  ![Two tracks compared on the similarity map](../images/describe-map-compare.png)
+  <figcaption>The map after a description search: the selected track's details on the right, a compared track's card on the map.</figcaption>
+</figure>
+
 ## The buttons below the map
 
 | Button | Does |
