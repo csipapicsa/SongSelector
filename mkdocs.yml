@@ -1,0 +1,70 @@
+# User guide: https://csipapicsa.github.io/SongSelector/
+# Preview locally:  python -m mkdocs serve   (pip install -r requirements-docs.txt)
+# Pages live in userdocs/, not docs/: docs/ holds worklogs, research and the backlog, which are not published.
+site_name: SongSelector
+site_description: Pick the next track. A companion app for Traktor, Rekordbox and Mixxx.
+site_url: https://csipapicsa.github.io/SongSelector/
+repo_url: https://github.com/csipapicsa/SongSelector
+repo_name: csipapicsa/SongSelector
+edit_uri: edit/main/userdocs/
+docs_dir: userdocs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install: getting-started/install.md
+      - First start: getting-started/first-start.md
+  - Connect your DJ software:
+      - dj-software/index.md
+      - Traktor: dj-software/traktor.md
+      - Rekordbox: dj-software/rekordbox.md
+      - Mixxx: dj-software/mixxx.md
+  - Everyday use:
+      - Keys at the master tempo: using/key-and-tempo.md
+      - Searching: using/search.md
+      - Playlists and smartlists: using/playlists.md
+      - The List view: using/list-view.md
+  - Sound-based features:
+      - Getting the models: sound/models.md
+      - Similarity map: sound/similarity-map.md
+      - Search by description: sound/describe.md
+  - Troubleshooting: troubleshooting.md

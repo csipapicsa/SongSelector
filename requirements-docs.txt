@@ -1,0 +1,2 @@
+# User guide site (mkdocs.yml, userdocs/). Separate from the app: not in the exe.
+mkdocs-material==9.8.2
