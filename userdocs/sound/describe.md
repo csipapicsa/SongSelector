@@ -9,7 +9,10 @@ Type what a track should sound like and get the closest tracks in your library. 
 2. The List shows the closest tracks, best first in the `#` column. *Match* shows how close each one is (higher is
    closer; compare within one search).
 
-<!-- screenshot: Describe a sound bar with results and Match column -->
+<figure markdown="span">
+  ![Search results for a typed description](../images/describe-a-sound.png)
+  <figcaption>"dark rolling drum and bass with a heavy reese bassline" with AllMusicCaps CLAP, searched within one playlist: best matches first, with their <em>Match</em> score.</figcaption>
+</figure>
 
 | Control | Does |
 |---|---|

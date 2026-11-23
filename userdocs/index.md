@@ -4,7 +4,10 @@
 or Mixxx and helps you decide what to play next. It reads your DJ software's library by itself: nothing to export,
 nothing to keep in sync by hand.
 
-<!-- screenshot: main window, List with keys at master tempo + similarity map tab -->
+<figure markdown="span">
+  ![SongSelector with the similarity map open](images/similarity-map.png)
+  <figcaption>A drum &amp; bass track selected on the similarity map: its closest-sounding tracks, and which of them mix in key at 128 BPM.</figcaption>
+</figure>
 
 It answers three questions:
 

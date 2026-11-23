@@ -21,6 +21,11 @@ Tracks on the playlist stay in the List, dimmed and in italics, so a search stil
 
 Click an entry to show it in the List; double-click to load it into the Playlist tab.
 
+<figure markdown="span">
+  ![The Browser tab](../images/browser.png){ width="300" }
+  <figcaption>Your playlists (≡) and smartlists (⚙), then the folders from your DJ software.</figcaption>
+</figure>
+
 ## Smartlists
 
 A smartlist stores **search rules**, not tracks, so it always shows what matches now. Save one from the

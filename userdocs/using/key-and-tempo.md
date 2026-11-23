@@ -36,7 +36,10 @@ So at 127 BPM this track mixes with 3A tracks, not 8A tracks. SongSelector shows
 Type the tempo you're playing at into **Master tempo** above the List. Every key and speed column follows it
 straight away.
 
-<!-- screenshot: Master tempo box and key columns -->
+<figure markdown="span">
+  ![The List with the master tempo set to 128 BPM](../images/list-master-tempo.png)
+  <figcaption>Master tempo 128 BPM: <em>Speed change</em> shows how far each track has to be pitched, <em>Open Key New</em> its key at that speed.</figcaption>
+</figure>
 
 ## The columns
 

@@ -16,6 +16,11 @@ listen to each track and describe its sound as numbers. They're an optional, sep
 **Analysis → Get models… → Download.** The files come from Hugging Face, resume if interrupted, and are checked
 before use.
 
+<figure markdown="span">
+  ![The Get models window](../images/get-models.png)
+  <figcaption>Tick the models you want and press <em>Download</em>. Each line shows the size and the licence.</figcaption>
+</figure>
+
 | Model | Made by | Trained on | Good for | Size | Licence |
 |---|---|---|---|---|---|
 | CNN14 | Kong et al. (PANNs), 2020 | General sounds (AudioSet) | Sound similarity (map, closest matches) | 327 MB | CC BY 4.0 |
