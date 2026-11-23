@@ -10,6 +10,10 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **Checkable downloads.** Each release now carries a signed build-provenance attestation from GitHub (check with
+  `gh attestation verify <file> --repo csipapicsa/SongSelector`) and links to a VirusTotal scan of each file. New
+  [SECURITY.md](SECURITY.md) and an *Is it safe?* page in the user guide: what the app does and doesn't do on your
+  computer, the Windows warnings to expect, how to verify a download, how to report a security problem.
 - **New model: AllMusicCaps CLAP by MTG** (Music Technology Group, Universitat Pompeu Fabra), a CLAP model trained on
   music with captions written from album reviews. In a test on a real DJ library it found genres clearly better than
   LAION CLAP (average precision 0.33 vs 0.21) and runs faster on the GPU. Download it from *Analysis → Get models…*;

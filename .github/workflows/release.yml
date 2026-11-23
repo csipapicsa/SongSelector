@@ -155,11 +155,15 @@ jobs:
   publish:
     needs: [build, build-linux]
     if: startsWith(github.ref, 'refs/tags/v')
-    # Write access only here, only for releases, and this job runs no third-party code.
+    # Write access only here, only for releases, and this job runs no third-party code (only GitHub's own actions).
+    # The provenance attestation is made here, not in the build jobs: they run pip packages and PyInstaller, and
+    # code that can mint an attestation could vouch for a file it tampered with.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      id-token: write       # signing the attestation (Sigstore, through GitHub's OIDC token)
+      attestations: write   # storing it on the repo's Attestations page
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -171,6 +175,22 @@ jobs:
         run: |
           cd release
           sha256sum SongSelector-* | tee SHA256SUMS.txt
+      # Signed statement: these exact files were built by this workflow, from this commit of this repository.
+      # Anyone can check it: gh attestation verify <file> --repo csipapicsa/SongSelector
+      - name: Build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: release/SongSelector-*
+      - name: How to verify, in the release notes
+        run: |
+          cat >> release/notes.md <<'EOF'
+
+          ### Verify this download
+
+          - **Checksum:** compare the file's SHA-256 with `SHA256SUMS.txt` (Windows PowerShell: `Get-FileHash .\SongSelector-*.exe`).
+          - **Built from this repository:** `gh attestation verify <file> --repo csipapicsa/SongSelector` checks GitHub's signed build provenance: the file was built by this repository's release workflow from the tagged commit.
+          - The exe is not code-signed, so Windows shows *Windows protected your PC* (blue): *More info → Run anyway*. More in [Is it safe?](https://csipapicsa.github.io/SongSelector/safety/) and [SECURITY.md](https://github.com/csipapicsa/SongSelector/blob/main/SECURITY.md).
+          EOF
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -181,3 +201,49 @@ jobs:
             --title "SongSelector ${TAG#v}" \
             --notes-file release/notes.md \
             --verify-tag
+
+  virustotal:
+    # After publishing: upload each download to VirusTotal and link the results in the release notes, so anyone can
+    # see what the antivirus engines say. Skipped without the VIRUSTOTAL_API_KEY secret; a failure here never
+    # undoes the release. Only curl and gh: no third-party code next to the API key.
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    permissions:
+      contents: write   # editing the release notes
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Upload to VirusTotal and link the results
+        env:
+          VT_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$VT_API_KEY" ]; then
+            echo "::notice::No VIRUSTOTAL_API_KEY secret: no antivirus scan."
+            exit 0
+          fi
+          : > links.md
+          for file in release/SongSelector-*; do
+            # Files over 32 MB go to a one-time upload URL (v3 API).
+            upload=$(curl -sSf -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
+            curl -sSf -H "x-apikey: $VT_API_KEY" -F "file=@$file" "$upload" > /dev/null
+            sum=$(sha256sum "$file" | cut -d' ' -f1)
+            echo "- [$(basename "$file")](https://www.virustotal.com/gui/file/$sum)" >> links.md
+          done
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          {
+            echo
+            echo "### Antivirus scan"
+            echo
+            echo "Each download was uploaded to VirusTotal when it was published (results appear there after a few minutes):"
+            echo
+            cat links.md
+          } >> notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
