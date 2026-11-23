@@ -26,6 +26,8 @@ Mixxx, reads their libraries automatically, and answers three questions:
 - **Which of my tracks sound like *this*?** Type a description, *"funky breakbeat with a groovy bassline"*,
   and the CLAP models find the closest tracks in your library.
 
+![SongSelector: tracks that sound like "late-night, dark and hypnotic" on the similarity map, one selected, another compared with it](userdocs/images/describe-map-compare.png)
+
 ## Features
 
 **Harmonic mixing**

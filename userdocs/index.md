@@ -5,8 +5,8 @@ or Mixxx and helps you decide what to play next. It reads your DJ software's lib
 nothing to keep in sync by hand.
 
 <figure markdown="span">
-  ![SongSelector with the similarity map open](images/similarity-map.png)
-  <figcaption>A drum &amp; bass track selected on the similarity map: its closest-sounding tracks, and which of them mix in key at 128 BPM.</figcaption>
+  ![SongSelector with a description search shown on the similarity map](images/describe-map-compare.png)
+  <figcaption>"late-night, dark and hypnotic": the closest tracks on the similarity map. One is selected (details on the right); ++ctrl++ + click on another compares the two: a perfect mix in key, 63 % similar.</figcaption>
 </figure>
 
 It answers three questions:
