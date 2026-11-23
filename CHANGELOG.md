@@ -8,6 +8,13 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+- **A GPU that stops working mid-analysis no longer fails the rest of the library.** If the graphics driver resets
+  (or the GPU runs out of memory) during embedding analysis, the track is analysed again on the CPU and the run goes
+  on there; the status shows *CPU* and a warning says why. The next start tries the GPU again. Before, every
+  remaining track was marked failed and was not retried until its file changed.
+
 ## [1.4.0] - 2026-11-21
 
 - **Mixxx support.** The app reads Mixxx's library (`mixxxdb.sqlite`) directly, like Traktor's collection: it is

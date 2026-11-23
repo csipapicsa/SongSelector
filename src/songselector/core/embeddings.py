@@ -227,6 +227,8 @@ class OnnxEmbedder:
         self.input_name = self.session.get_inputs()[0].name
         self.batch_size = self.spec.batch_sizes.get(self.provider, 1)
         self._runtime_version = onnxruntime.__version__
+        self._model_path, self._threads = model_path, threads
+        self.gpu_failure = None  # why embed() moved to the CPU mid-run, e.g. 'RuntimeError: ... device removed'
 
     def tune(self, cache_file):
         """Use the batch size that is fastest for this model on this machine's GPU, measured once and remembered in
@@ -290,9 +292,32 @@ class OnnxEmbedder:
         return options
 
     def embed(self, audio, should_stop=lambda: False):
-        """(n_windows, dim) float32 embeddings of mono audio at the model's sample rate."""
+        """(n_windows, dim) float32 embeddings of mono audio at the model's sample rate.
+
+        If the GPU fails mid-run (driver reset, device removed, out of memory) the track is done again on the CPU.
+        If that works the GPU was the problem: the rest of this run stays on the CPU (gpu_failure says why) and the
+        next start tries the GPU again. If the CPU fails too the track is the problem: its error is raised and the
+        GPU stays in use, so one odd file does not move a whole library onto the CPU."""
+        try:
+            return self._embed(audio, should_stop, self.session, self.batch_size)
+        except Cancelled:
+            raise
+        except Exception as error:
+            if self.provider == 'CPUExecutionProvider':
+                raise
+            gpu_error = error
+        import onnxruntime
+        cpu = onnxruntime.InferenceSession(str(self._model_path), self._options(onnxruntime, self._threads),
+                                           providers=['CPUExecutionProvider'])
+        cpu_batch = self.spec.batch_sizes.get('CPUExecutionProvider', 1)
+        result = self._embed(audio, should_stop, cpu, cpu_batch)  # raises if the track itself is the problem
+        self.session, self.provider, self.batch_size = cpu, 'CPUExecutionProvider', cpu_batch
+        self.gpu_failure = f'{type(gpu_error).__name__}: {gpu_error}'
+        return result
+
+    def _embed(self, audio, should_stop, session, size):
         chunks = split_chunks(audio, self.spec.chunk_samples)
-        count, size = len(chunks), self.batch_size
+        count = len(chunks)
         if size > 1 and count % size:
             # Every call gets the same shape: GPU providers re-plan the model for each new
             # input shape. The zero padding is cut off again below.
@@ -301,7 +326,7 @@ class OnnxEmbedder:
         for start in range(0, len(chunks), size):
             if should_stop():
                 raise Cancelled()
-            batches.append(self.session.run(['embedding'], {self.input_name: chunks[start:start + size]})[0])
+            batches.append(session.run(['embedding'], {self.input_name: chunks[start:start + size]})[0])
         return np.concatenate(batches)[:count]
 
 
@@ -531,6 +556,7 @@ def run_analysis(models, jobs, events, stop, worker=0, tuning_file=None):
 
     Reads (path_key, file_path) jobs from the `jobs` queue until `stop` is set and reports on `events`:
       ('ready', provider, worker)        models loaded; provider of the first, e.g. DmlExecutionProvider
+      ('device', provider, message, worker)  a model left the GPU mid-run (OnnxEmbedder.embed); message says why
       ('warning', message, worker)       a model could not be loaded; the others go on
       ('start', key, file name, worker)  analysing a file (if the process dies now, this file caused it)
       ('done', key, status, worker)      status: analysed | current | missing | failed | cancelled
@@ -582,9 +608,13 @@ def run_analysis(models, jobs, events, stop, worker=0, tuning_file=None):
             continue
         status, cancelled = 'failed', False
         for spec, embedder, store, known in todo:
+            provider = getattr(embedder, 'provider', None)
             try:
                 store.save(key, fingerprint, embedder.embed(audio[spec.sample_rate], stop.is_set))
                 status = 'analysed'
+                if getattr(embedder, 'provider', None) != provider:
+                    events.put(('device', embedder.provider, f'{spec.name}: the GPU stopped working '
+                                f'({embedder.gpu_failure}); analysing on the CPU until the next start', worker))
             except Cancelled:
                 cancelled = True
                 break
