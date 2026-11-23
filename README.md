@@ -5,6 +5,13 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
 ![Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
+[![User guide](https://img.shields.io/badge/docs-user%20guide-indigo)](https://csipapicsa.github.io/SongSelector/)
+
+> **Using SongSelector?** The **[user guide](https://csipapicsa.github.io/SongSelector/)** walks you through it:
+> [install](https://csipapicsa.github.io/SongSelector/getting-started/install/),
+> [connect Traktor, Rekordbox or Mixxx](https://csipapicsa.github.io/SongSelector/dj-software/),
+> everyday use and [troubleshooting](https://csipapicsa.github.io/SongSelector/troubleshooting/).
+> This README is the technical overview.
 
 A desktop app for Windows and Linux that helps DJs pick the next track. It sits next to Traktor, Rekordbox or
 Mixxx, reads their libraries automatically, and answers three questions:
@@ -273,6 +280,12 @@ xvfb-run -a scripts/verify_release.sh  # self-check inside the AppImage + window
 Set `SONGSELECTOR_CNN14_ONNX` to `cnn14.onnx`, and `SONGSELECTOR_CLAP_MODELS` to the folder with the CLAP
 files, to also run the real-model tests.
 
+**User guide** ([csipapicsa.github.io/SongSelector](https://csipapicsa.github.io/SongSelector/)): MkDocs Material,
+pages in `userdocs/` (not `docs/`, which holds worklogs and research). A change users can see updates its page in
+the same pull request. Preview with `python -m pip install -r requirements-docs.txt` then
+`python -m mkdocs serve` (http://127.0.0.1:8000). [docs.yml](.github/workflows/docs.yml) builds it with `--strict`
+on pull requests and publishes it to GitHub Pages from `main`.
+
 **Releases** are built by GitHub Actions: bump `__version__` in
 [src/songselector/\_\_init\_\_.py](src/songselector/__init__.py) and rename the changelog's
 `[Unreleased]` section in a pull request, merge it, then tag the merge commit (`git tag vX.Y.Z`,
@@ -292,6 +305,7 @@ tests/             pytest suite
 packaging/         PyInstaller spec and launcher
 scripts/           setup / test / build / verify / model export
 docs/              Architecture, backlog, research notes, daily worklogs
+userdocs/          User guide (MkDocs, published to GitHub Pages)
 ```
 
 More: [CHANGELOG.md](CHANGELOG.md), [docs/BACKLOG.md](docs/BACKLOG.md) (known issues and plans),
