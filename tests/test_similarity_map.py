@@ -15,12 +15,16 @@ from songselector.core.embeddings import EmbeddingStore
 from songselector.core.similarity import (
     EDGE_SAME_COLOR,
     EDGE_SAME_RATING,
+    PROJECTIONS,
     connection,
     display_color,
     nearest,
+    pca_layout,
     place_new,
+    project,
     track_vectors,
     tsne_layout,
+    umap_layout,
 )
 from songselector.core.traktor_collection import canonical_path
 
@@ -70,6 +74,61 @@ class SimilarityTests(unittest.TestCase):
         known = np.array([[0.0, 0.0, 0.0]] * 12 + [[100.0, 100.0, 100.0]] * 11, dtype=np.float32)
         np.testing.assert_allclose(place_new(known, vectors[:23], vectors[23:])[0], [100, 100, 100], atol=1e-3)
         self.assertEqual(place_new(known, vectors[:23], vectors[:0]).shape, (0, 3))
+
+    def assert_styles_apart(self, points, dims):
+        self.assertEqual(points.shape, (24, dims))
+        self.assertTrue(np.isfinite(points).all())
+        first, second = points[:12], points[12:]
+        within = np.mean([np.linalg.norm(first - first.mean(0), axis=1).mean(), np.linalg.norm(second - second.mean(0), axis=1).mean()])
+        self.assertGreater(np.linalg.norm(first.mean(0) - second.mean(0)), 2 * within)
+
+    def test_umap_keeps_the_styles_apart_in_2d_and_3d_and_can_be_stopped(self):
+        vectors = track_vectors(two_styles())
+        for dims in (2, 3):
+            self.assert_styles_apart(umap_layout(vectors, dims=dims), dims)
+        self.assertIsNone(umap_layout(vectors, should_stop=lambda: True))
+        self.assertEqual(umap_layout(vectors[:2]).shape, (2, 2))
+        self.assertEqual(umap_layout(vectors[:3]).shape, (3, 2))  # the smallest real layout: 2 neighbours each
+        np.testing.assert_array_equal(umap_layout(vectors), umap_layout(vectors))  # same tracks, same map
+
+    def test_umap_keeps_nearest_neighbours_of_a_larger_set(self):
+        # 300 tracks in 6 overlapping styles: most of each track's 10 nearest tracks are map neighbours too.
+        rng = np.random.default_rng(3)
+        centres = rng.normal(0, 1, (6, 64))
+        vectors = centres[np.arange(300) % 6] + rng.normal(0, 0.6, (300, 64))
+        vectors = (vectors / np.linalg.norm(vectors, axis=1, keepdims=True)).astype(np.float32)
+
+        def neighbours(points):
+            distances = ((points[:, None] - points[None]) ** 2).sum(-1)
+            np.fill_diagonal(distances, np.inf)
+            return np.argsort(distances, 1)[:, :10]
+        true = neighbours(vectors)
+        kept = np.mean([len(set(a) & set(b)) / 10 for a, b in zip(true, neighbours(umap_layout(vectors)))])
+        self.assertGreater(kept, 0.3)
+        same_style = np.mean(np.arange(300)[neighbours(umap_layout(vectors))] % 6 == (np.arange(300) % 6)[:, None])
+        self.assertGreater(same_style, 0.9)
+
+    def test_pca_layout_is_the_main_axes_with_fixed_signs(self):
+        vectors = track_vectors(two_styles())
+        points = pca_layout(vectors)
+        self.assert_styles_apart(points, 2)
+        self.assertTrue(all(points[np.abs(points[:, axis]).argmax(), axis] > 0 for axis in (0, 1)))
+        # Randomized SVD finds the exact axes when they are distinct (two-style data's second axis is noise).
+        scales = np.r_[[10, 6, 3], np.full(297, 0.1)]
+        data = (np.random.default_rng(1).normal(size=(200, 300)) * scales).astype(np.float32)
+        centred = data - data.mean(0)
+        exact = centred @ np.linalg.svd(centred, full_matrices=False)[2][:3].T
+        np.testing.assert_allclose(np.abs(pca_layout(data, dims=3)), np.abs(exact), rtol=1e-3, atol=1e-3)
+        self.assertEqual(pca_layout(vectors, dims=3).shape, (24, 3))
+        self.assertEqual(pca_layout(vectors[:2], dims=3).shape, (2, 3))
+        self.assertIsNone(pca_layout(vectors, should_stop=lambda: True))
+
+    def test_project_uses_the_named_layout_and_falls_back_to_tsne(self):
+        self.assertEqual(list(PROJECTIONS), ['tsne', 'umap', 'pca'])
+        vectors = track_vectors(two_styles())
+        np.testing.assert_array_equal(project(vectors, 'pca'), pca_layout(vectors))
+        with patch.dict(PROJECTIONS, {'tsne': ('t-SNE', lambda vectors, **_: 'tsne')}):
+            self.assertEqual(project(vectors, 'no such layout'), 'tsne')
 
     def test_new_tracks_are_placed_near_their_most_similar_tracks(self):
         vectors = track_vectors(two_styles())
@@ -151,6 +210,25 @@ class LayoutStoreTests(unittest.TestCase):
             self.assertEqual(store.load_layout(), {'a': (1.5, 2.5), 'b': (-1.0, 0.0)})
             store.save_layout({'a': (0, 0)})
             self.assertEqual(store.load_layout(), {'a': (0.0, 0.0)})
+
+    def test_each_layout_keeps_its_own_cache_and_pca_none(self):
+        from songselector.ui.similarity_map import build_map_data, layout_cache_id
+        with tempfile.TemporaryDirectory(dir=os.environ['SONGSELECTOR_APP_DATA_DIR']) as folder:
+            store = EmbeddingStore(Path(folder) / 'embeddings.sqlite')
+            for index, matrix in enumerate(two_styles()):
+                store.save(f'k{index}', (1, 1), matrix)
+            model = store.spec.id
+            self.assertEqual([layout_cache_id(store, name) for name in PROJECTIONS], [model, f'{model}:umap', None])
+            tsne = build_map_data(store).positions
+            self.assertEqual(store.load_layout(), tsne)                    # as before: under the model's id
+            umap = build_map_data(store, projection='umap', with_3d=True)
+            self.assertEqual(store.load_layout(f'{model}:umap'), umap.positions)
+            self.assertEqual(len(store.load_layout_3d(f'{model}:umap')), 24)
+            self.assertEqual(store.load_layout(), tsne)                    # t-SNE's map untouched
+            self.assertEqual(build_map_data(store, projection='umap').positions, umap.positions)  # from the cache
+            pca = build_map_data(store, projection='pca')
+            self.assertEqual(len(pca.positions), 24)
+            self.assertEqual(store.load_layout(f'{model}:pca'), {})        # never cached
 
 
 class MapWindowTestBase(unittest.TestCase):
@@ -724,6 +802,50 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertTrue(self.map._again)
         self.wait_for_map()
         self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(12, 24)})
+
+    def test_a_list_change_stops_the_running_load_instead_of_waiting_for_it(self):
+        # Reported 2026-11-24: with 3,000 tracks mapped, a new 100-track List waited for the old map to finish.
+        from songselector.ui import similarity_map
+        real, stopped = similarity_map.build_map_data, []
+
+        def slow_first(store, rearrange, should_stop, *args):
+            if not stopped:  # the first load runs "for minutes" unless it is told to stop
+                deadline = time.monotonic() + 30
+                while not should_stop() and time.monotonic() < deadline:
+                    time.sleep(0.005)
+                stopped.append(should_stop())
+                return None
+            return real(store, rearrange, should_stop, *args)
+        with patch.object(similarity_map, 'build_map_data', side_effect=slow_first):
+            self.map.only_button.setChecked(True)
+            self.window.search_bar.setText('dnb')
+            self.map._follow_timer.stop()
+            started = time.monotonic()
+            self.map._follow_list()
+            self.wait_for_map()
+        self.assertEqual(stopped, [True])
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual(set(self.map.data.keys), {self.key(i) for i in range(12, 24)})
+
+    def test_the_layout_box_maps_again_and_is_remembered(self):
+        from songselector.ui import similarity_map
+        store = EmbeddingStore(self.root / 'embeddings.sqlite')
+        tsne = store.load_layout()
+        self.assertEqual(self.map.projection.currentData(), 'tsne')
+        self.assertEqual([self.map.projection.itemText(i) for i in range(3)], ['t-SNE', 'UMAP', 'PCA'])
+        with patch.object(similarity_map, 'build_map_data', wraps=similarity_map.build_map_data) as build:
+            self.map.projection.setCurrentIndex(self.map.projection.findData('umap'))
+            self.wait_for_map()
+        self.assertEqual(build.call_args.args[-1], 'umap')
+        self.assertEqual(self.window.settings['Map projection'], 'umap')
+        self.assertEqual(self.map.data.positions, store.load_layout(f'{store.spec.id}:umap'))
+        self.assertEqual(store.load_layout(), tsne)
+        self.map.projection.setCurrentIndex(self.map.projection.findData('pca'))
+        self.wait_for_map()
+        self.assertEqual(len(self.visible()), 24)
+        self.map.projection.setCurrentIndex(self.map.projection.findData('tsne'))
+        self.wait_for_map()
+        self.assertEqual(self.map.data.positions, tsne)  # back to the cached t-SNE map
 
     def test_an_unchanged_list_does_not_map_again(self):
         from songselector.ui import similarity_map

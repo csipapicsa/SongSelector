@@ -8,6 +8,15 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+- **Choose the map's layout: t-SNE, UMAP or PCA.** A *Layout* box below the map. t-SNE (as before) keeps the most of
+  each track's nearest neighbours; UMAP is as good on a short List and takes seconds instead of minutes for 3,000
+  tracks; PCA is instant and keeps the large-scale distances best. Each layout of the library map is kept, so
+  switching back is instant. All three run in plain numpy, so the download does not grow.
+- **"Map the List only" no longer waits for the previous map.** Choosing another List while a big one was still being
+  arranged first finished the old map (minutes for 3,000 tracks), then threw it away. The old one now stops at once.
+
 ## [1.5.0] - 2026-11-24
 
 - **Checkable downloads.** Each release now carries a signed build-provenance attestation from GitHub (check with

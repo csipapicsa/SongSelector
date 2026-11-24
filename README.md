@@ -181,9 +181,10 @@ filtered now, so narrow the List first to explore one style.
 | *Closest matches* | *all*; *harmonic only* (plus tracks without a key); or *Edges selection*: only the relations checked under *Edges* |
 | Select tracks in the Playlist | Shown on the map with an amber ring, even if the List filters them out (dashed) |
 | *Map the List only* | Map and group just the tracks the List shows; follows the List as it changes |
-| *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks) |
+| *Layout* | t-SNE (tight clumps, most neighbours kept), UMAP (seconds instead of minutes) or PCA (instant, large-scale distances) |
+| *Re-arrange map* | Recompute the layout (a few minutes for 3,000 tracks with t-SNE) |
 
-The map's buttons (*Map the List only*, *Groups*, *Edges*, *3D*, *Fit*, *Re-arrange map*) are below the map.
+The map's buttons (*Map the List only*, *Groups*, *Edges*, *Layout*, *3D*, *Fit*, *Re-arrange map*) are below the map.
 Distances on a 2D map are approximate; the closest-matches list uses the full embeddings.
 
 *View → Search bars* (or dragging the line under them up, as the Playlist and Browser fold away on the left)
