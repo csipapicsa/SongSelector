@@ -11,6 +11,7 @@ docs_dir: userdocs
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -34,6 +35,10 @@ theme:
     - search.highlight
     - content.code.copy
     - content.action.edit
+
+extra:
+  # Google Search Console HTML-tag verification: paste only the content="..." value.
+  google_site_verification: "0APoFJdnxuivGT4Hx9PK5Sw8t_3beLkmrJThX4manyo"
 
 markdown_extensions:
   - admonition
