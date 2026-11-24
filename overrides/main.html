@@ -1,0 +1,10 @@
+{#- Theme override for the user guide. Material's base.html does the real work. -#}
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {#- Google Search Console ownership check; token lives in mkdocs.yml (extra.google_site_verification). -#}
+  {% if config.extra.google_site_verification %}
+  <meta name="google-site-verification" content="{{ config.extra.google_site_verification }}">
+  {% endif %}
+{% endblock %}
