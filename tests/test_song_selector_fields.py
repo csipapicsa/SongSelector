@@ -438,17 +438,50 @@ class MultiSelectionGuiTests(GuiTestBase):
         for tree in (window.candidate_tree, window.playlist_tree):
             self.assertEqual(tree.selectionMode(), QAbstractItemView.ExtendedSelection)
 
-    def test_delete_key_removes_selected_library_rows_after_confirmation(self):
+    def test_delete_key_in_the_list_takes_selected_tracks_off_the_playlist(self):
+        # Asked 2026-11-24: Del in the List removed rows from the library; it should take them off the Playlist.
         from PyQt5.QtCore import Qt
         from PyQt5.QtTest import QTest
+        window = self.window()
+        self.select(window.candidate_tree, 'Song', 'Other')
+        window.add_selected_to_playlist()
+        self.select(window.candidate_tree, 'Song', 'Third')  # Third is not on the Playlist
+        with patch('songselector.ui.main_window.QMessageBox.question') as asked:
+            QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
+        asked.assert_not_called()
+        self.assertEqual(self.titles(window.playlist_tree), ['Other'])
+        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Other', 'Song', 'Third'])  # library unchanged
+        dimmed = {title for title in ('Song', 'Other', 'Third')
+                  if self.item(window.candidate_tree, title).data(0, IN_PLAYLIST_ROLE)}
+        self.assertEqual(dimmed, {'Other'})
+        self.assertIn('Removed 1 track(s) from the playlist', window.status_label.text())
+        self.select(window.candidate_tree, 'Third')            # nothing of it on the Playlist: nothing happens
+        QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
+        self.assertIn('None of the selected tracks are on the Playlist', window.status_label.text())
+        restored = self.restart(window)
+        self.assertEqual(self.titles(restored.playlist_tree), ['Other'])
+        self.assertEqual(sorted(self.titles(restored.candidate_tree)), ['Other', 'Song', 'Third'])
+
+    def test_list_menu_offers_remove_from_playlist_and_keeps_remove_from_library(self):
         from PyQt5.QtWidgets import QMessageBox
         window = self.window()
+        self.select(window.candidate_tree, 'Song', 'Other', 'Third')
+        menu = window.library_context_menu()
+        take_off = self.menu_action(menu, 'Remove from Playlist\tDel')
+        self.assertFalse(take_off.isEnabled())                 # nothing selected is on the Playlist yet
+        self.assertFalse([action for action in menu.actions() if action.text().startswith('Remove from library')
+                          and action.text().endswith('Del')])  # Del is the Playlist's now
+        self.select(window.candidate_tree, 'Song', 'Other')
+        window.add_selected_to_playlist()
+        self.select(window.candidate_tree, 'Song', 'Other', 'Third')
+        menu = window.library_context_menu()
+        take_off = self.menu_action(menu, 'Remove from Playlist (2 tracks)\tDel')  # counts those on the Playlist
+        self.assertTrue(take_off.isEnabled())
+        take_off.trigger()
+        self.assertEqual(window.playlist_tree.topLevelItemCount(), 0)
         self.select(window.candidate_tree, 'Song', 'Third')
-        with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.No):
-            QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
-        self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Other', 'Song', 'Third'])
         with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
-            QTest.keyClick(window.candidate_tree, Qt.Key_Delete)
+            self.menu_action(window.library_context_menu(), 'Remove from library (2 tracks)').trigger()
         self.assertEqual(self.titles(window.candidate_tree), ['Other'])
         self.assertTrue(self.song.exists() and self.third.exists())
         restored = self.restart(window)
@@ -493,7 +526,7 @@ class MultiSelectionGuiTests(GuiTestBase):
         self.assertEqual(self.item(window.candidate_tree, 'Test title').text(HEADER_INDEX['Comment']), 'Big room')
         self.assertEqual(extract_audio_metadata(self.other).comment, 'Big room')
         with patch('songselector.ui.main_window.QMessageBox.question', return_value=QMessageBox.Yes):
-            self.menu_action(window.library_context_menu(), 'Remove from library\tDel').trigger()
+            self.menu_action(window.library_context_menu(), 'Remove from library').trigger()
         self.assertEqual(sorted(self.titles(window.candidate_tree)), ['Song', 'Third'])
 
 

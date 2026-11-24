@@ -8,6 +8,12 @@ builds below are called 4.5.0–4.26.0. With the first public release, SongSelec
 version line at **1.0.0**. The 4.x entries are kept unchanged as pre-1.0 history; commit messages
 from that period still mention 4.x numbers.
 
+## [Unreleased]
+
+- **Del in the List takes tracks off the Playlist**, as it does in the Playlist itself, instead of removing them from
+  the library. The List's right-click menu gets *Remove from Playlist*; *Remove from library* is still there (it
+  asks first) but no longer on Del.
+
 ## [1.5.0] - 2026-11-24
 
 - **Checkable downloads.** Each release now carries a signed build-provenance attestation from GitHub (check with
