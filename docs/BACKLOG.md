@@ -162,6 +162,10 @@ One PR per block below, in this order; each with tests (a failing test first for
       dropping the first few dominant components) rather than from t-SNE; measure with the
       genre/colour labels as in `docs/research/audio_embeddings.md`.
 - [ ] Map: faster layout for very large libraries (Barnes-Hut t-SNE, or arrange a sample + place_new).
+- [ ] Map: other projections besides t-SNE, **UMAP** or **PCA** (asked 2026-11-24). PCA is instant and keeps
+      global distances (where blobs sit relative to each other), which t-SNE does not; UMAP keeps more global structure
+      than t-SNE and is faster on large libraries, but `umap-learn` pulls in numba/pynndescent (exe size), so measure
+      that or look for a numpy-only route, as t-SNE is today. Compare with the genre/colour labels (neighbour purity).
 - [ ] Map: lasso selection, labels for the selected track's neighbours, a legend for the edge colours.
 - [ ] Re-check the per-track vector (`similarity.track_vectors`) once more styles are analysed.
 - [x] **Several embedding models, chosen by the user** (asked 2026-11-13, done in 1.1.0). Today: CNN14 only. Add the CLAP models
