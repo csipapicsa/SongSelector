@@ -126,7 +126,7 @@ class DraggableTreeWidget(QTreeWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete and self.selectedItems():
-            self.parent_app.remove_selected_tracks(self)
+            self.parent_app.delete_pressed(self)
             event.accept()
             return
         super().keyPressEvent(event)

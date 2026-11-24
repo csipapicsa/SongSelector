@@ -16,6 +16,9 @@ from that period still mention 4.x numbers.
   switching back is instant. All three run in plain numpy, so the download does not grow.
 - **"Map the List only" no longer waits for the previous map.** Choosing another List while a big one was still being
   arranged first finished the old map (minutes for 3,000 tracks), then threw it away. The old one now stops at once.
+- **Del in the List takes tracks off the Playlist**, as it does in the Playlist itself, instead of removing them from
+  the library. The List's right-click menu gets *Remove from Playlist*; *Remove from library* is still there (it
+  asks first) but no longer on Del.
 
 ## [1.5.0] - 2026-11-24
 
