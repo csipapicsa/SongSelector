@@ -36,8 +36,9 @@ Mixxx, reads their libraries automatically, and answers three questions:
   types) as edges on the map and as a filter for the closest matches
 
 **Audio similarity and free-text search**
-- Three embedding models to choose from: CNN14 (sound similarity, 5 s windows), LAION CLAP and Microsoft
-  CLAP (sound *and* text in one space, 10 s / 7 s windows). You pick which ones are analysed and which one
+- Four embedding models to choose from: CNN14 (sound similarity, 5 s windows), LAION CLAP, Microsoft CLAP and
+  MTG AllMusicCaps CLAP (sound *and* text in one space, 10 s / 7 s / 10 s windows; AllMusicCaps is
+  non-commercial). You pick which ones are analysed and which one
   the map uses; each track is decoded once for all of them, in a low-priority background process, on the
   GPU through DirectML (any DirectX 12 card) or on the CPU
 - **Search by description:** a typed prompt is turned into a CLAP text vector and the closest tracks are
@@ -74,7 +75,7 @@ What is behind the features, and where to look:
 | Area | What | Where |
 |---|---|---|
 | Architecture | Logic in `core/` (no widgets, unit-tested), PyQt5 UI in `ui/`. Embedding analysis in a separate process at low CPU and I/O priority, with crash recovery, so the UI and Traktor stay responsive | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| ML inference | Three models exported to ONNX, every one taking raw audio (LAION's spectrogram built into the graph); DirectML / CUDA / CPU chosen at runtime, batch sizes measured per model. Text encoders run in their own process with the `tokenizers` library, no PyTorch in the app | [core/embeddings.py](src/songselector/core/embeddings.py), [core/text_search.py](src/songselector/core/text_search.py), [research note](docs/research/text_search_clap.md) |
+| ML inference | Four models exported to ONNX, every one taking raw audio (LAION's spectrogram built into the graph); DirectML / CUDA / CPU chosen at runtime, batch sizes measured per model. Text encoders run in their own process with the `tokenizers` library, no PyTorch in the app | [core/embeddings.py](src/songselector/core/embeddings.py), [core/text_search.py](src/songselector/core/text_search.py), [research note](docs/research/text_search_clap.md) |
 | Model choice by measurement | CPU and GPU cost of LAION vs Microsoft CLAP measured before any app work; a broken model (collapsed embeddings) caught and excluded | [docs/research/text_search_clap.md](docs/research/text_search_clap.md) |
 | Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
 | Testing | About 320 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
@@ -101,7 +102,7 @@ self-contained (no Python needed). Check them against `SHA256SUMS.txt` from the 
   On Linux the app reads Mixxx's library (also Mixxx from Flathub); Traktor and Rekordbox do not run there.
 
 The embedding models (similarity map, closest matches, groups, search by description) are a separate, optional
-download (up to 1.6 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
+download (up to 2.3 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
 ([below](#getting-the-embedding-models)). Everything else works without them.
 
 The app stores its data in one folder: on Windows **next to the exe**, on Linux in `~/.local/share/SongSelector`
@@ -112,7 +113,7 @@ The app stores its data in one folder: on Windows **next to the exe**, on Linux 
 | `SongSelector_settings.json` | Columns, search settings, tempo, colouring |
 | `library.sqlite` | Every track loaded, your own ratings and colours, playlists and smartlists |
 | `embeddings.sqlite` | CNN14 embeddings: a cache, safe to delete, rebuilt in the background |
-| `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite` | The same for the CLAP models |
+| `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite`, `embeddings-amc-clap.sqlite` | The same for the CLAP models |
 | `models\` | The model files (next section) |
 
 To upgrade, put the new exe in the same folder (Linux: replace the AppImage). Settings from versions before 1.1
