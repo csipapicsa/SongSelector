@@ -1312,6 +1312,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
             add = menu.addAction('Add to Playlist' + (f' ({len(paths)} tracks)' if len(paths) > 1 else ''))
             add.setEnabled(bool(paths))
             add.triggered.connect(self.add_selected_to_playlist)
+            # Asked 2026-11-24: Del in the List takes tracks off the Playlist (it removed them from the library).
+            listed = self._on_playlist(paths)
+            take_off = menu.addAction('Remove from Playlist' + (f' ({len(listed)} tracks)' if len(listed) > 1 else '')
+                                      + '\tDel')
+            take_off.setToolTip('Takes the selected tracks that are on the Playlist off it; they stay in the library.')
+            take_off.setEnabled(bool(listed))
+            take_off.triggered.connect(self.remove_selected_from_playlist)
             menu.addSeparator()
         edit = menu.addAction('Edit track info (Artist, Title, Genre, Comment)...')
         edit.setToolTip('Edits one track; with several rows selected, the one clicked last.')
@@ -1339,7 +1346,8 @@ class MainWindow(SavedListsMixin, QMainWindow):
         color_menu.setEnabled(bool(paths))
 
         menu.addSeparator()
-        remove = menu.addAction(f'Remove from {"library" if tree is self.candidate_tree else "playlist"}{count}\tDel')
+        remove = menu.addAction('Remove from library' + count if tree is self.candidate_tree
+                                else f'Remove from playlist{count}\tDel')
         remove.setToolTip('Removes the rows from this list only. Files on disk are not deleted.')
         remove.setEnabled(bool(paths))
         remove.triggered.connect(lambda: self.remove_selected_tracks(tree))
@@ -1359,8 +1367,30 @@ class MainWindow(SavedListsMixin, QMainWindow):
         return menu
 
     def remove_selected_tracks(self, tree, confirm=True):
-        """Remove the selected rows from the library or playlist list (Delete key)."""
+        """Remove the selected rows from the library or playlist list."""
         return self._remove_tracks(tree, tree.selected_paths(), confirm, 'track(s)')
+
+    def delete_pressed(self, tree):
+        """Del: in the Playlist and in the List alike, takes the selected tracks off the Playlist. Removing rows from
+        the library is only in the List's right-click menu (it asks first)."""
+        if tree is self.candidate_tree:
+            return self.remove_selected_from_playlist()
+        return self.remove_selected_tracks(tree)
+
+    def _on_playlist(self, paths):
+        """The paths (of the List's selection) that are on the Playlist."""
+        keys = {canonical_path(path) for path in self.playlist_paths}
+        return [path for path in paths if canonical_path(path) in keys]
+
+    def remove_selected_from_playlist(self):
+        """Take the List's selected tracks off the Playlist; the List keeps them (no longer dimmed)."""
+        paths = self._on_playlist(self.candidate_tree.selected_paths())
+        if not paths:
+            self.status_label.setStyleSheet(status_style('ok'))
+            self.status_label.setText('None of the selected tracks are on the Playlist '
+                                      '(to remove them from the library: right-click → Remove from library)')
+            return 0
+        return self._remove_tracks(self.playlist_tree, paths, False, 'track(s)')
 
     def remove_missing_tracks(self, tree, confirm=True):
         """Remove every row of this panel's list whose file no longer exists, including
