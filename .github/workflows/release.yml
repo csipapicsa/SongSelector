@@ -210,6 +210,9 @@ jobs:
     permissions:
       contents: write   # editing the release notes
     uses: ./.github/workflows/virustotal.yml
+    # A called workflow sees no secrets unless the caller passes them, environment secrets included: without this
+    # the VIRUSTOTAL_API_KEY environment's key came through empty (1.5.0) while a run by hand worked.
+    secrets: inherit
     with:
       tag: ${{ github.ref_name }}
       update_notes: true
