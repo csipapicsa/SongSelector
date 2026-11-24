@@ -1,8 +1,9 @@
 """Similarity map: every track of the (filtered) library as a dot; similar tracks lie close.
 
-- Positions come from core.similarity.tsne_layout, computed in a background thread and
-  cached in embeddings.sqlite. Tracks analysed later are placed next to their most
-  similar tracks (place_new) until the map is re-arranged.
+- Positions come from the chosen layout (core.similarity.PROJECTIONS: t-SNE, UMAP or PCA),
+  computed in a background thread; t-SNE and UMAP layouts are cached in embeddings.sqlite.
+  Tracks analysed later are placed next to their most similar tracks (place_new) until the
+  map is re-arranged.
 - The map shows the rows the library list currently shows (same search and filters),
   and reads their table texts, so keys are tempo-adjusted exactly as in the list.
 - "Closest matches" are exact (cosine similarity of the full vectors), because any 2D
@@ -77,16 +78,18 @@ from songselector.core.placement import (
 )
 from songselector.core.search_filters import NUMERIC_COLUMNS
 from songselector.core.similarity import (
+    DEFAULT_PROJECTION,
     EDGE_SAME_COLOR,
     EDGE_SAME_RATING,
+    PROJECTIONS,
     centred_unit,
     connection,
     display_color,
     nearest,
     place_new,
+    project,
     raw_vectors,
     track_vectors,
-    tsne_layout,
 )
 from songselector.core.traktor_collection import canonical_path
 from songselector.ui.busy_spinner import BusySpinner
@@ -218,12 +221,12 @@ class MapData:
         return keys
 
 
-def _layout(keys, vectors, stored, dims, should_stop):
+def _layout(keys, vectors, stored, dims, should_stop, projection=DEFAULT_PROJECTION):
     """{key: position} from the stored layout, with new tracks placed near their most similar
-    tracks; a new t-SNE when there is none yet or most tracks are new. None if stopped."""
+    tracks; a new layout when there is none yet or most tracks are new. None if stopped."""
     placed = [key for key in keys if key in stored]
     if len(keys) >= 3 and len(placed) < len(keys) / 2:
-        points = tsne_layout(vectors, should_stop=should_stop, dims=dims)  # first map, or mostly new tracks
+        points = project(vectors, projection, should_stop, dims)  # first map, or mostly new tracks
         if points is None:
             return None
         return {key: tuple(point) for key, point in zip(keys, points)}
@@ -237,30 +240,41 @@ def _layout(keys, vectors, stored, dims, should_stop):
     return positions
 
 
-def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=False, only=None):
+def layout_cache_id(store, projection):
+    """The `model` a layout is cached under: t-SNE under the model's own id (as before layouts could be chosen),
+    others under '<model id>:<projection>'; None for PCA, which is computed every time (a second, and exact)."""
+    if projection == 'pca':
+        return None
+    return store.spec.id if projection == DEFAULT_PROJECTION else f'{store.spec.id}:{projection}'
+
+
+def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=False, only=None,
+                   projection=DEFAULT_PROJECTION):
     """Load embeddings, compute vectors and positions (and the 3D view's, if asked); None if
     stopped. Slow: run in a thread.
 
     only: path_keys to map on their own. Vectors (centred on these tracks), layout and
     everything built on them then fit just this set, e.g. one genre, which separates it better
-    than the whole library does. Computed fresh and not stored: the library's layout stays."""
+    than the whole library does. Computed fresh and not stored: the library's layout stays.
+    projection: a PROJECTIONS name; each one keeps its own cached library layout."""
     matrices = store.load_many() if only is None else store.load_many(only)
     keys = sorted(matrices)
     vectors, centre = track_vectors([matrices[key] for key in keys], with_centre=True)
-    stored = {} if rearrange or only is not None else store.load_layout()
-    positions = _layout(keys, vectors, stored, 2, should_stop)
+    cache = None if only is not None else layout_cache_id(store, projection)
+    stored = {} if rearrange or cache is None else store.load_layout(cache)
+    positions = _layout(keys, vectors, stored, 2, should_stop, projection)
     if positions is None:
         return None
-    if only is None and positions != stored:
-        store.save_layout(positions)
+    if cache is not None and positions != stored:
+        store.save_layout(positions, cache)
     positions3d = {}
     if with_3d:
-        stored = {} if rearrange or only is not None else store.load_layout_3d()
-        positions3d = _layout(keys, vectors, stored, 3, should_stop)
+        stored = {} if rearrange or cache is None else store.load_layout_3d(cache)
+        positions3d = _layout(keys, vectors, stored, 3, should_stop, projection)
         if positions3d is None:
             return None
-        if only is None and positions3d != stored:
-            store.save_layout_3d(positions3d)
+        if cache is not None and positions3d != stored:
+            store.save_layout_3d(positions3d, cache)
     return MapData(keys, vectors, positions, positions3d, centre)
 
 
@@ -850,6 +864,21 @@ class SimilarityMapWidget(QWidget):
         self.view_3d_button.toggled.connect(self.set_3d)
         self.rearrange_button = QPushButton('Re-arrange map')
         self.rearrange_button.clicked.connect(self._rearrange)
+        # How the tracks are laid out (asked 2026-11-24): each gives another view of the same similarities.
+        self.projection = QComboBox()
+        for name, (label, _layout_function) in PROJECTIONS.items():
+            self.projection.addItem(label, name)
+        self.projection.setCurrentIndex(max(self.projection.findData(settings.get('Map projection')), 0))
+        self.projection.setToolTip(
+            'How the tracks are laid out on the map (the closest matches list does not change):\n'
+            't-SNE: tight, well separated clumps; keeps the most of each track\'s nearest neighbours,\n'
+            '  but the distance between two clumps means little. Slowest (minutes for 3,000 tracks).\n'
+            'UMAP: as good as t-SNE on a short List, fewer neighbours kept on a big map; similar clumps\n'
+            '  sit a bit closer together. Seconds for 3,000 tracks.\n'
+            'PCA: the two main directions in which the tracks differ. Instant, and distances across\n'
+            '  the whole map mean the most, but neighbours mix and clumps blur together.\n'
+            'The library map of t-SNE and UMAP is kept, so switching back is instant.')
+        self.projection.currentIndexChanged.connect(self._projection_changed)
         # Not on the toolbar since 2026-11-20 (user's decision: the map's own window made no sense in use); kept, as
         # MainWindow.set_map_detached keeps its state on it, in case the feature comes back.
         self.detach_button = QPushButton('Own window')
@@ -908,6 +937,8 @@ class SimilarityMapWidget(QWidget):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         toolbar.addWidget(spacer)
+        toolbar.addWidget(QLabel('Layout '))
+        toolbar.addWidget(self.projection)
         for widget in (self.view_3d_button, fit, self.rearrange_button):
             toolbar.addWidget(widget)
         self.toolbar = toolbar
@@ -1022,14 +1053,20 @@ class SimilarityMapWidget(QWidget):
         self._remap()
 
     def _remap(self):
-        """Load the map again for the current mode; a running load is for an outdated mode: load once more after it."""
+        """Load the map again for the current mode. A running load is for an outdated mode: stop it and load once
+        more when it has ended (reported 2026-11-24: a new List waited for the old 3,000-track map to finish)."""
         self._fit_next = True
         if self.data is None:
             return
         if self._loading:
             self._again = True
+            self._stop.set()
         else:
             self.load()
+
+    def _projection_changed(self, _index=0):
+        self.settings['Map projection'] = self.projection.currentData()
+        self._remap()
 
     def _follow_list(self):
         """'Map the List only': map the List as it is now, unless the map already shows exactly these tracks."""
@@ -1056,11 +1093,11 @@ class SimilarityMapWidget(QWidget):
                             if rearrange or self.data is None or first_3d or self.only is not None
                             else 'Updating the map...')
         self._stop.clear()
-        with_3d, only = self.view_3d, self.only
+        with_3d, only, projection = self.view_3d, self.only, self.projection.currentData()
 
         def work():
             try:
-                result = build_map_data(self.store, rearrange, self._stop.is_set, with_3d, only)
+                result = build_map_data(self.store, rearrange, self._stop.is_set, with_3d, only, projection)
             except Exception as error:  # e.g. database busy: report, keep the old map
                 result = error
             self._loader.done.emit(result)

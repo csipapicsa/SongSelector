@@ -7,10 +7,13 @@ similar tracks, 92 % were from the same folder (DnB) and 89 % for the minority s
 (breakbeat, 11 % of tracks). The plain mean scored 98 % / 81 %. Keep the choice in this
 one function, so it can be re-evaluated once more styles are analysed.
 
-Map (tsne_layout): t-SNE in plain numpy (no scikit-learn in the exe). On the same data,
-t-SNE kept 46-47 % of each track's 10 true nearest neighbours as map neighbours, UMAP
-37-42 %, PCA 26 %. Because any 2D map distorts, use nearest() for "most similar" lists;
-the map is for overview.
+Map (PROJECTIONS: tsne_layout, umap_layout, pca_layout): plain numpy (no scikit-learn or
+numba in the exe). On the same data, t-SNE kept 46-47 % of each track's 10 true nearest
+neighbours as map neighbours, UMAP 37-42 %, PCA 26 %. Again 2026-11-24 on 3,411 LAION CLAP
+tracks (kept / Spearman rho of pair distances, i.e. global structure / seconds), 3,000 tracks:
+t-SNE 35 % / 0.50 / 142 s, UMAP 22 % / 0.56 / 6 s (umap-learn 24 % / 0.54), PCA 7 % / 0.60 /
+instant; 100 tracks: t-SNE 53 %, UMAP 57 % (umap-learn 57 %), PCA 34 %. Because any 2D map
+distorts, use nearest() for "most similar" lists; the map is for overview.
 """
 import numpy as np
 
@@ -120,6 +123,155 @@ def tsne_layout(vectors, perplexity=PERPLEXITY, iterations=750, seed=0, should_s
         velocity = momentum * velocity - rate * gains * gradient
         y = y + velocity
     return (y - y.mean(0)).astype(np.float32)
+
+
+def _top_components(data, dims, seed=0, power_steps=4):
+    """Projection of `data` (centred here) on its first `dims` principal axes: randomized SVD (Halko et al. 2011),
+    seconds instead of minutes for 5,000 x 4,096. Signs fixed (each axis's largest score is positive), so the same
+    tracks give the same picture, not a mirrored one."""
+    centred = np.asarray(data, np.float32)
+    centred = centred - centred.mean(0)
+    rank = min(dims + 10, *centred.shape)
+    basis = centred @ np.random.default_rng(seed).normal(size=(centred.shape[1], rank)).astype(np.float32)
+    for _ in range(power_steps):  # sharpens the leading axes; QR keeps the iteration numerically stable
+        basis, _ = np.linalg.qr(basis)
+        basis, _ = np.linalg.qr(centred.T @ basis)
+        basis = centred @ basis
+    basis, _ = np.linalg.qr(basis)
+    left, values, _ = np.linalg.svd(basis.T @ centred, full_matrices=False)
+    scores = (basis @ left[:, :dims]) * values[:dims]
+    if scores.shape[1] < dims:  # fewer tracks than dimensions: the missing axes are flat
+        scores = np.hstack([scores, np.zeros((len(scores), dims - scores.shape[1]), scores.dtype)])
+    signs = np.sign(scores[np.abs(scores).argmax(0), np.arange(dims)])
+    return (scores * np.where(signs == 0, 1, signs)).astype(np.float32)
+
+
+def pca_layout(vectors, should_stop=lambda: False, dims=2):
+    """(n, dims) map coordinates: the first principal axes of the track vectors. Instant and linear, so distances
+    between far-apart groups mean something (t-SNE and UMAP do not keep them), but neighbours mix more."""
+    vectors = np.asarray(vectors, np.float32)
+    if len(vectors) < 2:
+        return np.zeros((len(vectors), dims), dtype=np.float32)
+    return None if should_stop() else _top_components(vectors, dims)
+
+
+# UMAP (McInnes, Healy & Melville 2018) with umap-learn's defaults: 15 neighbours, min_dist 0.1, spread 1, 5 negative
+# samples per edge. a and b fit the curve 1 / (1 + a d^2b) to min_dist 0.1 (umap-learn's find_ab_params).
+UMAP_NEIGHBOURS = 15
+UMAP_A, UMAP_B = 1.5769, 0.8951
+UMAP_NEGATIVES = 5
+
+
+def _nearest_neighbours(vectors, count, should_stop, block=1024):
+    """(indexes, distances), each (n, count): every row's `count` nearest other rows, nearest first. Exact, in
+    blocks of rows, so memory stays at block x n."""
+    n = len(vectors)
+    squared = (vectors ** 2).sum(1)
+    indexes = np.empty((n, count), dtype=np.int64)
+    distances = np.empty((n, count), dtype=np.float32)
+    for start in range(0, n, block):
+        if should_stop():
+            return None
+        stop = min(start + block, n)
+        part = squared[start:stop, None] + squared[None, :] - 2 * (vectors[start:stop] @ vectors.T)
+        part[np.arange(stop - start), np.arange(start, stop)] = np.inf  # not its own neighbour
+        nearest_rows = np.argpartition(part, count - 1, axis=1)[:, :count]
+        near = np.take_along_axis(part, nearest_rows, 1)
+        order = np.argsort(near, 1)
+        indexes[start:stop] = np.take_along_axis(nearest_rows, order, 1)
+        distances[start:stop] = np.sqrt(np.maximum(np.take_along_axis(near, order, 1), 0))
+    return indexes, distances
+
+
+def _fuzzy_graph(indexes, distances, steps=64):
+    """UMAP's neighbour graph as (heads, tails, weights), both directions of each edge: per track, weights
+    exp(-(d - d_nearest) / sigma) with sigma chosen so they sum to log2(k); then w + w' - w w' over both directions."""
+    n, count = indexes.shape
+    rho = distances[:, 0]
+    excess = np.maximum(distances - rho[:, None], 0).astype(np.float64)
+    target = np.log2(count)
+    low, high, sigma = np.zeros(n), np.full(n, np.inf), np.ones(n)
+    for _ in range(steps):
+        total = np.exp(-excess / sigma[:, None]).sum(1)
+        too_wide = total > target
+        high = np.where(too_wide, sigma, high)
+        low = np.where(too_wide, low, sigma)
+        sigma = np.where(np.isinf(high), sigma * 2, (low + high) / 2)
+    sigma = np.maximum(sigma, 1e-3 * max(float(distances.mean()), 1e-12))
+    weights = np.exp(-excess / sigma[:, None]).ravel()
+    heads, tails = np.repeat(np.arange(n), count), indexes.ravel()
+    keys, inverse = np.unique(np.concatenate([heads * n + tails, tails * n + heads]), return_inverse=True)
+    forward = np.bincount(inverse[:len(weights)], weights, len(keys))   # w(i -> j)
+    backward = np.bincount(inverse[len(weights):], weights, len(keys))  # w(j -> i)
+    return keys // n, keys % n, forward + backward - forward * backward
+
+
+def umap_layout(vectors, neighbours=UMAP_NEIGHBOURS, epochs=None, seed=0, should_stop=lambda: False, dims=2):
+    """(n, dims) map coordinates with UMAP: keeps each track's nearest neighbours, as t-SNE does, and more of the
+    larger structure (which groups sit next to each other). Plain numpy (no umap-learn: it needs numba).
+
+    Exact nearest neighbours (as nearest() ranks them), PCA initialisation, and umap-learn's optimiser with one
+    difference: each epoch applies all its edge updates at once (vectorized, as GPU versions do) instead of one
+    edge after another."""
+    vectors = np.asarray(vectors, np.float32)
+    n = len(vectors)
+    if n < 3:
+        return np.zeros((n, dims), dtype=np.float32)
+    epochs = epochs or (500 if n <= 10_000 else 200)
+    found = _nearest_neighbours(vectors, min(neighbours, n - 1), should_stop)
+    if found is None:
+        return None
+    heads, tails, weights = _fuzzy_graph(*found)
+    keep = weights >= weights.max() / epochs  # edges too weak to be sampled once
+    heads, tails, weights = heads[keep], tails[keep], weights[keep]
+    every = weights.max() / weights           # an edge is sampled every this many epochs
+    next_sample = every.copy()
+
+    rng = np.random.default_rng(seed)
+    y = _top_components(vectors, dims, seed)
+    y = 10 * y / max(float(np.abs(y).max()), 1e-12) + rng.normal(0, 1e-4, y.shape).astype(np.float32)
+    a, b = np.float32(UMAP_A), np.float32(UMAP_B)
+    for epoch in range(epochs):
+        if should_stop():
+            return None
+        due = next_sample <= epoch + 1
+        next_sample[due] += every[due]
+        head, tail = heads[due], tails[due]
+        rate = np.float32(1 - epoch / epochs)
+        step = np.zeros_like(y)
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):  # d = 0 gives inf * 0: masked out
+            # Attraction along the sampled edges, both ends move.
+            offset = y[head] - y[tail]
+            squared = (offset ** 2).sum(1, keepdims=True)
+            pull = -2 * a * b * squared ** (b - 1) / (a * squared ** b + 1)
+            pull = np.clip(np.where(squared > 0, pull * offset, 0), -4, 4) * rate
+            # Repulsion from random tracks, only the head moves.
+            repelled = np.repeat(head, UMAP_NEGATIVES)
+            offset = y[repelled] - y[rng.integers(0, n, len(repelled))]
+            squared = (offset ** 2).sum(1, keepdims=True)
+            push = 2 * b / ((0.001 + squared) * (a * squared ** b + 1))
+            push = np.where(squared > 0, np.clip(push * offset, -4, 4), 0) * rate
+        for axis in range(dims):
+            step[:, axis] = (np.bincount(head, pull[:, axis], n) - np.bincount(tail, pull[:, axis], n)
+                             + np.bincount(repelled, push[:, axis], n))
+        y += step
+    return (y - y.mean(0)).astype(np.float32)
+
+
+# The map's layouts: setting `Map projection`. t-SNE first: the default, and the layout cached under the model's own
+# id (older versions' caches stay valid); the others are cached under '<model id>:<name>'.
+PROJECTIONS = {
+    'tsne': ('t-SNE', tsne_layout),
+    'umap': ('UMAP', umap_layout),
+    'pca': ('PCA', pca_layout),
+}
+DEFAULT_PROJECTION = 'tsne'
+
+
+def project(vectors, projection=DEFAULT_PROJECTION, should_stop=lambda: False, dims=2):
+    """(n, dims) map coordinates with the named layout (PROJECTIONS); None if stopped."""
+    _, layout = PROJECTIONS.get(projection, PROJECTIONS[DEFAULT_PROJECTION])
+    return layout(vectors, should_stop=should_stop, dims=dims)
 
 
 def place_new(known_points, known_vectors, new_vectors, neighbours=5):

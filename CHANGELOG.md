@@ -10,6 +10,12 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **Choose the map's layout: t-SNE, UMAP or PCA.** A *Layout* box below the map. t-SNE (as before) keeps the most of
+  each track's nearest neighbours; UMAP is as good on a short List and takes seconds instead of minutes for 3,000
+  tracks; PCA is instant and keeps the large-scale distances best. Each layout of the library map is kept, so
+  switching back is instant. All three run in plain numpy, so the download does not grow.
+- **"Map the List only" no longer waits for the previous map.** Choosing another List while a big one was still being
+  arranged first finished the old map (minutes for 3,000 tracks), then threw it away. The old one now stops at once.
 - **Del in the List takes tracks off the Playlist**, as it does in the Playlist itself, instead of removing them from
   the library. The List's right-click menu gets *Remove from Playlist*; *Remove from library* is still there (it
   asks first) but no longer on Del.

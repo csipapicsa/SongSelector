@@ -40,7 +40,19 @@ details (right-click beside the map, or *View → Selected track details*).
 | *Groups* | Colour dots by sound groups the app finds by itself |
 | *Edges* | Lines to harmonic partners (keys at the master tempo), same colour or same rating |
 | *3D* | A 3D map (++shift++ + drag rotates) |
-| *Re-arrange map* | Compute the layout again (a few minutes for 3,000 tracks) |
+| *Layout* | How the dots are laid out: *t-SNE*, *UMAP* or *PCA* (see below) |
+| *Re-arrange map* | Compute the layout again (a few minutes for 3,000 tracks with t-SNE) |
+
+**Which layout?** All three show the same similarities, from different angles:
+
+- *t-SNE* (the default): tight, well separated clumps, and each track's nearest neighbours mostly next to it. How far
+  apart two clumps are means little. The slowest: minutes for 3,000 tracks.
+- *UMAP*: as good as t-SNE on a short List, a little looser on a big map, and similar clumps tend to sit closer
+  together. Seconds for 3,000 tracks.
+- *PCA*: the two main directions in which your tracks differ. Instant, and distances across the whole map mean the
+  most, but clumps blur together.
+
+The library map of each layout is kept, so switching back is instant.
 
 *Closest matches* can show *all* similar tracks, *harmonic only*, or only the relations ticked under *Edges*.
 
