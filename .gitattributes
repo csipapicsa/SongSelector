@@ -5,3 +5,7 @@
 *.patch -text
 *.sh text eol=lf
 *.desktop text eol=lf
+# Notebooks keep their outputs on disk, but git stores them without (outputs can show track names from the personal
+# library). Needs the filter in each clone: `nbstripout --install` (see research/README.md); CI checks the result.
+*.ipynb filter=nbstripout
+*.ipynb diff=ipynb
