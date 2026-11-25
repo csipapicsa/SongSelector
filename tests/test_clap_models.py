@@ -61,7 +61,9 @@ class FakeTextEncoder:
 
 class ModelDefinitionTests(unittest.TestCase):
     def test_models_and_their_files(self):
-        self.assertEqual(list(MODELS), [CNN14.id, LAION_CLAP.id, MS_CLAP.id, AMC_CLAP.id])
+        # 2026-11-24: MTG first among the CLAP models; Microsoft CLAP no longer offered, but still known.
+        self.assertEqual(list(MODELS), [CNN14.id, AMC_CLAP.id, LAION_CLAP.id])
+        self.assertIs(model(MS_CLAP.id), MS_CLAP)
         self.assertEqual((AMC_CLAP.chunk_samples, AMC_CLAP.dim), (240000, 512))
         self.assertTrue(AMC_CLAP.has_text)
         self.assertEqual((LAION_CLAP.chunk_samples, MS_CLAP.chunk_samples, CNN14.chunk_samples), (480000, 308700, 160000))
@@ -391,6 +393,7 @@ class MainWindowModelTests(WindowCase):
         models.mkdir()
         for name in LAION_CLAP.files():
             (models / name).write_bytes(b'x')
+        window.settings['Similarity model'] = CNN14.id  # chosen (with none chosen, LAION would be the default)
         window._refresh_model_box()  # as after a download
         box = window.model_box
         self.assertEqual(box.currentData(), CNN14.id)  # the similarity model, as before
@@ -469,12 +472,52 @@ class MainWindowModelTests(WindowCase):
         window = self.window
         models = self.root / 'models'
         models.mkdir()
-        for name in MS_CLAP.files():
+        for name in AMC_CLAP.files():
             (models / name).write_bytes(b'x')
         window.settings['Embedding analysis'] = False
         with patch.object(window, 'start_embedding_analysis'):
-            messages = window.ensure_models_analysed([MS_CLAP.id])
+            messages = window.ensure_models_analysed([AMC_CLAP.id])
         self.assertIn('paused', messages[0])
+
+    def test_with_no_model_chosen_the_mtg_model_is_the_default_once_its_files_are_there(self):
+        # Asked 2026-11-24: MTG's model is the default; LAION next, CNN14 as before when no CLAP model is there.
+        window = self.window
+        self.assertNotIn('Similarity model', window.settings)
+        self.assertEqual(window.similarity_model_id(), CNN14.id)
+        models = self.root / 'models'
+        models.mkdir()
+        for name in LAION_CLAP.files():
+            (models / name).write_bytes(b'x')
+        self.assertEqual(window.similarity_model_id(), LAION_CLAP.id)
+        for name in AMC_CLAP.files():
+            (models / name).write_bytes(b'x')
+        self.assertEqual(window.similarity_model_id(), AMC_CLAP.id)
+        self.assertIs(window.similarity_map.store, window.model_stores[CNN14.id])  # the map until told
+        with patch.object(window, 'start_embedding_analysis'):  # the stand-in files are not real models
+            window._models_downloaded([AMC_CLAP.id])            # as after Get models
+        self.assertIs(window.similarity_map.store, window.model_stores[AMC_CLAP.id])
+        self.assertEqual(window.settings['Similarity model'], AMC_CLAP.id)
+        self.assertEqual(window.settings['Text search model'], AMC_CLAP.id)
+        self.assertEqual(window.model_box.currentData(), AMC_CLAP.id)
+        listed = [window.model_box.itemData(i) for i in range(window.model_box.count())]
+        self.assertEqual(listed, [AMC_CLAP.id, LAION_CLAP.id])  # MTG before LAION (CNN14 has no file here)
+
+    def test_microsoft_clap_is_no_longer_offered_and_its_choice_falls_back(self):
+        window = self.window
+        models = self.root / 'models'
+        models.mkdir()
+        for spec in (MS_CLAP, AMC_CLAP):
+            for name in spec.files():
+                (models / name).write_bytes(b'x')
+        window.settings.update({'Similarity model': MS_CLAP.id, 'Embedding models': [CNN14.id, MS_CLAP.id]})
+        self.assertEqual(window.similarity_model_id(), AMC_CLAP.id)
+        self.assertEqual(window.enabled_model_ids(), [CNN14.id])
+        self.assertNotIn(MS_CLAP.id, window.model_stores)  # its cache is not opened (the file is left alone)
+        window._update_model_menu()
+        window._refresh_model_box()
+        self.assertNotIn(MS_CLAP.id, window.model_actions)
+        self.assertEqual(window.model_box.findData(MS_CLAP.id), -1)
+        self.assertEqual(window.searchable_models(), [AMC_CLAP])
 
 
 class StatusLabelTests(unittest.TestCase):
@@ -507,7 +550,7 @@ class RealClapModelTests(unittest.TestCase):
         from songselector.core.embeddings import OnnxEmbedder
         from songselector.core.text_search import TextEncoder
         folder = Path(os.environ['SONGSELECTOR_CLAP_MODELS'])
-        for spec in (LAION_CLAP, MS_CLAP):
+        for spec in (LAION_CLAP, AMC_CLAP):
             with self.subTest(spec.name):
                 embedder = OnnxEmbedder(folder / spec.audio_file, model_id=spec.id)
                 rate = spec.sample_rate

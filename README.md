@@ -20,7 +20,7 @@ Mixxx, reads their libraries automatically, and answers three questions:
 - **Will it mix in key at the tempo I'm playing?** With Key Lock off, speeding a track up raises its
   pitch. SongSelector shows every track's key *at the current master tempo*, in Musical, Camelot and
   Open Key notation, and recalculates the whole library as you change the master tempo.
-- **What sounds like this track?** Neural audio models (PANNs CNN14, LAION CLAP, Microsoft CLAP, MTG AllMusicCaps CLAP, run
+- **What sounds like this track?** Neural audio models (MTG AllMusicCaps CLAP, LAION CLAP, PANNs CNN14, run
   through ONNX Runtime; on Windows on the GPU) turn every track into embeddings in the background. A similarity map
   and a closest-matches list then show tracks that *sound* alike, whatever their tags say.
 - **Which of my tracks sound like *this*?** Type a description, *"funky breakbeat with a groovy bassline"*,
@@ -36,14 +36,15 @@ Mixxx, reads their libraries automatically, and answers three questions:
   types) as edges on the map and as a filter for the closest matches
 
 **Audio similarity and free-text search**
-- Four embedding models to choose from: CNN14 (sound similarity, 5 s windows), LAION CLAP, Microsoft CLAP and
-  MTG AllMusicCaps CLAP (sound *and* text in one space, 10 s / 7 s / 10 s windows; AllMusicCaps is
-  non-commercial). You pick which ones are analysed and which one
+- Three embedding models to choose from: MTG AllMusicCaps CLAP (trained on music; the default once downloaded;
+  non-commercial) and LAION CLAP (sound *and* text in one space, 10 s windows), and CNN14 (sound similarity, 5 s
+  windows). You pick which ones are analysed and which one
   the map uses; each track is decoded once for all of them, in a low-priority background process, on the
   GPU through DirectML (any DirectX 12 card) or on the CPU
 - **Search by description:** a typed prompt is turned into a CLAP text vector and the closest tracks are
   listed; prompts can be saved, results dragged onto Traktor
-- Similarity map (t-SNE, 2D or 3D, implemented in numpy to keep scikit-learn out of the exe) with
+- Similarity map (UMAP by default, or t-SNE or PCA; 2D or 3D; implemented in numpy to keep scikit-learn and numba
+  out of the exe) with
   closest matches, drag and drop into Traktor's decks
 - Unsupervised groups (k-means, neighbour communities, map density) as a sortable List column, numbered along
   the map (neighbouring groups get neighbouring numbers) and optionally as row colours (*Cluster group colours*)
@@ -113,7 +114,7 @@ The app stores its data in one folder: on Windows **next to the exe**, on Linux 
 | `SongSelector_settings.json` | Columns, search settings, tempo, colouring |
 | `library.sqlite` | Every track loaded, your own ratings and colours, playlists and smartlists |
 | `embeddings.sqlite` | CNN14 embeddings: a cache, safe to delete, rebuilt in the background |
-| `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite`, `embeddings-amc-clap.sqlite` | The same for the CLAP models |
+| `embeddings-amc-clap.sqlite`, `embeddings-laion-clap.sqlite` | The same for the CLAP models (`embeddings-ms-clap.sqlite` from versions up to 1.5 is no longer used and can be deleted) |
 | `models\` | The model files (next section) |
 
 To upgrade, put the new exe in the same folder (Linux: replace the AppImage). Settings from versions before 1.1
@@ -138,7 +139,9 @@ or is shared by several installations, and downloads go there too. To download f
 | CNN14 | `cnn14.onnx` (327 MB) | [`csipapicsa/songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
 | LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`csipapicsa/songselector-clap-laion`](https://huggingface.co/csipapicsa/songselector-clap-laion) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
 | AllMusicCaps CLAP (MTG) | `clap-amc-audio.onnx`, `clap-amc-text.onnx`, `clap-amc-tokenizer.json` (730 MB) | [`csipapicsa/songselector-clap-amc`](https://huggingface.co/csipapicsa/songselector-clap-amc) | [`mtg-upf/allmusiccaps_all_layers`](https://huggingface.co/mtg-upf/allmusiccaps_all_layers) by MTG (UPF), CC BY-NC-SA 4.0 (non-commercial) | `research/experiments/clap/amclap_onnx.py export` (needs `amclap==0.1.0`) |
-| Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`csipapicsa/songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
+
+Microsoft CLAP ([`csipapicsa/songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms), MS-PL) was offered up to
+1.5; it is no longer, as it was the weakest for DJ music. Its repo and export (`--models ms`) stay for a later use.
 
 To publish a new export: `scripts\publish_models.py --folder <folder>` checks the files against the app's list and
 uploads them with the model cards (`packaging/models/hf/`); then put the printed commits into
@@ -153,7 +156,7 @@ py -3.12 -m venv .export-venv
 
 Then switch the models on under *Analysis → Embedding models*. Each track is decoded once for all of
 them. Speed for a 6-minute track on a GTX 1650 Ti (DirectML): CNN14 0.6 s, LAION CLAP about 2.2 s,
-Microsoft CLAP about 2.8 s, plus 0.8 s decoding; on the CPU several times that. After the first pass
+AllMusicCaps CLAP about 0.9 s, plus 0.8 s decoding; on the CPU several times that. After the first pass
 only new or changed files are analysed. *Analysis → Analyse embeddings in background* pauses it.
 
 ## Using it

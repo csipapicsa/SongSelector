@@ -85,13 +85,20 @@ AMC_CLAP = EmbeddingModel(
     store_file='embeddings-amc-clap.sqlite', batch_sizes=CLAP_BATCH_SIZES,
     text_file='clap-amc-text.onnx', tokenizer_file='clap-amc-tokenizer.json')
 
-MODELS = {model.id: model for model in (CNN14, LAION_CLAP, MS_CLAP, AMC_CLAP)}
+# The models the app offers (menus, Model box, Get models, analysis), in menu order: the music-trained CLAP first.
+# Microsoft CLAP is not offered since 2026-11-24 (user's decision): for DJ use (genre, style) it was the weakest; its
+# definition and download entry stay for a later use such as searching sound samples. Its cache file is left alone.
+MODELS = {model.id: model for model in (CNN14, AMC_CLAP, LAION_CLAP)}
+RETIRED_MODELS = {MS_CLAP.id: MS_CLAP}
 DEFAULT_MODEL_IDS = [CNN14.id]
+# The similarity model (map, closest matches, description search) until one is chosen: the first of these whose files
+# are there, else CNN14 as before. MTG first (2026-11-24): it found genres best on a real DJ library.
+PREFERRED_SIMILARITY_IDS = [AMC_CLAP.id, LAION_CLAP.id, CNN14.id]
 
 
 def model(model_id):
-    """The model with this id; CNN14 for an unknown id (e.g. a setting from a newer version)."""
-    return MODELS.get(model_id, CNN14)
+    """The model with this id, offered or retired; CNN14 for an unknown id (e.g. a setting from a newer version)."""
+    return MODELS.get(model_id) or RETIRED_MODELS.get(model_id, CNN14)
 
 
 def store_path(data_dir, spec):

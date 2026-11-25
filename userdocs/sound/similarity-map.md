@@ -45,9 +45,9 @@ details (right-click beside the map, or *View → Selected track details*).
 
 **Which layout?** All three show the same similarities, from different angles:
 
-- *t-SNE* (the default): tight, well separated clumps, and each track's nearest neighbours mostly next to it. How far
+- *t-SNE*: tight, well separated clumps, and each track's nearest neighbours mostly next to it. How far
   apart two clumps are means little. The slowest: minutes for 3,000 tracks.
-- *UMAP*: as good as t-SNE on a short List, a little looser on a big map, and similar clumps tend to sit closer
+- *UMAP* (the default): as good as t-SNE on a short List, a little looser on a big map, and similar clumps tend to sit closer
   together. Seconds for 3,000 tracks.
 - *PCA*: the two main directions in which your tracks differ. Instant, and distances across the whole map mean the
   most, but clumps blur together.

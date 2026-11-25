@@ -49,7 +49,7 @@ def _check_clap_models():
     from PyQt5.QtWidgets import QApplication
 
     from songselector.config import APP_DATA_DIR
-    from songselector.core.embedding_models import LAION_CLAP, MS_CLAP
+    from songselector.core.embedding_models import AMC_CLAP, LAION_CLAP
     from songselector.core.embeddings import EmbeddingStore, OnnxEmbedder
     from songselector.core.text_search import clap_track_vector
     from songselector.core.traktor_collection import canonical_path
@@ -59,10 +59,10 @@ def _check_clap_models():
     tone=APP_DATA_DIR/'clap_check.wav'
     seconds=np.arange(12*44100)/44100
     soundfile.write(str(tone),(0.3*np.sin(2*np.pi*220*seconds)).astype(np.float32),44100)
-    stores=[EmbeddingStore(APP_DATA_DIR/f'clap_check_{spec.id}.sqlite',spec=spec) for spec in (LAION_CLAP,MS_CLAP)]
+    stores=[EmbeddingStore(APP_DATA_DIR/f'clap_check_{spec.id}.sqlite',spec=spec) for spec in (LAION_CLAP,AMC_CLAP)]
     from functools import partial
     analyzer=EmbeddingAnalyzer(stores[0],folder/LAION_CLAP.audio_file,partial(OnnxEmbedder,model_id=LAION_CLAP.id),
-                               extra_models=[(stores[1],folder/MS_CLAP.audio_file)])
+                               extra_models=[(stores[1],folder/AMC_CLAP.audio_file)])
     analyzer.submit([(canonical_path(tone),str(tone))])
     analyzer.start()
     try:
@@ -125,7 +125,7 @@ def _check_model_download():
             model_download.download('check.bin',folder,f'http://127.0.0.1:{server.server_port}/',files)
             assert Path(folder,'check.bin').read_bytes()==data
             if os.environ.get('SONGSELECTOR_VERIFY_DOWNLOAD')=='1':
-                for name in ('clap-laion-tokenizer.json','clap-ms-tokenizer.json'):
+                for name in ('clap-laion-tokenizer.json','clap-amc-tokenizer.json'):
                     model_download.download(name,folder)
                 return 'ok, local and Hugging Face (tokenizer files)'
     finally:

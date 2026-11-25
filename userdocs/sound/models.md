@@ -4,8 +4,8 @@ The similarity map, closest matches, groups and search by description use **audi
 listen to each track and describe its sound as numbers. They're an optional, separate download.
 
 !!! note "These are public models, not SongSelector's own"
-    Each model was made and published by a research group: PANNs (Kong et al.), LAION, Microsoft and the Music
-    Technology Group (MTG) in Barcelona. SongSelector only converts them so they run inside the app, and credits
+    Each model was made and published by a research group: PANNs (Kong et al.), LAION and the Music Technology
+    Group (MTG) in Barcelona. SongSelector only converts them so they run inside the app, and credits
     each one on its download page. None of them was trained for DJing: some learned from general sounds, some from
     music with written reviews. So **expect surprises**: a model can group tracks in ways that make no sense to you,
     and search results depend a lot on the words you use. Try several models and phrasings, and treat the results
@@ -25,11 +25,15 @@ before use.
 |---|---|---|---|---|---|
 | CNN14 | Kong et al. (PANNs), 2020 | General sounds (AudioSet) | Sound similarity (map, closest matches) | 327 MB | CC BY 4.0 |
 | LAION CLAP | LAION, 2023 | Mostly sound effects and general audio, with captions | Similarity **and** search by description | 630 MB | Apache 2.0 |
-| Microsoft CLAP | Microsoft, 2023 | General audio with captions | Similarity **and** search by description | 640 MB | MS-PL |
 | AllMusicCaps CLAP | MTG, Universitat Pompeu Fabra | **Music**, with captions written from album reviews | Similarity **and** search by description | 730 MB | CC BY-NC-SA 4.0, **non-commercial** |
 
-Not sure where to start? **AllMusicCaps CLAP** was trained on music and found genres best in our own small test. See
+Not sure where to start? **AllMusicCaps CLAP** was trained on music and found genres best in our own small test.
+Once it's downloaded it's the model the map and search use, unless you pick another in the **Model** box. See
 [its page](allmusiccaps.md) for what it is and its licence.
+
+!!! info "Microsoft CLAP"
+    Versions up to 1.5 also offered Microsoft CLAP. For DJ music it was the weakest of the models, so it's no longer
+    offered. If you downloaded it, its cache `embeddings-ms-clap.sqlite` and its `clap-ms-*` files can be deleted.
 
 ## Analysis
 
@@ -60,5 +64,4 @@ another folder, for example one shared by several installations.
 Each model has its own page on Hugging Face naming the original authors, the paper, what was changed (only the file
 format) and the licence: [CNN14](https://huggingface.co/csipapicsa/songselector-cnn14),
 [LAION CLAP](https://huggingface.co/csipapicsa/songselector-clap-laion),
-[Microsoft CLAP](https://huggingface.co/csipapicsa/songselector-clap-ms),
 [AllMusicCaps CLAP](https://huggingface.co/csipapicsa/songselector-clap-amc).

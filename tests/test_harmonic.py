@@ -35,6 +35,12 @@ MIXED_IN_KEY_TABLE = '''
 '''
 
 
+def g_jump_sharp_targets(start):
+    """Our own move on top of the table: minor -> minor three semitones either way (3 numbers)."""
+    number, letter = int(start[:-1]), start[-1]
+    return {f'{(number + step - 1) % 12 + 1}A' for step in (3, -3)} if letter == 'A' else set()
+
+
 class HarmonicTests(unittest.TestCase):
     def table(self):
         for line in MIXED_IN_KEY_TABLE.strip().splitlines():
@@ -50,13 +56,25 @@ class HarmonicTests(unittest.TestCase):
                     cells += 1
         self.assertEqual(cells, 24 * 8)
 
-    def test_compatible_keys_are_exactly_the_table_row(self):
+    def test_compatible_keys_are_the_table_row_plus_custom_moves(self):
         for start, expected in self.table():
-            self.assertEqual(compatible_keys(start), expected, start)
+            found = compatible_keys(start)
+            jump = found.pop('g_jump_sharp', None)
+            self.assertEqual(found, expected, start)
+            self.assertEqual(jump is not None, start.endswith('A'), start)
+
+    def test_g_jump_sharp(self):
+        self.assertEqual(mix_type('9A', '6A').name, 'g_jump_sharp')    # Em -> Gm
+        self.assertEqual(mix_type('6A', '9A').name, 'g_jump_sharp')    # Gm -> Em: both ways
+        self.assertEqual(mix_type('11A', '2A').name, 'g_jump_sharp')   # F#m -> Ebm, wraps around
+        self.assertIsNone(mix_type('9B', '6B'))                        # majors: no G jump
+        for start, _ in self.table():
+            for target in g_jump_sharp_targets(start):
+                self.assertEqual(mix_type(start, target).name, 'g_jump_sharp', (start, target))
 
     def test_other_keys_are_not_named_mixes_and_relations_are_directional(self):
         for start, expected in self.table():
-            named = set(expected.values())
+            named = set(expected.values()) | g_jump_sharp_targets(start)
             for number in range(1, 13):
                 for letter in 'AB':
                     if f'{number}{letter}' not in named:

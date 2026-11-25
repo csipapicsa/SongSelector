@@ -84,7 +84,7 @@ from songselector.core.dj_programs import (
     resolve_primary,
 )
 from songselector.core.duplicates import ARTIST_TITLE, MODES, PATH, SAME_FILE, find_duplicates
-from songselector.core.embedding_models import CNN14, DEFAULT_MODEL_IDS, MODELS, store_path
+from songselector.core.embedding_models import CNN14, DEFAULT_MODEL_IDS, MODELS, PREFERRED_SIMILARITY_IDS, store_path
 from songselector.core.embeddings import MODEL_FILE_NAME, EmbeddingStore, OnnxEmbedder, file_fingerprint
 from songselector.core.eta import Eta, format_left
 from songselector.core.key_calculator import KeyCalculator
@@ -1989,8 +1989,13 @@ class MainWindow(SavedListsMixin, QMainWindow):
         return [model_id for model_id in self.settings.get('Embedding models', DEFAULT_MODEL_IDS) if model_id in MODELS]
 
     def similarity_model_id(self):
-        model_id = self.settings.get('Similarity model', CNN14.id)
-        return model_id if model_id in MODELS else CNN14.id
+        """The chosen model (setting `Similarity model`). None chosen, or one no longer offered (Microsoft CLAP): the
+        first of PREFERRED_SIMILARITY_IDS whose files are there, else CNN14."""
+        model_id = self.settings.get('Similarity model')
+        if model_id in MODELS:
+            return model_id
+        return next((model_id for model_id in PREFERRED_SIMILARITY_IDS if self.model_file(MODELS[model_id]) is not None),
+                    CNN14.id)
 
     def model_file_states(self, spec):
         """{file name: state} of the model's files in the models folder (model_download.file_state): there, with
@@ -2043,6 +2048,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if self.model_download_dialog is not None:
             self.model_download_dialog.refresh()
         self.start_embedding_analysis()  # without a model that failed (it restarts only if the models changed)
+        self._follow_default_model()
         if damaged:
             self.status_label.setStyleSheet(status_style('warning'))
             self.status_label.setText('Damaged model files, switched off: ' + '; '.join(damaged) +
@@ -2235,6 +2241,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._update_model_menu()
         self._refresh_model_box()
         self.start_embedding_analysis()  # restarts with the new model files (or reports that none are there)
+        self._follow_default_model()
         self.check_model_files()  # files there that were never checked (e.g. a folder shared with another PC)
         found = [spec.name for spec in MODELS.values() if self.model_file(spec) is not None]
         self.status_label.setStyleSheet(status_style('info' if found else 'warning'))
@@ -2250,7 +2257,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
         if not models:
             QMessageBox.information(
                 self, 'Search by description',
-                'Searching by description needs a CLAP model (LAION CLAP or Microsoft CLAP).\n\n'
+                'Searching by description needs a CLAP model (AllMusicCaps CLAP by MTG, or LAION CLAP).\n\n'
                 'Analysis -> Get models... shows how to get one; switched on, it analyses your tracks in the '
                 'background.')
             return
@@ -2284,6 +2291,16 @@ class MainWindow(SavedListsMixin, QMainWindow):
         self._update_model_menu()
         self._refresh_model_box()
         self.start_embedding_analysis()
+        self._follow_default_model()
+
+    def _follow_default_model(self):
+        """No similarity model chosen yet: when the preferred one becomes usable (downloaded, files checked), the map,
+        closest matches and description search switch to it, and it becomes the chosen one."""
+        if self.settings.get('Similarity model') in MODELS:
+            return
+        model_id = self.similarity_model_id()
+        if self.similarity_map.store.spec.id != model_id:
+            self.set_similarity_model(model_id)
 
     def _offer_model_download(self):
         """First start without any model: open the download window once (not in tests or verification, which set

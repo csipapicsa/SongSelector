@@ -123,12 +123,12 @@ class SimilarityTests(unittest.TestCase):
         self.assertEqual(pca_layout(vectors[:2], dims=3).shape, (2, 3))
         self.assertIsNone(pca_layout(vectors, should_stop=lambda: True))
 
-    def test_project_uses_the_named_layout_and_falls_back_to_tsne(self):
-        self.assertEqual(list(PROJECTIONS), ['tsne', 'umap', 'pca'])
+    def test_project_uses_the_named_layout_and_falls_back_to_umap(self):
+        self.assertEqual(list(PROJECTIONS), ['umap', 'tsne', 'pca'])  # UMAP first: the default since 2026-11-24
         vectors = track_vectors(two_styles())
         np.testing.assert_array_equal(project(vectors, 'pca'), pca_layout(vectors))
-        with patch.dict(PROJECTIONS, {'tsne': ('t-SNE', lambda vectors, **_: 'tsne')}):
-            self.assertEqual(project(vectors, 'no such layout'), 'tsne')
+        with patch.dict(PROJECTIONS, {'umap': ('UMAP', lambda vectors, **_: 'umap')}):
+            self.assertEqual(project(vectors, 'no such layout'), 'umap')
 
     def test_new_tracks_are_placed_near_their_most_similar_tracks(self):
         vectors = track_vectors(two_styles())
@@ -218,8 +218,8 @@ class LayoutStoreTests(unittest.TestCase):
             for index, matrix in enumerate(two_styles()):
                 store.save(f'k{index}', (1, 1), matrix)
             model = store.spec.id
-            self.assertEqual([layout_cache_id(store, name) for name in PROJECTIONS], [model, f'{model}:umap', None])
-            tsne = build_map_data(store).positions
+            self.assertEqual([layout_cache_id(store, name) for name in PROJECTIONS], [f'{model}:umap', model, None])
+            tsne = build_map_data(store, projection='tsne').positions
             self.assertEqual(store.load_layout(), tsne)                    # as before: under the model's id
             umap = build_map_data(store, projection='umap', with_3d=True)
             self.assertEqual(store.load_layout(f'{model}:umap'), umap.positions)
@@ -298,7 +298,8 @@ class SimilarityMapGuiTests(MapWindowTestBase):
         self.assertEqual(self.map.dots[self.key(0)].pos(), before)  # filtering never moves dots
         self.window.search_bar.clear()
         self.assertEqual(len(self.visible()), 24)
-        self.assertEqual(len(EmbeddingStore(self.root / 'embeddings.sqlite').load_layout()), 24)  # cached
+        store = EmbeddingStore(self.root / 'embeddings.sqlite')
+        self.assertEqual(len(store.load_layout(f'{store.spec.id}:umap')), 24)  # cached (UMAP: the default layout)
 
     def test_selecting_a_track_lists_and_rings_its_closest_matches(self):
         self.map.select(self.key(0))
@@ -830,22 +831,23 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
     def test_the_layout_box_maps_again_and_is_remembered(self):
         from songselector.ui import similarity_map
         store = EmbeddingStore(self.root / 'embeddings.sqlite')
-        tsne = store.load_layout()
-        self.assertEqual(self.map.projection.currentData(), 'tsne')
-        self.assertEqual([self.map.projection.itemText(i) for i in range(3)], ['t-SNE', 'UMAP', 'PCA'])
+        umap = store.load_layout(f'{store.spec.id}:umap')
+        self.assertEqual(self.map.projection.currentData(), 'umap')  # the default since 2026-11-24
+        self.assertEqual(self.map.data.positions, umap)
+        self.assertEqual([self.map.projection.itemText(i) for i in range(3)], ['UMAP', 't-SNE', 'PCA'])
         with patch.object(similarity_map, 'build_map_data', wraps=similarity_map.build_map_data) as build:
-            self.map.projection.setCurrentIndex(self.map.projection.findData('umap'))
+            self.map.projection.setCurrentIndex(self.map.projection.findData('tsne'))
             self.wait_for_map()
-        self.assertEqual(build.call_args.args[-1], 'umap')
-        self.assertEqual(self.window.settings['Map projection'], 'umap')
-        self.assertEqual(self.map.data.positions, store.load_layout(f'{store.spec.id}:umap'))
-        self.assertEqual(store.load_layout(), tsne)
+        self.assertEqual(build.call_args.args[-1], 'tsne')
+        self.assertEqual(self.window.settings['Map projection'], 'tsne')
+        self.assertEqual(self.map.data.positions, store.load_layout())  # t-SNE: under the model id, as before
+        self.assertEqual(store.load_layout(f'{store.spec.id}:umap'), umap)
         self.map.projection.setCurrentIndex(self.map.projection.findData('pca'))
         self.wait_for_map()
         self.assertEqual(len(self.visible()), 24)
-        self.map.projection.setCurrentIndex(self.map.projection.findData('tsne'))
+        self.map.projection.setCurrentIndex(self.map.projection.findData('umap'))
         self.wait_for_map()
-        self.assertEqual(self.map.data.positions, tsne)  # back to the cached t-SNE map
+        self.assertEqual(self.map.data.positions, umap)  # back to the cached UMAP map
 
     def test_an_unchanged_list_does_not_map_again(self):
         from songselector.ui import similarity_map
@@ -975,7 +977,8 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.wait_for_map()
         self.assertTrue(self.map.showing_3d())
         self.assertEqual(len(next(iter(self.map.data.positions3d.values()))), 3)
-        self.assertEqual(len(EmbeddingStore(self.root / 'embeddings.sqlite').load_layout_3d()), 24)  # cached
+        store = EmbeddingStore(self.root / 'embeddings.sqlite')
+        self.assertEqual(len(store.load_layout_3d(f'{store.spec.id}:umap')), 24)  # cached
         self.assertTrue(self.window.settings['Map 3D'])
         opacities = {round(dot.opacity(), 2) for dot in self.map.dots.values()}
         self.assertGreater(len(opacities), 5)  # far dots fade
