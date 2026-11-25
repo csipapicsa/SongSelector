@@ -29,7 +29,7 @@ The user's point: LAION CLAP is trained on sounds, not music; a music-trained CL
 | Runtime | ONNX, in the app | PyTorch: `amclap` package (lightning, gin-config, sentence-transformers <5.2, omar-rq ~0.2, torch >= 2.6). MTG publishes no ONNX, but both towers export cleanly (probe below) |
 | File | 122 MB audio + 501 MB text (ONNX) | `model.ckpt` 296 MB; text encoder weights downloaded separately at construction |
 | License | Apache 2.0 | Weights CC BY-NC-SA 4.0, code AGPL-3.0, dataset CC BY-NC-SA 4.0 (non-commercial research) |
-| Published results | Yes (LAION paper) | None on the card or in the repo |
+| Published results | Yes (LAION paper) | ISMIR 2026 paper (arXiv:2608.25244), see *The paper* below |
 
 Released variants (all OMAR-RQ + `all-mpnet-base-v2`; "Layers" is which encoder layers feed the output):
 
@@ -213,6 +213,37 @@ session settings (`DML_OPTIONS`, no memory pattern, sequential). GTX 1650 Ti (4 
   (DXGI 887A0006); LAION at batch 8+ is already known not to fit this card.
 - On the CPU it is slower than LAION per window (112-142 vs ~105 ms), so CPU-only machines need sampled windows.
 
+## The paper, read 2026-11-25
+
+[arXiv:2608.25244](https://arxiv.org/abs/2608.25244) (ISMIR 2026, submitted 2026-08-26). Read from the HTML version
+up to Section 8; the tail (the values behind Figure 3, the final variants against external baselines) was not read.
+
+- **Model:** OMAR-RQ small (78 M parameters, conformer, self-supervised on 330 k hours of music) +
+  all-MPNet-base-v2 (110 M); 10 s segments at 24 kHz, averaged over time, linear heads to a shared 512-d space
+  (§4.1). The paper calls `all_layers` "a learned weighted sum of all OMAR-RQ layers" (§5.2); the released code
+  takes a plain mean of the 12 layers (see *Why it could be better*, correction of 2026-11-22). The input
+  representation is not discussed in the paper; the code reads raw waveform patches (*Side by side*).
+- **Data:** 94,041 AllMusic reviews matched to Discogs, 245,346 tracks, captioned two ways by LLMs (AMCQuotes:
+  quotes rewritten; AMCStruct: a fixed schema of style, mood, energy, tempo, instrumentation, production), mixed with
+  LP-MusicCaps, M4-RAG and general sound (Freesound, Pro Sound Effects): 80% music, 20% sound (§3, §4.3).
+  Pre-training on 6.5 M tracks with raw YouTube/Discogs metadata; caption training ~36 h per model on 8 H100s.
+- **Layers** (Table 3, frozen text encoder, InfoNCE): all layers vs the last one: MusicCaps MRR 7.8 vs 7.3, Song
+  Describer MRR 19.3 vs 18.8, DimSim (audio similarity) 83.0 vs 74.3; probing about the same. The +8.7 points on
+  similarity fit `all_layers` winning on this library's genre tags.
+- **Objectives:** a trainable text encoder helps text-to-music retrieval but hurts audio similarity (DimSim);
+  InfoNCE+SigReg and LeJEPA beat InfoNCE on classification; models peak early (20-60 k steps) (§5.3).
+- **Descriptive queries:** review supervision helps text-to-music retrieval most for the most complex captions
+  (Song Describer, complexity scores 3-4, Figure 2): the model is meant for long descriptions, not only tags.
+- **Weak spot:** instruments. No variant beats the strongest external baseline on MTG-Jamendo Instrument; reviews
+  describe genre, scene and mood better than instrumentation (§5.4). Beats LAION-CLAP, TTMR++ and CLaMP3 on most
+  other tasks.
+- **Not in the paper:** any mel-spectrogram encoder as a comparison, inference cost, compression or distillation.
+  The distilled students (experiments/distill/) are new ground, not a reproduction.
+- **Licence statement:** "All materials derived from this work, including the AllMusicCaps dataset, model weights,
+  and code, are released for non-commercial scientific research purposes only" (§1). That is narrower wording than
+  the CC BY-NC-SA 4.0 on the weights' model card. To settle before shipping anything trained from these weights
+  (a distilled student included), and worth a look for the app's AllMusicCaps entry too.
+
 ## Sources
 
 - [mtg-upf/allmusiccaps_all_layers](https://huggingface.co/mtg-upf/allmusiccaps_all_layers) (model card)
@@ -222,4 +253,5 @@ session settings (`DML_OPTIONS`, no memory pattern, sequential). GTX 1650 Ti (4 
 - [OMAR-RQ, arXiv:2507.03482](https://arxiv.org/abs/2507.03482)
 - [What Makes a Good Layer?, arXiv:2608.14819](https://arxiv.org/pdf/2608.14819) (layer-wise analysis of music models)
 - Paper: Alonso-Jiménez, Lizarraga-Seijas, Serra, Bogdanov, "AllMusicCaps: Album Reviews as Complementary
-  Supervision for Music CLAP", ISMIR 2026 (not found online on 2026-11-21).
+  Supervision for Music CLAP", ISMIR 2026, [arXiv:2608.25244](https://arxiv.org/abs/2608.25244) (not online yet on
+  2026-11-21; read 2026-11-25, see *The paper*).
