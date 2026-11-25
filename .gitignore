@@ -32,3 +32,6 @@ docs/private/
 
 # MkDocs build output (python -m mkdocs build)
 site/
+
+# Local scratch (screenshots, throwaway files)
+tmp/

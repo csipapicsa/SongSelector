@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-CACHE = Path(__file__).resolve().parents[4] / '.research_cache'
+CACHE = Path(__file__).resolve().parents[3] / '.research_cache'
 MODELS = CACHE / 'models'
 
 

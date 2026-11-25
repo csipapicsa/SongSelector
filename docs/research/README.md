@@ -2,7 +2,7 @@
 
 Findings that are worth keeping, with the numbers and the way they were measured, so they can be
 checked or repeated later. Decisions made from them go into `docs/ARCHITECTURE.md` and
-`docs/BACKLOG.md`.
+`docs/BACKLOG.md`. The code, data and result files behind them are in [research/](../../research/README.md).
 
 | Note | What it holds |
 |---|---|
@@ -12,15 +12,13 @@ checked or repeated later. Decisions made from them go into `docs/ARCHITECTURE.m
 | [model_candidates.md](model_candidates.md) | Other embedding models: licence, size, input, cost to integrate |
 | [landscape_dj_tools.md](landscape_dj_tools.md) | Other free / open-source / commercial DJ library and next-track tools, research papers (web search 2026-11) |
 | [text_search_clap.md](text_search_clap.md) | Free-text track search with CLAP: CPU cost of LAION vs Microsoft CLAP (analysis time, query latency, memory) (2026-11) |
-| [allmusiccaps_clap.md](allmusiccaps_clap.md) | MTG's music-trained CLAP (AllMusicCaps, OMAR-RQ encoder) vs LAION CLAP: desk comparison, hands-on checks, ONNX export probe, plan to measure; notebook [experiments/clap/allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb) (2026-11) |
+| [allmusiccaps_clap.md](allmusiccaps_clap.md) | MTG's music-trained CLAP (AllMusicCaps, OMAR-RQ encoder) vs LAION CLAP: desk comparison, hands-on checks, ONNX export probe, plan to measure; notebook [research/experiments/clap/allmusiccaps.ipynb](../../research/experiments/clap/allmusiccaps.ipynb) (2026-11) |
+| [research/experiments/distill/](../../research/experiments/distill/README.md) | A small student network in AllMusicCaps' audio space for CPU-only machines: Phase 0 speed (a student takes 20x less CPU time per track than the app today, but only ~1.5-2.7x less wall time than the teacher on 6 windows, because decoding dominates); Phase 1 training (a 1 MB CNN matches the teacher on genre-tag search and beats LAION; its closest matches differ from the teacher's) (2026-11) |
 | [rekordbox_import.md](rekordbox_import.md) | Can Rekordbox playlists be imported? What is on this machine, XML export vs reading master.db |
-| [experiments/](experiments/) | Runnable code (`# %%` scripts that open as notebooks in VS Code) and one small JSON of results per run |
 
 Conventions
 
 - Write the date, the data (how many tracks) and the setup next to every number.
 - A result that was not measured is marked *to measure*, never guessed.
-- Experiments run with the system Python (numpy, scikit-learn, torch, transformers), not the
-  app's `.venv`: nothing here changes the app or the exe. Downloaded models, data snapshots and
-  extracted vectors go to `.research_cache/` (git-ignored).
-- Experiments read a **copy** of the app's database files, never the originals.
+- How experiments run (their own venvs, `.research_cache/`, a copy of the app's database, no track names in
+  results): [research/README.md](../../research/README.md).

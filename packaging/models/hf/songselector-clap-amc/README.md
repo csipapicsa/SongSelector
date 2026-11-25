@@ -49,7 +49,7 @@ text embeddings with cosine similarity. ONNX opset 17, runs with onnxruntime (CP
 ## How it was made
 
 Exported from `amclap` 0.1.0 (MTG's package) with
-[`amclap_onnx.py`](https://github.com/csipapicsa/SongSelector/blob/main/docs/research/experiments/clap/amclap_onnx.py):
+[`amclap_onnx.py`](https://github.com/csipapicsa/SongSelector/blob/main/research/experiments/clap/amclap_onnx.py):
 the audio tower is MTG's `forward_audio` (OMAR-RQ encoder, mean of all layers, projection), the text tower is the
 sentence-transformers MPNet encoder with MTG's text projection. Both were checked against the PyTorch model on real
 music: cosine similarity 1.000000, largest absolute difference about 1e-5. Weights are unchanged; only the format is.

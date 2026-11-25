@@ -36,9 +36,9 @@ optimistic). Accuracy = exactly right.
 
 ## Baseline with the proper validation (2026-11-03)
 
-`experiments/rating_color/evaluate.py --model cnn14`: development artists only (80 %; 20 % of
+`research/experiments/rating_color/evaluate.py --model cnn14`: development artists only (80 %; 20 % of
 artists are locked for the final test), 5-fold cross-validation grouped by artist, repeated 3
-times; 95 % intervals by bootstrap over tracks. Results: `experiments/results/2026-11-03_cnn14.json`.
+times; 95 % intervals by bootstrap over tracks. Results: `research/results/2026-11-03_cnn14.json`.
 
 | Target (labelled tracks) | Always the most common | Nearest neighbours | Logistic regression |
 |---|---|---|---|
@@ -67,7 +67,7 @@ first exploratory read: it is colours 1 and 5, not only 5.
 
 CNN14, MusiCNN, Discogs-EffNet and OpenL3 on exactly the same 800 tracks: 630 rated and 565 coloured
 tracks of the development artists, logistic regression, artist-grouped validation, 95 % intervals.
-`evaluate.py --model <m> --keys-of musicnn`, `neighbours.py`; results in `experiments/results/*_on-musicnn.json`.
+`evaluate.py --model <m> --keys-of musicnn`, `neighbours.py`; results in `research/results/*_on-musicnn.json`.
 (Only 800 tracks, so the intervals are wide; the library has about 2,400 rated tracks.)
 
 | | CNN14 | MusiCNN | Discogs-EffNet | OpenL3 |
@@ -89,11 +89,11 @@ Cost-benefit: no reason to move away from CNN14 for this task.
 
 Speeds are in `model_candidates.md`. The extraction of these three models was stopped at 800 tracks (resumable).
 
-## Other information: BPM, key, usage (2026-11-03, `experiments/rating_color/metadata.py`)
+## Other information: BPM, key, usage (2026-11-03, `research/experiments/rating_color/metadata.py`)
 
 Traktor's `collection.nml` holds BPM, key, loudness, bitrate, length, and how the track was *used*: play count,
 last played, import date, hot cues, cues and the number of playlists it is on. Same validation as above
-(development artists, grouped by artist); results in `experiments/results/2026-11-03_metadata.txt`.
+(development artists, grouped by artist); results in `research/results/2026-11-03_metadata.txt`.
 
 | Target | Sound only (CNN14) | All of the above, no sound | Both |
 |---|---|---|---|

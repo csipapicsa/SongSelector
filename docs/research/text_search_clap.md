@@ -19,7 +19,7 @@ question (not answered here).
 | Tracks | 8 random tracks from the developer's library (seed 1), 3.8–7.9 min, 45.6 min of audio in total |
 | Decoding | soundfile + soxr HQ to the model's rate, the app's decoding stack |
 | Method | Each model and thread count in its own process. Window times: median of repeats after warm-up, random audio. Track times: every window of every track, batches of 8. One run per configuration |
-| Code / data | [experiments/clap/benchmark_cpu.py](experiments/clap/benchmark_cpu.py), [results/2026-11-13_clap_cpu.json](experiments/results/2026-11-13_clap_cpu.json) |
+| Code / data | [research/experiments/clap/benchmark_cpu.py](../../research/experiments/clap/benchmark_cpu.py), [results/2026-11-13_clap_cpu.json](../../research/results/2026-11-13_clap_cpu.json) |
 
 Models: the light version of each family, plus LAION's music-trained model as a reference.
 
@@ -88,10 +88,10 @@ Candidate: **LAION `clap-htsat-unfused`**. Cost is not the blocker. Next, in ord
 ## Trying it on the library (2026-11-13)
 
 - **Test set:** the 998 tracks with a Traktor rating of 4-5 and a colour whose files exist.
-  [experiments/clap/extract_embeddings.py](experiments/clap/extract_embeddings.py) stores every window's vector per model
+  [research/experiments/clap/extract_embeddings.py](../../research/experiments/clap/extract_embeddings.py) stores every window's vector per model
   in `.research_cache/clap/` (git-ignored). For this offline run it uses the GPU (CUDA). Each track is decoded once for
   all models, with parallel decoding threads. GPU and CPU embeddings agree to 3e-7.
-- **Notebook:** [experiments/clap/text_search.ipynb](experiments/clap/text_search.ipynb): write a prompt, see the top 10.
+- **Notebook:** [research/experiments/clap/text_search.ipynb](../../research/experiments/clap/text_search.ipynb): write a prompt, see the top 10.
 - **First look (75 tracks):** with LAION light, *"dark rolling drum and bass with a heavy reese bassline"* put 8 DnB
   tracks (around 174 BPM) in the top 10. On DnB tracks, *"This audio is a drum and bass song."* scored 0.44–0.47 against
   0.20–0.30 for plain *"drum and bass"*, so the wording of a prompt matters. Microsoft CLAP 2023 also separates
