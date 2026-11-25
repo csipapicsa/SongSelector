@@ -3,6 +3,10 @@
 Ported from the master thesis project (E:\\GITHUB_E\\MasterThesis\\functions.py,
 get_mix_type_new_wheel(..., connection_mode="commercial") and its edge weights).
 
+Custom moves of our own (not in Mixed In Key's table) come last in MIX_TYPES:
+G jump sharp is minor -> minor three semitones up or down (Em <-> Gm, i.e. 9A <-> 6A: three
+numbers on the wheel either way, since one semitone is seven steps on the wheel).
+
 A relation is directional: mix_type('1A', '3A') is an energy boost (+2), while
 mix_type('3A', '1A') is not a named mix. "From" is the playing track, "to" the next one.
 """
@@ -27,6 +31,7 @@ MIX_TYPES = (
     MixType('mood_shifter', 'Mood shifter', 5, True),
     MixType('jaws_mix', "Jaw's mix", 4, True),
     MixType('diagonal_mix', 'Diagonal mix', 3, False),
+    MixType('g_jump_sharp', 'G jump sharp', 2, True),   # custom: minor <-> minor, three semitones
 )
 MIX_TYPES_BY_NAME = {mix.name: mix for mix in MIX_TYPES}
 
@@ -49,6 +54,8 @@ def mix_type(from_key, to_key):
     step = (other_number - number) % 12          # clockwise steps on the Camelot wheel
     if letter == other_letter:
         name = {0: 'perfect_mix', 1: 'plus_1_mix', 11: 'minus_1_mix', 2: 'energy_boost', 7: 'jaws_mix'}.get(step)
+        if name is None and letter == 'A' and step in (3, 9):   # minor, three semitones down / up
+            name = 'g_jump_sharp'
     elif step == 0:
         name = 'scale_change'
     elif letter == 'A':                          # minor -> major

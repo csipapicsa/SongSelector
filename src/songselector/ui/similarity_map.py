@@ -185,7 +185,7 @@ SORT_ROLE = Qt.UserRole + 2    # value a closest-match column sorts by (number o
 EDGE_COLORS = {
     'perfect_mix': '#4cd964', 'plus_1_mix': '#5ac8fa', 'minus_1_mix': '#5ac8fa',
     'scale_change': '#af7ff2', 'energy_boost': '#ff9f0a', 'mood_shifter': '#ff6fae',
-    'jaws_mix': '#ffd60a', 'diagonal_mix': '#a0a4ab', EDGE_SAME_COLOR: None, EDGE_SAME_RATING: '#e5e5ea',
+    'jaws_mix': '#ffd60a', 'diagonal_mix': '#a0a4ab', 'g_jump_sharp': '#30d5c8', EDGE_SAME_COLOR: None, EDGE_SAME_RATING: '#e5e5ea',
 }
 EDGE_LABELS = {**{mix.name: mix.label for mix in MIX_TYPES},
                EDGE_SAME_COLOR: 'Same colour', EDGE_SAME_RATING: 'Same rating'}

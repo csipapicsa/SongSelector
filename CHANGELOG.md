@@ -10,6 +10,8 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **A harmonic move of our own: G jump sharp.** Minor to minor, three semitones up or down (8A → 5A or 11A, i.e.
+  Am → Cm or F#m), in both directions. It shows in the Mix column and in the map's *Edges* menu (teal).
 - **New defaults: UMAP layout and the MTG model.** The map is laid out with UMAP unless you pick another layout.
   With no model chosen, the map and the description search use AllMusicCaps CLAP (MTG) once it's downloaded, then
   LAION CLAP, then CNN14; a model you chose stays as it is.
