@@ -1,16 +1,20 @@
-"""Phase 1: train a student to predict the teacher's window vectors from cached log-mels; one MLflow run each.
+"""Train a student to predict the teacher's window vectors from cached log-mels; one MLflow run each.
 
-    python train.py --student cnn4-64                    # all ~1,500 training tracks
+    python train.py --student cnn4-64                    # all training tracks
     python train.py --student cnn4-64 --train-tracks 500 # learning curve
     python train.py --student mean                       # baseline: the mean training vector for every window
     python train.py --student ridge-mfcc40               # baseline: MFCC mean/std -> ridge regression
+    python train.py --student cnn4-small-64 --train-tracks 50 --max-epochs 300 --patience 300 --eval-train
+                                                         # can it fit a few tracks at all? (overfitting test)
 
 Loss: 1 - cosine(student, teacher) per window. Only directions count: the teacher vectors are not unit length,
 and the app compares directions. AdamW with a fixed learning rate, fp32 on the GPU, early stopping on
 the validation window cosine (at most --max-epochs, stop after --patience epochs without a better one), and the
 best epoch's weights are kept. No augmentation: the targets belong to the unchanged audio.
 
-Logged per run (experiment distill-train): settings, train loss and validation cosine per epoch, then for the best
+Logged per run (experiment distill-train): settings, train loss and validation cosine per epoch (with --eval-train
+also the cosine on up to 4,096 training windows in eval mode, comparable with the validation cosine; the train loss
+is measured in training mode, while the weights change), then for the best
 weights val/test fidelity (evaluate.fidelity) and test genre AP, the ONNX export (front end included, checked
 against PyTorch) and the state dict.
 """
@@ -118,9 +122,14 @@ def train_student(name, data, args, mlflow, log):
     scaler = torch.amp.GradScaler(enabled=amp)
 
     train_mel, val_mel = mel_of(data, 'train'), mel_of(data, 'val')
-    train_target = torch.from_numpy(unit(data['train']['teacher'])).to(device)
+    train_unit = unit(data['train']['teacher'])
+    train_target = torch.from_numpy(train_unit).to(device)
     val_target = unit(data['val']['teacher'])
     rng = np.random.default_rng(args.seed)
+    check_rows = None
+    if args.eval_train:   # a fixed sample, drawn apart from the training order
+        check_rows = np.sort(np.random.default_rng(args.seed + 1).choice(
+            len(train_mel), min(4096, len(train_mel)), replace=False))
     best = {'cos': -1.0, 'epoch': 0, 'state': None}
     for epoch in range(1, args.max_epochs + 1):
         model.train()
@@ -141,11 +150,15 @@ def train_student(name, data, args, mlflow, log):
         val_cos = float((unit(predict(model, val_mel, device, amp)) * val_target).sum(1).mean())
         if not np.isfinite(val_cos):
             sys.exit(f'epoch {epoch}: validation cosine is {val_cos} (NaN in training?)')
-        mlflow.log_metrics({'train_loss': float(np.mean(losses)), 'val_cos': val_cos,
-                            'epoch_s': time.time() - started}, step=epoch)
+        metrics = {'train_loss': float(np.mean(losses)), 'val_cos': val_cos, 'epoch_s': time.time() - started}
+        if check_rows is not None:
+            metrics['train_cos'] = float((unit(predict(model, train_mel[check_rows], device, amp))
+                                          * train_unit[check_rows]).sum(1).mean())
+        mlflow.log_metrics(metrics, step=epoch)
         improved = val_cos > best['cos']
-        log(f'epoch {epoch:2d}: train loss {np.mean(losses):.4f}, val cosine {val_cos:.4f}'
-            f'{" (best)" if improved else ""}, {time.time() - started:.0f} s')
+        log(f'epoch {epoch:2d}: train loss {np.mean(losses):.4f}, '
+            + (f'train cosine {metrics["train_cos"]:.4f}, ' if check_rows is not None else '')
+            + f'val cosine {val_cos:.4f}{" (best)" if improved else ""}, {time.time() - started:.0f} s')
         if improved:
             best = {'cos': val_cos, 'epoch': epoch,
                     'state': {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}}
@@ -176,6 +189,9 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--amp', action='store_true', help='fp16 mixed precision (NaN on a GTX 1650 Ti)')
     parser.add_argument('--experiment', default=EXPERIMENT, help='MLflow experiment (e.g. distill-smoke for tests)')
+    parser.add_argument('--eval-train', action='store_true', help='per epoch: cosine on training windows, eval mode')
+    parser.add_argument('--phase', default='2', help='MLflow tag')
+    parser.add_argument('--name-suffix', default='', help="added to the run name, e.g. 'overfit'")
     args = parser.parse_args()
 
     def log(message):
@@ -184,8 +200,8 @@ def main():
     data = load_data(args.train_tracks, args.seed)
     mlflow = mlflow_experiment(args.experiment)
     kind = 'baseline' if args.student in BASELINES else 'student'
-    name = f"{args.student}-n{data['train_track_count']}"
-    with mlflow.start_run(run_name=name, tags={'phase': '1', 'kind': kind}):
+    name = f"{args.student}-n{data['train_track_count']}" + (f'-{args.name_suffix}' if args.name_suffix else '')
+    with mlflow.start_run(run_name=name, tags={'phase': args.phase, 'kind': kind}):
         mlflow.log_params({'student': args.student, 'train_tracks': data['train_track_count'],
                            'train_windows': len(data['train']['rows']), 'val_windows': len(data['val']['rows']),
                            'test_windows': len(data['test']['rows']), 'manifest_sha': data['manifest_sha'],
@@ -198,7 +214,7 @@ def main():
         else:
             mlflow.log_params({'lr': args.lr, 'weight_decay': args.weight_decay, 'batch': args.batch,
                                'max_epochs': args.max_epochs, 'patience': args.patience, 'optimizer': 'AdamW',
-                               'loss': '1 - cosine', 'amp': args.amp})
+                               'loss': '1 - cosine', 'amp': args.amp, 'eval_train': args.eval_train})
             model, best, predictions = train_student(args.student, data, args, mlflow, log)
             mlflow.log_metrics({'best_epoch': best['epoch'], 'best_val_cos': best['cos'],
                                 'params_m': sum(p.numel() for p in model.parameters()) / 1e6})
