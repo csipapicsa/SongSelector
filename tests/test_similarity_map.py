@@ -603,8 +603,13 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.map.select(self.key(0))
         index = 3
         other = self.key(index)  # same tempo-adjusted key as track 0 (keys repeat every 3 tracks), same style
-        # Lifted to the compared track's tier, above its neighbours: a style's fake tracks can land on one another.
-        self.map.dots[other].setZValue(3.5)
+        # Moved to an empty spot beside the map: a style's fake tracks can land on one another, and then the click
+        # hit whichever dot is on top, often the selected track 0 (drawn highest), which made this test flaky on
+        # Linux once UMAP became the default layout. The test is about Ctrl+click, not about the layout.
+        dots = self.map.dots
+        xs = [dot.pos().x() for dot in dots.values()]
+        ys = [dot.pos().y() for dot in dots.values()]
+        dots[other].setPos(max(xs) + 0.3 * (max(xs) - min(xs) or 1), (min(ys) + max(ys)) / 2)   # inside the pan room
         view = self.map.view
         view.centerOn(self.map.dots[other])
         self.application.processEvents()
