@@ -599,20 +599,30 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         from PyQt5.QtTest import QTest
         self.window.resize(1400, 900)
         self.window.show()
+        deadline = time.monotonic() + 60   # showing the window must not leave a layout running under the click
+        while self.map._loading and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.02)
         self.application.processEvents()
         self.map.select(self.key(0))
         index = 3
         other = self.key(index)  # same tempo-adjusted key as track 0 (keys repeat every 3 tracks), same style
-        # Lifted to the compared track's tier, above its neighbours: a style's fake tracks can land on one another.
-        self.map.dots[other].setZValue(3.5)
+        # Moved to an empty spot beside the map: a style's fake tracks can land on one another, and then the click
+        # hit whichever dot is on top, often the selected track 0 (drawn highest), which made this test flaky on
+        # Linux once UMAP became the default layout. The test is about Ctrl+click, not about the layout.
+        dots = self.map.dots
+        xs = [dot.pos().x() for dot in dots.values()]
+        ys = [dot.pos().y() for dot in dots.values()]
+        dots[other].setPos(max(xs) + 0.3 * (max(xs) - min(xs) or 1), (min(ys) + max(ys)) / 2)   # inside the pan room
         view = self.map.view
         view.centerOn(self.map.dots[other])
         self.application.processEvents()
         point = view.mapFromScene(self.map.dots[other].pos())
+        under_click = [getattr(item, 'key', type(item).__name__) for item in view.items(point)]
         QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, self.key(0))  # the base track stays selected
-        self.assertEqual(self.map.preview_key, other)
+        self.assertEqual(self.map.preview_key, other, f'items under the click, top first: {under_click}')
         self.assertTrue(self.map.preview_glow.isVisible())
         card = self.map.preview_card.text.toPlainText()
         self.assertTrue(self.map.preview_card.isVisible())
