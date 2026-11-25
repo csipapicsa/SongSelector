@@ -12,10 +12,10 @@ A worker measures:
             sampled windows; wall time and CPU time (all threads together: the load on the machine)
   memory    peak working set of the process
 
-    .research_cache\\venv-distill\\Scripts\\python docs\\research\\experiments\\distill\\students.py
-    .research_cache\\venv-distill\\Scripts\\python docs\\research\\experiments\\distill\\benchmark_speed.py
+    .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\students.py
+    .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\benchmark_speed.py
 
-Writes docs/research/experiments/results/<date>_distill_phase0_speed.json (no track paths in it).
+Writes research/results/<date>_distill_phase0_speed.json (no track paths in it).
 """
 import argparse
 import json

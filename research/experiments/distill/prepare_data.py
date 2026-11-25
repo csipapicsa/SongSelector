@@ -22,7 +22,7 @@ Output in .research_cache/distill/data/:
   windows.npz        per window: its track (manifest row) and window index in the track
   meta.json          front end, seed, counts, timing
 
-    .research_cache\\venv-distill\\Scripts\\python docs\\research\\experiments\\distill\\prepare_data.py
+    .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py
 """
 import argparse
 import json

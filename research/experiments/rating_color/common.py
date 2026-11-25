@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[4]
+REPO = Path(__file__).resolve().parents[3]
 CACHE = REPO / '.research_cache'
 sys.path.insert(0, str(REPO / 'src'))
 

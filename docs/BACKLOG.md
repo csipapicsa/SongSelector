@@ -134,9 +134,9 @@ One PR per block below, in this order; each with tests (a failing test first for
 - [ ] **On hold:** suggest missing Traktor ratings / colours from the sound. Research only, no app feature
       (start: `docs/research/rating_color_prediction.md`, `rating_color_plan.md`). So far CNN14, MusiCNN,
       Discogs-EffNet and OpenL3 are equally (un)able to predict them: probably the labels, not the model.
-      To continue: fill `docs/research/sheets/rerate_2026-11-03.csv` (blind re-rating, 60 tracks) and
+      To continue: fill `research/data/sheets/rerate_2026-11-03.csv` (blind re-rating, 60 tracks) and
       `valid_cnn14_2026-11-03.csv` (yes/no), then run `taste_sheets.py rerate-score` / `valid-score`
-      (see `docs/research/sheets/README.md`). Larger models (MAEST, MERT, CLAP) not tried yet.
+      (see `research/data/sheets/README.md`). Larger models (MAEST, MERT, CLAP) not tried yet.
 - [x] Audio embeddings (PANNs CNN14, 5 s chunks) for every library track, analysed in the background (4.7.0).
 - [x] **Similarity view**: first version in 4.11.0 (2D map, closest matches, harmonic edges). Follow-ups below.
 - [x] Map: "edges only to the N closest matches" (harmonic *and* similar): 4.16.0, with opacity by similarity.
@@ -187,18 +187,18 @@ One PR per block below, in this order; each with tests (a failing test first for
       `rating_color`); try LAION's music-trained `larger_clap_music`. Microsoft CLAP can go later.
 - [ ] Research: MTG's music-trained CLAP (AllMusicCaps; OMAR-RQ audio encoder, captions from AllMusic reviews) for
       text search and the map, variants `all_layers` and `te_trained_sigreg`. Desk comparison and plan in
-      `docs/research/allmusiccaps_clap.md`; notebook `docs/research/experiments/clap/allmusiccaps.ipynb` (side-by-side
+      `docs/research/allmusiccaps_clap.md`; notebook `research/experiments/clap/allmusiccaps.ipynb` (side-by-side
       search, precision of the top 10 and AP per genre tag). Result 2026-11-22 on 990 tracks: `all_layers` mean AP
       0.33 vs LAION 0.21 (better on 22 of 27 prompts; DnB 0.90 vs 0.41); `te_trained_sigreg` second (0.29). Both
       towers export to ONNX matching PyTorch, and it runs on DirectML (no STFT in the graph; 24 ms per window at
-      batch 4 vs LAION 62; `experiments/clap/amclap_onnx.py`). int8: no gain (text breaks, audio no faster); 6
+      batch 4 vs LAION 62; `research/experiments/clap/amclap_onnx.py`). int8: no gain (text breaks, audio no faster); 6
       sampled windows per track search as well as all (AP 0.321 vs 0.327), so CPU-only machines should sample.
       Trying it in the app: branch `experiment/amc-clap` (model entry, not on Get models). Weights CC BY-NC-SA 4.0 (publishing the conversion is the user's call).
 - [ ] Research, low priority: a better similarity than cosine for CNN14 (classifier features, not trained for
       similarity; CLAP is trained on cosine, so it stays): PCA whitening, hubness reduction (CSLS), window-set
       comparison (Chamfer / Fréchet), or a learned metric from the user's playlists and sets. Evaluate with the user's
       labels, as above.
-- [x] int8 models (2026-11-20, `docs/research/experiments/results/2026-11-20_int8_benchmark.md`): naive dynamic
+- [x] int8 models (2026-11-20, `research/results/2026-11-20_int8_benchmark.md`): naive dynamic
       quantization was slower everywhere and broke the embeddings (the spectrogram front-end got quantized). Not
       worth it on the GPU; a fair CPU test (front-end in float, only LAION's MatMuls) is open if CPU speed matters.
       **Closed 2026-11-20 (user's decision):** no quantized models; only the float32 files are published.

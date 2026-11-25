@@ -16,8 +16,19 @@ import numpy as np
 from sklearn.metrics import balanced_accuracy_score, f1_score, roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (CACHE, REPO, bootstrap, cross_validated, fmt, load_labels, load_vectors, locked_test,
-                    precision_at_coverage, probe_scores, restrict, snapshot_data)
+from common import (
+    REPO,
+    bootstrap,
+    cross_validated,
+    fmt,
+    load_labels,
+    load_vectors,
+    locked_test,
+    precision_at_coverage,
+    probe_scores,
+    restrict,
+    snapshot_data,
+)
 
 warnings.filterwarnings('ignore')
 parser = argparse.ArgumentParser()
@@ -115,6 +126,6 @@ run('rating high (4-5 vs 1-3)', rating > 0, high, probes, one_vs_rest=[('4-5 sta
 
 # %%
 if not args.final:
-    target = REPO / 'docs' / 'research' / 'experiments' / 'results' / f"{results['date']}_{args.model}{'_on-' + args.keys_of if args.keys_of else ''}.json"
+    target = REPO / 'research' / 'results' / f"{results['date']}_{args.model}{'_on-' + args.keys_of if args.keys_of else ''}.json"
     target.write_text(json.dumps(results, indent=1, default=float), encoding='utf-8')
     print('\nsaved', target.relative_to(REPO))

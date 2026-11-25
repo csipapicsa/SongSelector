@@ -1,6 +1,6 @@
 # Research plan: suggest missing ratings and colours from sound
 
-Status 2026-11-03: step 0 done; step 1 sheet made (docs/research/sheets/), waiting for the user; step 2 done on 800 tracks: no small model beats CNN14; step 3 on hold; step 4 (BPM, key, usage) done. Findings so far: [rating_color_prediction.md](rating_color_prediction.md).
+Status 2026-11-03: step 0 done; step 1 sheet made (research/data/sheets/), waiting for the user; step 2 done on 800 tracks: no small model beats CNN14; step 3 on hold; step 4 (BPM, key, usage) done. Findings so far: [rating_color_prediction.md](rating_color_prediction.md).
 
 ## Goal and the decision it serves
 
@@ -32,12 +32,12 @@ colour 5 31 %. Ratings are far from it.
 6. **One vector per track for every model**, so the comparison is fair: mean and standard
    deviation over the model's own windows (also tried: mean only).
 7. Everything runs on a **copy** of the data, and every run writes its numbers to
-   `experiments/results/<date>_<model>.json`.
+   `research/results/<date>_<model>.json`.
 
 ## Steps
 
-0. **Harness and CNN14 baseline.** Done: `experiments/rating_color/evaluate.py`, result 2026-11-03.
-1. **How consistent are the labels?** (sheet: `sheets/rerate_<date>.csv`, `taste_sheets.py rerate-make/rerate-score`.) Export about 60 labelled tracks (stratified by rating and
+0. **Harness and CNN14 baseline.** Done: `research/experiments/rating_color/evaluate.py`, result 2026-11-03.
+1. **How consistent are the labels?** (sheet: `research/data/sheets/rerate_<date>.csv`, `taste_sheets.py rerate-make/rerate-score`.) Export about 60 labelled tracks (stratified by rating and
    colour) as a blind sheet, re-rate them without seeing the old values, compute agreement
    (weighted kappa; share exactly equal). This is the ceiling for any model. If agreement is
    low, stop expecting a model to do better and use the time on easier tools (bulk set by group).
@@ -68,7 +68,7 @@ discussed 2026-11-03, not built).
 ## How to run
 
 ```
-cd docs/research/experiments/rating_color
+cd research/experiments/rating_color
 python evaluate.py --model cnn14          # development artists, writes results/<date>_cnn14.json
 python evaluate.py --model <name>         # reads .research_cache/vectors/<name>.npz (keys + matrix)
 python evaluate.py --model <name> --final # once, at the end

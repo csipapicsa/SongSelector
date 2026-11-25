@@ -15,7 +15,7 @@ Runs in an isolated environment, because msclap pins transformers < 5 and numpy 
     python -m venv --system-site-packages .research_cache\\venv-clap
     .research_cache\\venv-clap\\Scripts\\python -m pip install msclap==1.3.4 psutil soxr soundfile
     set HF_HOME=.research_cache\\hf
-    .research_cache\\venv-clap\\Scripts\\python docs\\research\\experiments\\clap\\benchmark_cpu.py --tracks E:\\DJ
+    .research_cache\\venv-clap\\Scripts\\python research\\experiments\\clap\\benchmark_cpu.py --tracks E:\\DJ
 
 PyTorch on the CPU only (CUDA hidden). The app would run an ONNX export through onnxruntime; that
 is measured separately once a model is chosen.
@@ -34,8 +34,8 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[4]
-RESULTS = REPO / 'docs' / 'research' / 'experiments' / 'results'
+REPO = Path(__file__).resolve().parents[3]
+RESULTS = REPO / 'research' / 'results'
 AUDIO_SUFFIXES = {'.mp3', '.flac', '.wav'}
 BATCH = 8
 

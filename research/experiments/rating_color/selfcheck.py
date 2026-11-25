@@ -15,7 +15,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import models
-from common import CACHE, REPO
+from common import CACHE
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--prepare', action='store_true')

@@ -1,7 +1,7 @@
 # Search prompts for trying AllMusicCaps CLAP
 
 Prompts to paste into *Analysis → Search by description...* when comparing MTG's AllMusicCaps CLAP with LAION
-(see [allmusiccaps_clap.md](allmusiccaps_clap.md)). The model learned from short review-style sentences and Last.fm
+(see [allmusiccaps_clap.md](../../docs/research/allmusiccaps_clap.md)). The model learned from short review-style sentences and Last.fm
 tag lists, so the prompts mix both styles. Written 2026-11-22; not all of them fit the test library on purpose.
 
 ## Core genres of the library (does it split sub-styles?)
