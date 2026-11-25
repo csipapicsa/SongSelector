@@ -67,6 +67,8 @@ machine; a library of 5,000 tracks is the DJ's library.
    teacher 3.7x faster on the CPU at no quality cost. The next lever after that is decoding: 6 windows need only
    60 s of a 6-minute track, so decoding only those parts would cut the 0.8 s floor for both.
 
+**Trained weights, same benchmark** (after Phase 1, [../results/2026-11-25_distill_speed_trained.json](../results/2026-11-25_distill_speed_trained.json)): `cnn4-small-64` trained runs at 30.9 ms per window (random weights: 30.3) and 1.01 s / 0.99 CPU-s per 6-minute track with 6 windows; the teacher on every window, 4 threads, 6.31 s / 22.7 CPU-s in the same run. Speed does not depend on training, as assumed: 6.2x faster and 23x less CPU time than the app today.
+
 **Decision:** Phase 1 is worth doing.
 
 ## Phase 1 plan
