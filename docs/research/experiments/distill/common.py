@@ -20,7 +20,7 @@ APP_DATA = REPO / 'dist'                              # the live install: librar
 TEACHER_ONNX = APP_DATA / 'models' / AMC_CLAP.audio_file
 TEACHER_CACHE = APP_DATA / AMC_CLAP.store_file
 WORK = REPO / '.research_cache' / 'distill'           # gitignored: student ONNX files, feature cache, MLflow store
-TEACHER_SNAPSHOT = WORK / 'snapshot' / AMC_CLAP.store_file
+DATA = WORK / 'data'                                  # Phase 1 feature cache (prepare_data.py)
 RESULTS = REPO / 'docs' / 'research' / 'experiments' / 'results'
 
 RATE = AMC_CLAP.sample_rate        # 24 kHz
@@ -51,17 +51,28 @@ def connect_ro(path):
     return sqlite3.connect(f'file:{Path(path).as_posix()}?mode=ro', uri=True)
 
 
+def snapshot(source):
+    """A frozen copy of one of the app's SQLite files in WORK/snapshot, made on first use with SQLite's backup API
+    (safe while the app runs). Experiments read the copy, never the live file (docs/research/README.md), and the
+    copy keeps the data fixed while the app goes on analysing new tracks. Delete it to take a new snapshot."""
+    copy = WORK / 'snapshot' / Path(source).name
+    if not copy.is_file():
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        partial = copy.with_suffix('.partial')
+        with closing(connect_ro(source)) as original, closing(sqlite3.connect(partial)) as target:
+            original.backup(target)
+        partial.replace(copy)
+    return copy
+
+
 def teacher_cache():
-    """A frozen copy of the app's AllMusicCaps cache, made on first use with SQLite's backup API (safe while the app
-    runs). Experiments read the copy, never the live file (docs/research/README.md), and the copy keeps the
-    training data fixed while the app goes on analysing new tracks. Delete it to take a new snapshot."""
-    if not TEACHER_SNAPSHOT.is_file():
-        TEACHER_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-        partial = TEACHER_SNAPSHOT.with_suffix('.partial')
-        with closing(connect_ro(TEACHER_CACHE)) as source, closing(sqlite3.connect(partial)) as target:
-            source.backup(target)
-        partial.replace(TEACHER_SNAPSHOT)
-    return TEACHER_SNAPSHOT
+    """The snapshot of the app's AllMusicCaps cache (teacher vectors of every window of 3,380 tracks)."""
+    return snapshot(TEACHER_CACHE)
+
+
+def library():
+    """The snapshot of the app's library (artist, genre, file path of every track)."""
+    return snapshot(APP_DATA / 'library.sqlite')
 
 
 def teacher_tracks(min_windows=1, max_windows=10**9):
@@ -81,3 +92,26 @@ def teacher_vectors(path):
     if encoding != app_embeddings.ENCODING:
         raise ValueError(f'unexpected encoding {encoding}')
     return app_embeddings.decode(blob, frames, dim).astype(np.float32)
+
+
+# ---- Experiment tracking -----------------------------------------------------------------------------------------
+
+MLFLOW_DB = WORK / 'mlflow.db'
+MLFLOW_ARTIFACTS = WORK / 'mlartifacts'
+
+
+def mlflow_experiment(name):
+    """MLflow pointed at the local store and experiment `name` selected (created on first use). Runs go to a SQLite
+    file, artifacts to files next to it, both in the git-ignored WORK folder. To browse, from the repo root:
+
+        .research_cache\\venv-distill\\Scripts\\mlflow ui --backend-store-uri sqlite:///.research_cache/distill/mlflow.db
+    """
+    import os
+    os.environ.setdefault('MLFLOW_DISABLE_AGENT_HINT', '1')   # a hint for coding agents printed on every import
+    import mlflow
+    WORK.mkdir(parents=True, exist_ok=True)
+    mlflow.set_tracking_uri(f'sqlite:///{MLFLOW_DB.as_posix()}')
+    if mlflow.get_experiment_by_name(name) is None:
+        mlflow.create_experiment(name, artifact_location=(MLFLOW_ARTIFACTS / name).as_uri())
+    mlflow.set_experiment(name)
+    return mlflow

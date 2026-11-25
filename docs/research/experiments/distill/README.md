@@ -14,7 +14,7 @@ that load.
 | Phase | Question | Status |
 |---|---|---|
 | 0 | Is a student really cheaper end to end (decode + features + model)? Random weights: speed does not depend on training | done 2026-11-25: yes, see results |
-| 1 | How close can a trained student get? Teacher targets: the 130,705 window vectors already in the app's cache (3,380 tracks), no teacher runs needed | next |
+| 1 | How close can a trained student get? Teacher targets: the 130,705 window vectors already in the app's cache (3,380 tracks), no teacher runs needed | done 2026-11-25: on genre search a 1 MB student matches the teacher; closest matches differ, see results |
 | 2 | Best student to ONNX (int8?), app integration as its own model entry | after 1 |
 
 ## Phase 0 results, 2026-11-25
@@ -71,15 +71,86 @@ machine; a library of 5,000 tracks is the DJ's library.
 
 ## Phase 1 plan
 
-- **Data:** the frozen snapshot of the app's teacher cache (`common.teacher_cache()`), all tracks except the
-  genre test set of [../clap/allmusiccaps.ipynb](../clap/allmusiccaps.ipynb), so the student can be scored with
-  the same 27 prompts (teacher 0.328 mean AP, LAION 0.214). Split by artist where possible.
-- **Learning curve:** 500, 1,000 and all ~2,400 training tracks, to see whether more data still helps.
-- **Short runs:** AdamW, fixed learning rate 3e-4, at most 30 epochs, early stopping after 3 epochs without
-  better validation cosine. Learning-rate schedules only after a baseline works.
-- **Order:** mean-vector baseline, MFCC + ridge, then the CNNs. Features from 6 windows per track first (~20k
-  windows), cached as float16.
-- **Note:** the cached teacher vectors are not unit length (norms ~3), so the loss compares directions (cosine).
+- **Data** ([prepare_data.py](prepare_data.py)): the frozen snapshot of the app's teacher cache (3,380 tracks).
+  Split so that no artist is shared between training and evaluation:
+  - **test:** the 1,272 tracks of the genre test set of [../clap/allmusiccaps.ipynb](../clap/allmusiccaps.ipynb)
+    (rating 4-5 with a colour). The student is scored there with the same 27 prompts, labels and AP as the
+    teacher.
+  - **val:** the 608 other tracks by the test set's artists. They would leak those artists into the test score
+    if used for training, but they share no artist with training, so they serve early stopping and model choice.
+  - **train:** the remaining 1,500 tracks, with up to 16 evenly spaced windows each (~24k windows; val and test use
+    the 6 sampled windows). A seeded order gives nested subsets of 500 / 1,000 / 1,500 tracks for a learning curve.
+- **Inputs:** 64-band log-mels computed by the students' own front end on the GPU, cached as float16 (~4.5 GB).
+  The front end has no learned weights, so training from the cache equals training the exported model. Checked
+  before the build: fresh teacher inference on cached windows gives cosine 1.00000 with the cached targets
+  (another window of the same song: 0.25-0.92).
+- **Training** ([train.py](train.py)): loss 1 - cosine (the cached teacher vectors are not unit length, norms ~3,
+  and the app compares directions); AdamW, fixed learning rate 3e-4, batch 32, fp32, at most 10 epochs, early
+  stopping after 3 epochs without a better validation cosine. No augmentation. Learning-rate schedules only once a
+  baseline works.
+- **Order:** references (teacher on 6 windows, LAION CLAP), the mean-vector baseline, MFCC + ridge, then the
+  students; then the learning curve for the best one. `mnv3s-128` needs a 128-band cache; only if the 64-band
+  students fall short.
+- **Evaluation** ([evaluate.py](evaluate.py)): fidelity to the teacher (window cosine, track cosine, top-10
+  overlap of each track's nearest tracks) and test genre AP. Everything goes to MLflow (experiment `distill-train`).
+
+## Phase 1 results, 2026-11-25
+
+**Setup:** as planned above, except mixed precision: fp16 gives NaN from the first step on the GTX 1650 Ti (and is
+slower there), so training runs in fp32. Batch 32, AdamW 3e-4, at most 10 epochs, patience 3; 23,920 training
+windows from 1,500 tracks. One run per model (seed 0). Raw numbers:
+[../results/2026-11-25_distill_phase1.json](../results/2026-11-25_distill_phase1.json); charts:
+[phase1_eval.ipynb](phase1_eval.ipynb).
+
+**Test split** (1,272 tracks, 6 windows each, artists never seen in training):
+
+| Run | Params | Window cos | Track cos | Top-10 overlap | Genre AP | Best epoch, training time |
+|---|---|---|---|---|---|---|
+| Teacher, 6 windows (the ceiling) | 73.6 M | 1 | 1 | 1 | 0.285 | |
+| LAION CLAP, every window (the app's other text model) | | | | | 0.197 | |
+| Mean training vector (the floor) | | 0.709 | 0.769 | 0.007 | 0.136 | |
+| MFCC mean/std + ridge | | 0.738 | 0.798 | 0.063 | 0.187 | |
+| `mfcc40-mlp` | 0.30 M | 0.752 | 0.820 | 0.069 | 0.208 | 4, 1 min |
+| **`cnn4-small-64`** | **0.23 M** | 0.851 | 0.911 | 0.169 | **0.300** | 5, 8 min |
+| `cnn4-64` | 0.65 M | **0.857** | **0.916** | **0.189** | 0.296 | 5, 18 min |
+
+Genre AP against the teacher and LAION, paired bootstrap over test tracks (500 resamples, `evaluate.py --bootstrap`):
+
+| Student | minus teacher | minus LAION |
+|---|---|---|
+| `cnn4-small-64` | +0.014 (95% interval -0.005 to +0.031) | +0.103 (+0.082 to +0.125) |
+| `cnn4-64` | +0.009 (-0.008 to +0.025) | +0.098 (+0.078 to +0.120) |
+| `mfcc40-mlp` | -0.079 (-0.101 to -0.058) | +0.011 (-0.010 to +0.029) |
+
+**Learning curve** (`cnn4-small-64`, nested subsets of the training tracks):
+
+| Training tracks | Val window cos | Test top-10 overlap | Test genre AP |
+|---|---|---|---|
+| 500 | 0.829 | 0.149 | 0.277 |
+| 1,000 | 0.833 | 0.161 | 0.298 |
+| 1,500 | 0.840 | 0.169 | 0.300 |
+
+**What it means:**
+
+1. **For genre and description search, a 1 MB student matches the teacher:** `cnn4-small-64` is within noise of
+   the 6-window teacher (interval includes 0) and clearly above LAION, at about a third of the teacher's CPU time
+   per track (0.96 vs 2.79 CPU-s, Phase 0) and ~315 MB less memory.
+2. **Raw cosine flatters:** the mean vector alone gets 0.71, because the teacher's vectors share a large common
+   direction. The useful range is 0.71 to 1, and top-10 overlap and genre AP are the informative numbers.
+3. **Seeing the spectrogram is what matters:** the CNNs beat the models that only see MFCC averages on every
+   metric. The bigger CNN is slightly more faithful (top-10 overlap 0.19 vs 0.17) but not better at genre search.
+4. **Closest matches are the open question:** the students' 10 nearest tracks share only 1.7-1.9 with the
+   teacher's. That says they differ, not that they are worse: whether they sound right is a listening test.
+5. **Data:** genre AP stops rising at ~1,000 tracks; fidelity still rises slowly (+0.007 cosine, +0.008 overlap per
+   500 tracks). More tracks alone would help closest matches only a little.
+6. **Underfitting, not overfitting:** training loss ends near the validation level (training cosine ~0.84), and
+   validation bounces between epochs (fixed learning rate). Next levers: a learning-rate schedule, a somewhat larger
+   CNN, centring the targets (subtract the mean direction so the loss works on what distinguishes tracks), and the
+   128-band `mnv3s-128`.
+
+**Limits:** one seed per model, so run-to-run variation is not measured; the bootstrap covers the choice of test
+tracks, not of the 27 prompts; one library and one DJ's tags; the student learned from this library's sound, so
+other users' libraries may suit it less (Phase 2 needs a check on other music before shipping).
 
 ## Setup
 
@@ -101,7 +172,20 @@ If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on a
 | [common.py](common.py) | Paths, the teacher's contract (24 kHz, 10 s windows, 512-d), the app's decoder and windowing, reading the teacher cache |
 | [students.py](students.py) | Student networks with the log-mel front end inside; `python students.py` exports them (random weights) to ONNX and checks ONNX against PyTorch |
 | [benchmark_speed.py](benchmark_speed.py) | Phase 0: teacher vs students on the CPU, each (model, threads) in a fresh process |
+| [prepare_data.py](prepare_data.py) | Phase 1 data: artist-aware split, log-mel cache and matching teacher vectors |
+| [train.py](train.py) | Phase 1: baselines and students, early stopping, one MLflow run each, ONNX of the best weights |
+| [evaluate.py](evaluate.py) | Fidelity and genre-AP metrics; `python evaluate.py` logs the reference runs, `--bootstrap RUN...` the paired bootstrap, `--export-json` the results file |
+| [phase1_eval.ipynb](phase1_eval.ipynb) | Charts and tables from MLflow: all runs, genre AP, training curves, per-label AP, learning curve, cost vs quality (kernel: the venv, registered as `venv-distill`) |
 | [requirements.txt](requirements.txt) | Pinned versions of the venv |
+
+**MLflow:** runs are stored in `.research_cache/distill/mlflow.db` (experiments `distill-speed` for Phase 0,
+`distill-train` for Phase 1). To browse them, from the repo root:
+
+```
+.research_cache\venv-distill\Scripts\mlflow ui --backend-store-uri sqlite:///.research_cache/distill/mlflow.db
+```
+
+then open http://127.0.0.1:5000. `benchmark_speed.py --log-json <results.json>` logs an earlier benchmark.
 
 Outputs: `.research_cache/distill/` (git-ignored: ONNX files, feature cache, MLflow store) and one small JSON
 per run in [../results/](../results/).
