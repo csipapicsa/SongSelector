@@ -1,0 +1,73 @@
+{
+ "date": "2026-11-25",
+ "question": "Phase 2 of the AllMusicCaps distillation: does a cosine learning-rate schedule (3e-4 to 0 over 40 epochs) beat the constant rate of cnn4-small-64-n1199-long (in 2026-11-25_distill_phase2_first_steps.json)?",
+ "data": {
+  "tracks": 3380,
+  "windows": 35200,
+  "splits": {
+   "test": 1272,
+   "train": 1199,
+   "holdout": 608,
+   "val": 301
+  },
+  "train_windows_per_track": 16,
+  "eval_windows_per_track": 6,
+  "frontend": {
+   "n_mels": 64,
+   "n_fft": 1024,
+   "hop": 240,
+   "rate": 24000,
+   "dtype": "float16",
+   "computed_on": "cuda"
+  },
+  "resplit": {
+   "at": "2026-11-25T20:52:29",
+   "seed": 0,
+   "val_share": 0.2,
+   "previous_manifest": "manifest-phase1.parquet"
+  }
+ },
+ "runs": [
+  {
+   "run": "cnn4-small-64-n1199-cosine",
+   "kind": "student",
+   "test_windows": "7632",
+   "train_windows": "19136",
+   "schedule": "cosine",
+   "optimizer": "AdamW",
+   "loss": "1 - cosine",
+   "train_tracks": "1199",
+   "eval_train": "True",
+   "batch": "32",
+   "weight_decay": "0.0001",
+   "lr": 0.0,
+   "seed": "0",
+   "val_windows": "4784",
+   "manifest_sha": "09336462f729",
+   "amp": "False",
+   "max_epochs": "40",
+   "student": "cnn4-small-64",
+   "patience": "40",
+   "onnx_min_cosine": 1.0,
+   "test_genre_ap": 0.2887,
+   "train_minutes": 31.7953,
+   "val_track_cos_mean": 0.9166,
+   "best_val_cos": 0.8326,
+   "gpu_peak_mb": 1186.2431,
+   "val_top10_overlap": 0.3887,
+   "test_window_cos_mean": 0.8691,
+   "test_window_cos_p5": 0.6376,
+   "val_window_cos_p5": 0.5498,
+   "test_track_cos_mean": 0.9314,
+   "best_epoch": 35.0,
+   "train_cos": 0.878,
+   "val_window_cos_mean": 0.8326,
+   "train_loss": 0.1215,
+   "epoch_s": 45.5906,
+   "params_m": 0.2291,
+   "test_top10_overlap": 0.2216,
+   "val_cos": 0.8307,
+   "onnx_max_abs_diff": 0.0
+  }
+ ]
+}

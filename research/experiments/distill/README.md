@@ -17,7 +17,7 @@ that load.
 |---|---|---|
 | 0 | Is a student really cheaper end to end (decode + features + model)? Random weights: speed does not depend on training | done 2026-11-25: yes, see results |
 | 1 | How close can a trained student get? Teacher targets: the 130,705 window vectors already in the app's cache (3,380 tracks), no teacher runs needed | done 2026-11-25: on genre search a 1 MB student matches the teacher; closest matches differ, see results |
-| 2 | Make the student better where it is weak (closest matches): a clean split, sanity checks, longer training, then losses ([plan](../../../docs/research/allmusiccaps_distillation_phase2.md)) | in progress: split, overfit test, 40 epochs, seed noise and a look inside the space done 2026-11-25, see results |
+| 2 | Make the student better where it is weak (closest matches): a clean split, sanity checks, longer training, then losses ([plan](../../../docs/research/allmusiccaps_distillation_phase2.md)) | in progress: split, overfit test, 40 epochs, seed noise, a look inside the space and a learning-rate schedule done 2026-11-25, see results |
 | 3 | Best student to ONNX (int8?), app integration as its own model entry | after 2 |
 
 ## Phase 0 results, 2026-11-25
@@ -248,8 +248,24 @@ baseline student `cnn4-small-64-n1199`):
   copy vs 30 % without. Top-10 overlap moves by under 0.01 with one copy per song (0.192 → 0.186), so the
   comparisons above stand.
 
-**Next:** a learning-rate schedule over 40 epochs (cheap), then relational distillation (aimed at the missing fine
-structure), centring as a second option; listening test (E11) before any claim about quality.
+**5. Learning-rate schedule (E02).** `train.py --schedule cosine`: the learning rate falls from 3e-4 to 0 over the
+40 epochs (a step per batch); the only change from the 40-epoch run above (same seed, same selection). Raw numbers:
+[../../results/2026-11-25_distill_phase2_lr_schedule.json](../../results/2026-11-25_distill_phase2_lr_schedule.json).
+
+| 40 epochs, seed 0 | Test window cos | Track cos | Window cos, 5th pct | Top-10 overlap | Genre AP | Validation, last 10 epochs |
+|---|---|---|---|---|---|---|
+| Constant 3e-4 | 0.865 | 0.925 | 0.631 | 0.223 | 0.285 | 0.807-0.826 |
+| Cosine 3e-4 → 0 | 0.869 | 0.931 | 0.638 | 0.222 | 0.289 | 0.827-0.833 |
+
+Steadier (the last epochs settle instead of jumping, so the result no longer depends on the epoch it stops at) and
+slightly more faithful per window and per track, but the **neighbours did not move** (−0.002, within the seed range
+of 0.005). Training kept learning to the end (training cosine 0.88, as with the constant rate). So the neighbour gap
+is not an optimisation problem; the cosine schedule stays as the recipe.
+
+**Next** (in `docs/BACKLOG.md`; the user's focus is model structure): temporal modelling instead of the plain time
+average and/or 128 mel bands; relational distillation with model choice on validation top-10 overlap; a data pilot on
+FMA medium (30 s clips are enough to train on; the test stays on whole tracks). Listening test (E11) before any claim
+about quality.
 
 ## Setup
 

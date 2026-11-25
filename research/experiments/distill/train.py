@@ -117,6 +117,10 @@ def train_student(name, data, args, mlflow, log):
     if model.n_mels != data['mel'].shape[1]:
         sys.exit(f'{name} needs {model.n_mels} mel bands; the cache has {data["mel"].shape[1]}')
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = None
+    if args.schedule == 'cosine':   # from --lr down to 0 over all --max-epochs, a step per batch
+        steps = args.max_epochs * (len(data['train']['rows']) // args.batch)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=steps)
     # Off by default: on the GTX 1650 Ti fp16 gives NaN from the first step (and is slower than fp32 there).
     amp = args.amp and device == 'cuda'
     scaler = torch.amp.GradScaler(enabled=amp)
@@ -146,11 +150,14 @@ def train_student(name, data, args, mlflow, log):
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+            if scheduler is not None:
+                scheduler.step()
             losses.append(loss.item())
         val_cos = float((unit(predict(model, val_mel, device, amp)) * val_target).sum(1).mean())
         if not np.isfinite(val_cos):
             sys.exit(f'epoch {epoch}: validation cosine is {val_cos} (NaN in training?)')
-        metrics = {'train_loss': float(np.mean(losses)), 'val_cos': val_cos, 'epoch_s': time.time() - started}
+        metrics = {'train_loss': float(np.mean(losses)), 'val_cos': val_cos, 'epoch_s': time.time() - started,
+                   'lr': optimizer.param_groups[0]['lr']}
         if check_rows is not None:
             metrics['train_cos'] = float((unit(predict(model, train_mel[check_rows], device, amp))
                                           * train_unit[check_rows]).sum(1).mean())
@@ -182,6 +189,8 @@ def main():
     parser.add_argument('--student', required=True, choices=BASELINES + list(STUDENTS))
     parser.add_argument('--train-tracks', type=int, help='the first N training tracks (default: all)')
     parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--schedule', choices=['constant', 'cosine'], default='constant',
+                        help='cosine: the learning rate falls from --lr to 0 over --max-epochs')
     parser.add_argument('--weight-decay', type=float, default=1e-4)
     parser.add_argument('--batch', type=int, default=32)
     parser.add_argument('--max-epochs', type=int, default=10)
@@ -214,6 +223,7 @@ def main():
         else:
             mlflow.log_params({'lr': args.lr, 'weight_decay': args.weight_decay, 'batch': args.batch,
                                'max_epochs': args.max_epochs, 'patience': args.patience, 'optimizer': 'AdamW',
+                               'schedule': args.schedule,
                                'loss': '1 - cosine', 'amp': args.amp, 'eval_train': args.eval_train})
             model, best, predictions = train_student(args.student, data, args, mlflow, log)
             mlflow.log_metrics({'best_epoch': best['epoch'], 'best_val_cos': best['cos'],
