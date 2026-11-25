@@ -599,6 +599,10 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         from PyQt5.QtTest import QTest
         self.window.resize(1400, 900)
         self.window.show()
+        deadline = time.monotonic() + 60   # showing the window must not leave a layout running under the click
+        while self.map._loading and time.monotonic() < deadline:
+            self.application.processEvents()
+            time.sleep(0.02)
         self.application.processEvents()
         self.map.select(self.key(0))
         index = 3
@@ -614,10 +618,11 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         view.centerOn(self.map.dots[other])
         self.application.processEvents()
         point = view.mapFromScene(self.map.dots[other].pos())
+        under_click = [getattr(item, 'key', type(item).__name__) for item in view.items(point)]
         QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
         self.application.processEvents()
         self.assertEqual(self.map.selected_key, self.key(0))  # the base track stays selected
-        self.assertEqual(self.map.preview_key, other)
+        self.assertEqual(self.map.preview_key, other, f'items under the click, top first: {under_click}')
         self.assertTrue(self.map.preview_glow.isVisible())
         card = self.map.preview_card.text.toPlainText()
         self.assertTrue(self.map.preview_card.isVisible())
