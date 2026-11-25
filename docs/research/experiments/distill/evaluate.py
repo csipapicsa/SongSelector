@@ -251,6 +251,82 @@ def bootstrap_runs(run_names):
             client.log_metric(run.run_id, key, value)
 
 
+# ---- Free-text queries beyond genre tags ---------------------------------------------------------------------------
+
+PROMPTS_FILE = Path(__file__).resolve().parents[2] / 'allmusiccaps_prompts.md'
+LONG_QUERIES = [   # the held-out themes of the distillation brief: long, compound descriptions
+    'Hypnotic, psychedelic dance music with rolling tribal percussion and a deep, restrained bassline.',
+    'Dusty old-school breakbeats, spacious dub textures, and a slightly menacing late-night atmosphere.',
+    'Progressive club music with slowly evolving pads and a driving syncopated groove.',
+    'Warm, hazy, euphoric music with organic percussion and little vocal presence.',
+    'Sparse mechanical rhythms, dark atmospheres and an evolving rather than an aggressive energy.',
+]
+
+
+def query_sets():
+    """{section: [prompt]} from docs/research/allmusiccaps_prompts.md (every `quoted` prompt under a ## heading),
+    plus the brief's long queries."""
+    sections, current = {}, None
+    for line in PROMPTS_FILE.read_text(encoding='utf-8').splitlines():
+        if line.startswith('## '):
+            current = line[3:].split('(')[0].strip()
+            if current.startswith('How to read'):   # examples repeated from the sections above
+                current = None
+        elif line.startswith('- ') and current:
+            sections.setdefault(current, []).extend(re.findall(r'`([^`]+)`', line))
+    sections['Long descriptions (brief)'] = LONG_QUERIES
+    return sections
+
+
+def ranking_agreement(scores_a, scores_b, ks=(10, 50)):
+    """How alike two rankings of the same tracks are: top-k overlap and Spearman correlation of the scores."""
+    from scipy.stats import spearmanr
+    out = {f'top{k}': len(set(np.argsort(-scores_a)[:k]) & set(np.argsort(-scores_b)[:k])) / k for k in ks}
+    out['spearman'] = float(spearmanr(scores_a, scores_b).statistic)
+    return out
+
+
+def query_agreement(run_names, out_path=None):
+    """Per query: the teacher's ranking of the test tracks vs each student's (same text vector), and vs LAION's
+    (its own text encoder) as a yardstick for how much two different good models agree."""
+    import pandas as pd
+    teacher = np.load(DATA / 'teacher.npy', mmap_mode='r')
+    rows, track_ids, manifest = load_split('test')
+    t_tracks, ids = track_vectors(np.asarray(teacher[rows]), track_ids)
+    laion = laion_track_vectors(manifest.loc[ids, 'path_key'].tolist())
+    l_tracks = np.stack([laion[key] for key in manifest.loc[ids, 'path_key']])
+    students = {name: student_test_tracks(name)[0] for name in run_names}
+    amc, laion_encoder = TextEncoder(AMC_CLAP, APP_DATA / 'models'), TextEncoder(LAION_CLAP, APP_DATA / 'models')
+    records = []
+    for section, texts in query_sets().items():
+        for text in texts:
+            q_amc, q_laion = amc.encode(text), laion_encoder.encode(text)
+            t_scores = t_tracks @ q_amc
+            models = {name: vectors @ q_amc for name, vectors in students.items()}
+            models['laion-clap'] = l_tracks @ q_laion
+            for model, scores in models.items():
+                records.append({'section': section, 'query': text, 'model': model,
+                                **ranking_agreement(t_scores, scores)})
+    table = pd.DataFrame(records)
+    summary = table.groupby(['section', 'model'], sort=False)[['top10', 'top50', 'spearman']].mean()
+    print(summary.round(3).unstack('model').to_string())
+    print('\nall queries:\n' + table.groupby('model')[['top10', 'top50', 'spearman']].mean().round(3).to_string())
+    print(f'chance top-10 overlap: {10 / len(ids):.3f}')
+    if out_path:
+        import json
+        from datetime import date
+        Path(out_path).write_text(json.dumps({
+            'date': str(date.today()),
+            'question': 'Free-text queries beyond genre tags: how alike are the rankings of the test tracks by the '
+                        'teacher (6 windows) and by each student / by LAION CLAP?',
+            'tracks': len(ids), 'queries': int(table['query'].nunique()), 'chance_top10': 10 / len(ids),
+            'by_section': {f'{s} | {m}': v for (s, m), v in summary.round(4).to_dict('index').items()},
+            'per_query': table.round(4).to_dict('records'),
+        }, indent=1), encoding='utf-8')
+        print(f'Wrote {out_path}')
+    return table
+
+
 def export_json(path):
     """The latest finished run of each name in distill-train, as a small JSON for the repo (the MLflow store itself
     is local and git-ignored)."""
@@ -286,8 +362,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reference runs, a paired bootstrap of trained students, or an export.')
     parser.add_argument('--bootstrap', nargs='+', metavar='RUN', help='e.g. cnn4-small-64-n1500 cnn4-64-n1500')
     parser.add_argument('--export-json', type=Path, metavar='PATH', help='write the latest runs to a results JSON')
+    parser.add_argument('--queries', nargs='+', metavar='RUN', help='ranking agreement with the teacher per query')
+    parser.add_argument('--queries-out', type=Path, metavar='PATH', help='JSON for --queries')
     arguments = parser.parse_args()
-    if arguments.bootstrap:
+    if arguments.queries:
+        query_agreement(arguments.queries, arguments.queries_out)
+    elif arguments.bootstrap:
         bootstrap_runs(arguments.bootstrap)
     elif arguments.export_json:
         export_json(arguments.export_json)

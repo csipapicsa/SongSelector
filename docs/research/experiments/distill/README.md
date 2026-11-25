@@ -148,6 +148,28 @@ Genre AP against the teacher and LAION, paired bootstrap over test tracks (500 r
    CNN, centring the targets (subtract the mean direction so the loss works on what distinguishes tracks), and the
    128-band `mnv3s-128`.
 
+**Free-text queries beyond genre tags** (`evaluate.py --queries`): 59 queries, the prompt list of
+[../../allmusiccaps_prompts.md](../../allmusiccaps_prompts.md) (genres, other dance music, far from the library,
+mood, limits) and the 5 long descriptions of the brief. For each query, the teacher's ranking of the 1,272 test
+tracks against each student's (same text vector) and, as a yardstick for how much two different good models agree,
+LAION's (its own text encoder). Raw numbers:
+[../results/2026-11-25_distill_query_agreement.json](../results/2026-11-25_distill_query_agreement.json).
+
+| Agreement with the teacher's ranking | `cnn4-64` | `cnn4-small-64` | LAION CLAP |
+|---|---|---|---|
+| Spearman over all tracks | 0.75 | 0.74 | 0.18 |
+| Top-50 overlap | 0.39 | 0.37 | 0.13 |
+| Top-10 overlap (chance 0.008) | 0.21 | 0.18 | 0.08 |
+| Long descriptions only: Spearman / top-50 | 0.79 / 0.36 | 0.78 / 0.34 | 0.16 / 0.17 |
+
+- **Long, compound queries work as well as short ones:** the text side is the teacher's own encoder, so the
+  student only has to place tracks in the space, and it does so as consistently for long descriptions.
+- **The order agrees, the top of the list less:** ~2 of the top 10 and ~19 of the top 50 are shared. Top-k overlap
+  is harsh when many tracks score almost the same: `old-school jungle with chopped amen breaks and reggae bass` has
+  top-10 overlap 0 at Spearman 0.86 (many near-equal jungle tracks reshuffle).
+- **Agreement is not relevance:** whether the student's top 10 is worse, or just different, needs a listening test
+  (blind: both top lists shuffled together, rated per track).
+
 **Limits:** one seed per model, so run-to-run variation is not measured; the bootstrap covers the choice of test
 tracks, not of the 27 prompts; one library and one DJ's tags; the student learned from this library's sound, so
 other users' libraries may suit it less (Phase 2 needs a check on other music before shipping).
