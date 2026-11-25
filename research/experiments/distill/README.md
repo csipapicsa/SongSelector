@@ -2,8 +2,10 @@
 
 **Question:** can a small network, fed cheap log-mel features, put tracks into the AllMusicCaps CLAP audio space
 well enough for the map, closest matches and free-text search, at a fraction of the CPU cost? The original text
-encoder stays, so typed queries keep working. Background and literature: the distillation brief
-(`docs/research/AllMusicCaps_distillation_project - 2026-11-125.md`) and [../../../docs/research/allmusiccaps_clap.md](../../../docs/research/allmusiccaps_clap.md).
+encoder stays, so typed queries keep working. Background and literature: the
+[distillation brief](../../../docs/research/allmusiccaps_distillation_brief.md), the
+[Phase 1 assessment and Phase 2 plan](../../../docs/research/allmusiccaps_distillation_phase2.md) and
+[allmusiccaps_clap.md](../../../docs/research/allmusiccaps_clap.md).
 
 **Why:** on a GPU the teacher is already fast (~24 ms per 10 s window on DirectML). On the CPU it takes
 112-217 ms per window, and the app embeds every window, so 4-8 s per 6-minute track. Users without a GPU carry
@@ -15,7 +17,8 @@ that load.
 |---|---|---|
 | 0 | Is a student really cheaper end to end (decode + features + model)? Random weights: speed does not depend on training | done 2026-11-25: yes, see results |
 | 1 | How close can a trained student get? Teacher targets: the 130,705 window vectors already in the app's cache (3,380 tracks), no teacher runs needed | done 2026-11-25: on genre search a 1 MB student matches the teacher; closest matches differ, see results |
-| 2 | Best student to ONNX (int8?), app integration as its own model entry | after 1 |
+| 2 | Make the student better where it is weak (closest matches): a clean split, sanity checks, longer training, then losses ([plan](../../../docs/research/allmusiccaps_distillation_phase2.md)) | in progress: split, overfit test, 40 epochs, seed noise and a look inside the space done 2026-11-25, see results |
+| 3 | Best student to ONNX (int8?), app integration as its own model entry | after 2 |
 
 ## Phase 0 results, 2026-11-25
 
@@ -176,6 +179,78 @@ LAION's (its own text encoder). Raw numbers:
 tracks, not of the 27 prompts; one library and one DJ's tags; the student learned from this library's sound, so
 other users' libraries may suit it less (Phase 2 needs a check on other music before shipping).
 
+## Phase 2, first steps, 2026-11-25
+
+Following the [Phase 2 plan](../../../docs/research/allmusiccaps_distillation_phase2.md): fix the evaluation first,
+then the sanity checks a training pipeline should pass, then the cheapest lever. Raw numbers:
+[../../results/2026-11-25_distill_phase2_first_steps.json](../../results/2026-11-25_distill_phase2_first_steps.json)
+(MLflow runs tagged `phase: 2`).
+
+**1. Split (E00).** Phase 1's validation set was the test artists' other tracks: it shared 200 artists with the
+test set, and early stopping and model choice were made on it. Now no artist is in two of train, val and test
+(`prepare_data.py --split-only`: only the manifest changes, the cached windows stay; the Phase 1 manifest is kept as
+`manifest-phase1.parquet`). Test: unchanged, 1,272 tracks (so all numbers stay comparable). Holdout (unused): the
+608 old validation tracks. Validation: a seeded 20 % of the other artists, 301 tracks (16 windows each, like
+training). Training: 1,199 tracks. Known limit, accepted: artists are matched by name only, so collaborations
+("A & B" vs "A") are not linked (~190 training tracks share a name with a test artist that way).
+
+**2. Overfit test (sanity check).** `cnn4-small-64` on 50 tracks (800 windows), 200 epochs, no early stopping, with
+`--eval-train` (training cosine measured in eval mode, comparable with validation): training cosine 0.60 → **0.946**,
+validation ~0.71 (best 0.738; mean baseline 0.68). It learns its training data: the pipeline (inputs, targets,
+loss, optimiser) is sound, and Phase 1's plateau (train ≈ val ≈ 0.84) is a modelling question, not a bug. Side
+finding: 50 tracks already give genre AP 0.273 (teacher 0.285), so genre AP barely separates students; neighbour
+agreement (top-10 overlap 0.126) does.
+
+**3. Baseline on the new split, and the seed noise.** Phase 1 settings (at most 10 epochs, patience 3), three seeds;
+then one run of 40 epochs without early stopping:
+
+| Run | Best epoch | Test window cos | Top-10 overlap | Genre AP |
+|---|---|---|---|---|
+| Phase 1 (1,500 tracks, old validation) | 5 | 0.851 | 0.169 | 0.300 |
+| New split, seed 0 / 1 / 2 | 8 / 8 / 9 | 0.855 / 0.854 / 0.857 | 0.192 / 0.194 / 0.197 | 0.293 / 0.297 / 0.293 |
+| **New split, 40 epochs** (seed 0) | 39 | **0.865** | **0.223** | 0.285 |
+
+- **Seed noise is small:** the three seeds span 0.0025 in window cosine and 0.005 in top-10 overlap. Measured once,
+  this is the yardstick for later runs; a difference near it needs more seeds, a larger one doesn't.
+- **The student was undertrained:** validation kept improving up to epoch 39 (0.816 at epoch 8 → 0.826), and
+  neighbour agreement rose 0.194 → 0.223, about 6x the seed range. Early stopping on the old validation set had
+  stopped it at epoch 5. The training-validation gap opens slowly (0.02 → 0.05), and validation jumps between epochs
+  under the fixed learning rate: a learning-rate schedule is the next cheap step.
+- **Genre AP fell to exactly the teacher's 0.285** as fidelity rose: the earlier "above the teacher" was most likely
+  the smoother, coarser space of a less faithful student, not better search.
+- Phase 1 vs the new split mixes two changes (validation set and 20 % fewer training tracks), so it is not a clean
+  comparison; 10 vs 40 epochs is.
+
+**4. A look inside the space** ([space_diagnostics.ipynb](space_diagnostics.ipynb), CPU, no training; test set,
+baseline student `cnn4-small-64-n1199`):
+
+- **Anisotropy:** two random test windows have cosine 0.52; a window and the training mean direction 0.71. Much of
+  the raw cosine is free: centred (training mean subtracted) the student scores 0.68 per window (raw 0.855), the
+  mean baseline 0.09 (raw 0.708).
+- **The teacher uses few directions:** 5 principal components hold 50 % of the variance, 16 hold 80 %, 62 hold 95 %;
+  participation ratio 12.8 of 512.
+- **Coarse kept, fine missing:** per teacher component, the student's coordinate correlates with the teacher's at
+  ρ² 0.50 for components 1-8 (71 % of the variance), 0.12 for 9-32 (18 %) and 0.05 for 33-128 (8 %); where it is
+  unsure it is also shrunk (spread 0.4-0.5 of the teacher's). The neighbours need the fine part: the teacher itself,
+  cut to its first 16 components, keeps only 0.77 of its own top-10 neighbours (4 components: 0.34). This explains a
+  good genre score with weak neighbour agreement, and points at losses on the relations between tracks (relational
+  distillation) rather than more of the same loss.
+- **Relations:** the correlation of all track-pair similarities with the teacher's is 0.84 (50-track student:
+  0.68); linear CKA 0.89.
+- **Error analysis:** per-window agreement depends mostly on how close the window is to the training data in the
+  teacher's space (correlation 0.60; 0.48 for the least familiar tenth vs 0.85 for the most familiar), little on
+  loudness (0.18), and dips around 7/12 of the track (often the main breakdown in dance music). Variation is half
+  between tracks, half within. By first genre tag: drum & bass 0.80, breakbeat 0.63, electro break and "electronic"
+  about 0.58 (centred cosine). The misses are mostly music unlike anything in training: a data-coverage limit.
+- **Duplicates:** 324 songs exist more than once (651 of 3,380 files; one folder copied into another). None leaks
+  (the only cross-split copies pair test with the unused holdout). Copies are identical for the teacher, so a test
+  track's copy is its nearest neighbour for both models: the student "finds the nearest" 100 % for tracks with a
+  copy vs 30 % without. Top-10 overlap moves by under 0.01 with one copy per song (0.192 → 0.186), so the
+  comparisons above stand.
+
+**Next:** a learning-rate schedule over 40 epochs (cheap), then relational distillation (aimed at the missing fine
+structure), centring as a second option; listening test (E11) before any claim about quality.
+
 ## Setup
 
 A separate venv, so nothing here changes the app's `.venv` or the exe (torch 2.8 CUDA for training on the
@@ -196,7 +271,7 @@ If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on a
 | [common.py](common.py) | Paths, the teacher's contract (24 kHz, 10 s windows, 512-d), the app's decoder and windowing, reading the teacher cache |
 | [students.py](students.py) | Student networks with the log-mel front end inside; `python students.py` exports them (random weights) to ONNX and checks ONNX against PyTorch |
 | [benchmark_speed.py](benchmark_speed.py) | Phase 0: teacher vs students on the CPU, each (model, threads) in a fresh process |
-| [prepare_data.py](prepare_data.py) | Phase 1 data: artist-aware split, log-mel cache and matching teacher vectors |
+| [prepare_data.py](prepare_data.py) | Data: artist-disjoint train / val / test split, log-mel cache and matching teacher vectors; `--split-only` re-splits the existing cache |
 | [train.py](train.py) | Phase 1: baselines and students, early stopping, one MLflow run each, ONNX of the best weights |
 | [evaluate.py](evaluate.py) | Fidelity and genre-AP metrics; `python evaluate.py` logs the reference runs, `--bootstrap RUN...` the paired bootstrap, `--export-json` the results file |
 | [phase1_eval.ipynb](phase1_eval.ipynb) | Charts and tables from MLflow: all runs, genre AP, training curves, per-label AP, learning curve, cost vs quality (kernel: the venv, registered as `venv-distill`) |
