@@ -15,3 +15,8 @@ scikit-learn==1.9.1
 matplotlib==3.11.2
 ipykernel==7.4.0
 tokenizers==0.23.3
+# Notebooks: run them headless with their outputs saved (nbclient), and keep the outputs out of git (nbstripout as a
+# git filter; outputs can hold track names from the personal library). See research/README.md.
+nbclient==0.11.0
+nbformat==5.11.1
+nbstripout==0.9.2

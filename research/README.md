@@ -29,6 +29,12 @@ library snapshots, extracted vectors, feature caches, MLflow stores and the rese
 - Scripts find the repo from their own location (`Path(__file__).parents[3]`), notebooks by walking up to
   `pyproject.toml`, so the working folder does not matter. They import the app from `src/` to decode and window audio
   exactly as the app does.
+- Notebooks: `python research\run_notebook.py <notebook>` (research venv) runs one and saves it with its outputs,
+  so it can be read without running it again. Outputs can show track names, so they stay on this machine: git stores
+  notebooks without them through the nbstripout filter in `.gitattributes`. Once per clone:
+  `.research_cache\venv-distill\Scripts\nbstripout --install`. CI fails if a notebook with outputs is committed.
+  Switching to a branch without the notebook (or with a different version of it) replaces the file, and its local
+  outputs are gone: run it again afterwards.
 
 ## Rules
 

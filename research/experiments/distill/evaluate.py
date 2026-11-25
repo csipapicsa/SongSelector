@@ -327,20 +327,30 @@ def query_agreement(run_names, out_path=None):
     return table
 
 
-def export_json(path):
-    """The latest finished run of each name in distill-train, as a small JSON for the repo (the MLflow store itself
-    is local and git-ignored)."""
+QUESTIONS = {
+    '1': 'Phase 1 of the AllMusicCaps distillation: how close do students trained on cached log-mels get to the '
+         'teacher (fidelity, genre-tag search on the test split)?',
+    '2': 'Phase 2 of the AllMusicCaps distillation, first steps: with a validation set that shares no artist with the '
+         'test set, can the student overfit a few tracks (is the pipeline sound), how much does longer training give, '
+         'and how large is the seed-to-seed noise?',
+}
+
+
+def export_json(path, phase=None):
+    """The latest finished run of each name in distill-train (only those tagged with `phase`, if given), as a small
+    JSON for the repo (the MLflow store itself is local and git-ignored)."""
     import json
     from datetime import date
     mlflow = mlflow_experiment(EXPERIMENT)
     runs = mlflow.search_runs(filter_string="attributes.status = 'FINISHED'", order_by=['attributes.start_time DESC'])
+    if phase:
+        runs = runs[runs['tags.phase'] == phase]
     runs = runs.drop_duplicates('tags.mlflow.runName')
     meta = json.loads((DATA / 'meta.json').read_text(encoding='utf-8'))
     out = {'date': str(date.today()),
-           'question': 'Phase 1 of the AllMusicCaps distillation: how close do students trained on cached log-mels get '
-                       'to the teacher (fidelity, genre-tag search on the test split)?',
+           'question': QUESTIONS.get(phase or '1'),
            'data': {key: meta[key] for key in ('tracks', 'windows', 'splits', 'train_windows_per_track',
-                                               'eval_windows_per_track', 'frontend')},
+                                               'eval_windows_per_track', 'frontend', 'resplit') if key in meta},
            'runs': []}
     for _, run in runs.iterrows():
         row = {'run': run['tags.mlflow.runName'], 'kind': run.get('tags.kind')}
@@ -362,6 +372,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reference runs, a paired bootstrap of trained students, or an export.')
     parser.add_argument('--bootstrap', nargs='+', metavar='RUN', help='e.g. cnn4-small-64-n1500 cnn4-64-n1500')
     parser.add_argument('--export-json', type=Path, metavar='PATH', help='write the latest runs to a results JSON')
+    parser.add_argument('--phase', help="with --export-json: only runs tagged with this phase, e.g. '2'")
     parser.add_argument('--queries', nargs='+', metavar='RUN', help='ranking agreement with the teacher per query')
     parser.add_argument('--queries-out', type=Path, metavar='PATH', help='JSON for --queries')
     arguments = parser.parse_args()
@@ -370,6 +381,6 @@ if __name__ == '__main__':
     elif arguments.bootstrap:
         bootstrap_runs(arguments.bootstrap)
     elif arguments.export_json:
-        export_json(arguments.export_json)
+        export_json(arguments.export_json, arguments.phase)
     else:
         log_references()

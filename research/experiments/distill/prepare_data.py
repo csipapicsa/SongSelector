@@ -1,15 +1,19 @@
-"""Phase 1 data: a fixed, artist-aware split and a log-mel cache with the matching teacher vectors.
+"""Distillation data: a fixed, artist-disjoint split and a log-mel cache with the matching teacher vectors.
 
-Split (written to a manifest, so every run uses the same tracks):
-  test   the genre test set of ../clap/allmusiccaps.ipynb (rating 4-5 with a colour) that is in the teacher snapshot:
-         the student is scored on it with the same 27 prompts as the teacher
-  val    other tracks by the test set's artists: kept out of training (they would leak those artists into the test
-         score) but artist-disjoint from training, so they serve early stopping and model choice
-  train  the rest, no artist in common with val or test (tracks without an artist count as their own artist);
-         `train_rank` is a seeded random order, so "the first N" gives nested subsets for a learning curve
+Split (written to a manifest, so every run uses the same tracks). No artist is in two of train, val and test
+(artist names compared case-insensitively; a track without an artist counts as its own artist):
+  test     the genre test set of ../clap/allmusiccaps.ipynb (rating 4-5 with a colour) that is in the teacher
+           snapshot: the student is scored on it with the same 27 prompts as the teacher
+  holdout  other tracks by the test set's artists: unused (in training or validation they would share artists with
+           the test set)
+  val      a seeded ~20 % of the remaining artists: early stopping and model choice
+  train    the rest; `train_rank` is a seeded random order, so "the first N" gives nested subsets
+Phase 1 used the holdout tracks as validation, which shared every artist with the test set; `--split-only` moved to
+this split without rebuilding the cache (the Phase 1 manifest is kept as manifest-phase1.parquet).
 
-Windows: up to 16 evenly spaced 10 s windows per training track (more examples per song), the 6 sampled windows for
-val and test (as the app would on the CPU). Each window's target is the teacher vector at the same window index.
+Windows: up to 16 evenly spaced 10 s windows per train or val track (more examples per song; val comes from the same
+pool, so a re-split needs no new windows), the 6 sampled windows for test and holdout (as the app would on the CPU).
+Each window's target is the teacher vector at the same window index.
 
 Each track is decoded with the app's decoder in a pool of processes; its windows go through the students' own LogMel
 on the GPU, so the cached input is what the exported model computes (stored as float16). A track whose window
@@ -23,13 +27,16 @@ Output in .research_cache/distill/data/:
   meta.json          front end, seed, counts, timing
 
     .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py
+    .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py --split-only
 """
 import argparse
 import json
 import random
 import re
+import shutil
 import sys
 import time
+from collections import Counter, defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from contextlib import closing
 from datetime import datetime
@@ -55,10 +62,50 @@ from common import (  # noqa: E402
 CLAP_TEST = REPO / '.research_cache' / 'clap' / 'amc-all-layers.sqlite'   # the genre test set's track list
 TRAIN_WINDOWS = 16
 N_MELS = 64
+VAL_SHARE = 0.2   # of the tracks that may be used for training, as whole artists
 
 
 def norm_artist(artist):
     return re.sub(r'\s+', ' ', (artist or '').strip().lower())
+
+
+def assign_splits(keys, artists, test_keys, seed):
+    """{path_key: split} as described at the top. Fails if an artist ends up in two of train, val and test."""
+    artist_of = {key: norm_artist(artist) or f'<no artist>:{key}' for key, artist in zip(keys, artists)}
+    test_artists = {artist_of[key] for key in keys if key in test_keys}
+    split = {key: 'test' if key in test_keys else 'holdout' if artist_of[key] in test_artists else None
+             for key in keys}
+    tracks_of = Counter(artist_of[key] for key in keys if split[key] is None)
+    pool = sorted(tracks_of)
+    random.Random(seed).shuffle(pool)
+    val_artists, taken = set(), 0
+    for artist in pool:
+        if taken >= VAL_SHARE * sum(tracks_of.values()):
+            break
+        val_artists.add(artist)
+        taken += tracks_of[artist]
+    for key in keys:
+        if split[key] is None:
+            split[key] = 'val' if artist_of[key] in val_artists else 'train'
+
+    splits_of = defaultdict(set)   # holdout counts as test here: it is the test artists' other tracks
+    for key in keys:
+        splits_of[artist_of[key]].add('test' if split[key] == 'holdout' else split[key])
+    shared = [artist for artist, splits in splits_of.items() if len(splits) > 1]
+    if shared:
+        sys.exit(f'{len(shared)} artists are in more than one split, e.g. {shared[:3]}')
+    return split
+
+
+def windows_for(split):
+    return TRAIN_WINDOWS if split in ('train', 'val') else SAMPLED_WINDOWS
+
+
+def rank_training(manifest, seed):
+    train = manifest.index[manifest.split == 'train'].tolist()
+    random.Random(seed).shuffle(train)
+    manifest['train_rank'] = -1
+    manifest.loc[train, 'train_rank'] = range(len(train))
 
 
 def build_manifest(seed):
@@ -70,23 +117,51 @@ def build_manifest(seed):
     with closing(connect_ro(library())) as connection:
         meta = {key: (artist or '', genre or '', file_path) for key, artist, genre, file_path in
                 connection.execute('SELECT path_key, artist, genre, file_path FROM tracks')}
-    test_artists = {norm_artist(meta[key][0]) for key in test_keys if key in meta} - {''}
 
+    keys = sorted(frames)
+    split = assign_splits(keys, [meta.get(key, ('',))[0] for key in keys], test_keys, seed)
     rows = []
-    for key in sorted(frames):
+    for key in keys:
         artist, genre, file_path = meta.get(key, ('', '', key))
-        split = 'test' if key in test_keys else 'val' if norm_artist(artist) in test_artists else 'train'
-        k = TRAIN_WINDOWS if split == 'train' else SAMPLED_WINDOWS
-        rows.append({'path_key': key, 'file_path': file_path or key, 'artist': artist, 'genre': genre, 'split': split,
-                     'frames': frames[key], 'indices': sampled_indices(frames[key], k).tolist()})
+        rows.append({'path_key': key, 'file_path': file_path or key, 'artist': artist, 'genre': genre,
+                     'split': split[key], 'frames': frames[key],
+                     'indices': sampled_indices(frames[key], windows_for(split[key])).tolist()})
     manifest = pd.DataFrame(rows)
-    train = manifest.index[manifest.split == 'train'].tolist()
-    random.Random(seed).shuffle(train)
-    manifest['train_rank'] = -1
-    manifest.loc[train, 'train_rank'] = range(len(train))
+    rank_training(manifest, seed)
     manifest['windows'] = manifest.indices.map(len)
     manifest['first'] = manifest.windows.cumsum() - manifest.windows
     return manifest
+
+
+def split_only(seed):
+    """Re-split the existing cache: only the split column and the training order change, never the cached windows."""
+    import pandas as pd
+    manifest = pd.read_parquet(DATA / 'manifest.parquet')
+    backup = DATA / 'manifest-phase1.parquet'
+    if not backup.exists():
+        shutil.copy2(DATA / 'manifest.parquet', backup)
+        shutil.copy2(DATA / 'meta.json', DATA / 'meta-phase1.json')
+    test_keys = set(manifest.path_key[manifest.split == 'test'])
+    split = assign_splits(manifest.path_key.tolist(), manifest.artist.tolist(), test_keys, seed)
+    manifest['split'] = manifest.path_key.map(split)
+    expected = [sampled_indices(frames, windows_for(s)).tolist() for frames, s in zip(manifest.frames, manifest.split)]
+    changed = sum(list(have) != want for have, want in zip(manifest.indices, expected))
+    if changed:
+        sys.exit(f'{changed} tracks would need other windows than the cache holds: rebuild with prepare_data.py')
+    rank_training(manifest, seed)
+    manifest.to_parquet(DATA / 'manifest.parquet', index=False)
+
+    meta = json.loads((DATA / 'meta.json').read_text(encoding='utf-8'))
+    meta['splits'] = manifest.split.value_counts().to_dict()
+    meta['ok_by_split'] = manifest[manifest.ok].split.value_counts().to_dict()
+    meta['resplit'] = {'at': datetime.now().isoformat(timespec='seconds'), 'seed': seed, 'val_share': VAL_SHARE,
+                       'previous_manifest': backup.name}
+    (DATA / 'meta.json').write_text(json.dumps(meta, indent=1), encoding='utf-8')
+    ok = manifest[manifest.ok]
+    for name, group in ok.groupby('split'):
+        artists = group.artist.map(norm_artist)
+        print(f'{name:8s} {len(group):5d} tracks, {group.windows.sum():6d} windows, '
+              f'{artists[artists != ""].nunique():4d} named artists')
 
 
 def load_windows(file_path, frames, indices):
@@ -110,7 +185,12 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--limit', type=int, help='only the first N tracks (a quick test)')
+    parser.add_argument('--split-only', action='store_true',
+                        help='re-split the existing cache (manifest only, no decoding); keeps the old manifest')
     args = parser.parse_args()
+    if args.split_only:
+        split_only(args.seed)
+        return
 
     import torch
     from students import LogMel
