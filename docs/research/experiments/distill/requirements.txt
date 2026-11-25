@@ -1,0 +1,16 @@
+# The distillation research venv (.research_cache/venv-distill), besides torch, which comes from the PyTorch index:
+#   uv pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu126
+# Versions as installed and used for the 2026-11-25 Phase 0 run. onnxruntime-directml is the app's runtime
+# (requirements.txt), so speed numbers match what users get.
+onnx==1.23.2
+onnxruntime-directml==1.24.4
+mlflow==3.18.0
+numpy==2.5.4
+soundfile==0.14.0
+soxr==1.1.0
+av==19.0.2
+psutil==7.2.2
+pandas==3.1.1
+scikit-learn==1.9.1
+matplotlib==3.11.2
+ipykernel==7.4.0
