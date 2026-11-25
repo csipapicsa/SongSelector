@@ -137,7 +137,7 @@ or is shared by several installations, and downloads go there too. To download f
 |---|---|---|---|---|
 | CNN14 | `cnn14.onnx` (327 MB) | [`csipapicsa/songselector-cnn14`](https://huggingface.co/csipapicsa/songselector-cnn14) | PANNs, Kong et al. 2020, [CC BY 4.0](https://zenodo.org/records/3987831) | `scripts\export_cnn14_onnx.py` (needs `torch panns-inference==0.1.1 onnx onnxruntime`) |
 | LAION CLAP | `clap-laion-audio.onnx`, `clap-laion-text.onnx`, `clap-laion-tokenizer.json` (630 MB) | [`csipapicsa/songselector-clap-laion`](https://huggingface.co/csipapicsa/songselector-clap-laion) | [`laion/clap-htsat-unfused`](https://huggingface.co/laion/clap-htsat-unfused), Apache 2.0 | `scripts\export_clap_onnx.py --models laion` |
-| AllMusicCaps CLAP (MTG) | `clap-amc-audio.onnx`, `clap-amc-text.onnx`, `clap-amc-tokenizer.json` (730 MB) | [`csipapicsa/songselector-clap-amc`](https://huggingface.co/csipapicsa/songselector-clap-amc) | [`mtg-upf/allmusiccaps_all_layers`](https://huggingface.co/mtg-upf/allmusiccaps_all_layers) by MTG (UPF), CC BY-NC-SA 4.0 (non-commercial) | `docs/research/experiments/clap/amclap_onnx.py export` (needs `amclap==0.1.0`) |
+| AllMusicCaps CLAP (MTG) | `clap-amc-audio.onnx`, `clap-amc-text.onnx`, `clap-amc-tokenizer.json` (730 MB) | [`csipapicsa/songselector-clap-amc`](https://huggingface.co/csipapicsa/songselector-clap-amc) | [`mtg-upf/allmusiccaps_all_layers`](https://huggingface.co/mtg-upf/allmusiccaps_all_layers) by MTG (UPF), CC BY-NC-SA 4.0 (non-commercial) | `research/experiments/clap/amclap_onnx.py export` (needs `amclap==0.1.0`) |
 | Microsoft CLAP | `clap-ms-audio.onnx`, `clap-ms-text.onnx`, `clap-ms-tokenizer.json` (640 MB) | [`csipapicsa/songselector-clap-ms`](https://huggingface.co/csipapicsa/songselector-clap-ms) | [`microsoft/msclap`](https://huggingface.co/microsoft/msclap) 2023, MS-PL | `scripts\export_clap_onnx.py --models ms` |
 
 To publish a new export: `scripts\publish_models.py --folder <folder>` checks the files against the app's list and
@@ -311,6 +311,7 @@ tests/             pytest suite
 packaging/         PyInstaller spec and launcher
 scripts/           setup / test / build / verify / model export
 docs/              Architecture, backlog, research notes, daily worklogs
+research/          Experiment code, its small data, one result file per run (not part of the app)
 userdocs/          User guide (MkDocs, published to GitHub Pages)
 ```
 

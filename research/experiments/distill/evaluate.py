@@ -253,7 +253,7 @@ def bootstrap_runs(run_names):
 
 # ---- Free-text queries beyond genre tags ---------------------------------------------------------------------------
 
-PROMPTS_FILE = Path(__file__).resolve().parents[2] / 'allmusiccaps_prompts.md'
+PROMPTS_FILE = Path(__file__).resolve().parents[2] / 'data' / 'allmusiccaps_prompts.md'
 LONG_QUERIES = [   # the held-out themes of the distillation brief: long, compound descriptions
     'Hypnotic, psychedelic dance music with rolling tribal percussion and a deep, restrained bassline.',
     'Dusty old-school breakbeats, spacious dub textures, and a slightly menacing late-night atmosphere.',
@@ -264,7 +264,7 @@ LONG_QUERIES = [   # the held-out themes of the distillation brief: long, compou
 
 
 def query_sets():
-    """{section: [prompt]} from docs/research/allmusiccaps_prompts.md (every `quoted` prompt under a ## heading),
+    """{section: [prompt]} from research/data/allmusiccaps_prompts.md (every `quoted` prompt under a ## heading),
     plus the brief's long queries."""
     sections, current = {}, None
     for line in PROMPTS_FILE.read_text(encoding='utf-8').splitlines():

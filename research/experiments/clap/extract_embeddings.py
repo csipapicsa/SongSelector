@@ -12,7 +12,7 @@ How it runs (research only; the app is not touched):
 - resumable per model: run it again and it continues where it stopped; tracks in a fixed random order, so partial
   results are a fair sample. Below-normal priority, so the laptop stays usable.
 
-    .research_cache\\venv-clap\\Scripts\\python docs\\research\\experiments\\clap\\extract_embeddings.py --app-data dist
+    .research_cache\\venv-clap\\Scripts\\python research\\experiments\\clap\\extract_embeddings.py --app-data dist
 
 Output per model: .research_cache/clap/<model>.sqlite, table windows(path_key, n, dim, window_s, vectors float32).
 """
@@ -32,7 +32,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from benchmark_cpu import BATCH, load_model, windows_of  # noqa: E402
 
-REPO = Path(__file__).resolve().parents[4]
+REPO = Path(__file__).resolve().parents[3]
 OUT = REPO / '.research_cache' / 'clap'
 DEFAULT_MODELS = ['laion-unfused', 'ms-2023', 'laion-music']
 

@@ -7,7 +7,7 @@
 # * `valid-make` / `valid-score`: the model's rating and colour suggestions for tracks that have none.
 #   You mark each with yes / no ("does this match my taste?"); the score is the share of yes.
 #
-# Run from this folder: `python taste_sheets.py rerate-make`, etc. Files go to docs/research/sheets/.
+# Run from this folder: `python taste_sheets.py rerate-make`, etc. Files go to research/data/sheets/.
 # CSV: UTF-8 with BOM, semicolon-separated (what a Hungarian-locale Excel opens as columns);
 # reading accepts comma or semicolon.
 
@@ -22,10 +22,10 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import CACHE, REPO, load_labels, load_vectors, snapshot_data
+from common import REPO, load_labels, load_vectors, snapshot_data
 
-SHEETS = REPO / 'docs' / 'research' / 'sheets'
-RESULTS = REPO / 'docs' / 'research' / 'experiments' / 'results'
+SHEETS = REPO / 'research' / 'data' / 'sheets'
+RESULTS = REPO / 'research' / 'results'
 COLOUR_NAMES = {1: 'red', 2: 'orange', 3: 'yellow', 4: 'green', 5: 'blue', 6: 'indigo', 7: 'violet'}
 COLOUR_NUMBER = {name: number for number, name in COLOUR_NAMES.items()}
 DATE = time.strftime('%Y-%m-%d')
@@ -124,6 +124,7 @@ def rerate_score(snapshot, path):
 # %%
 def valid_make(snapshot, model, per_kind=40, seed=0):
     import os
+
     from sklearn.decomposition import PCA
     from sklearn.linear_model import LogisticRegression
     vectors = load_vectors(model, snapshot)

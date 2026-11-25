@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[4]
+REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'src'))
 
 from songselector.core import embeddings as app_embeddings  # noqa: E402
@@ -21,7 +21,7 @@ TEACHER_ONNX = APP_DATA / 'models' / AMC_CLAP.audio_file
 TEACHER_CACHE = APP_DATA / AMC_CLAP.store_file
 WORK = REPO / '.research_cache' / 'distill'           # gitignored: student ONNX files, feature cache, MLflow store
 DATA = WORK / 'data'                                  # Phase 1 feature cache (prepare_data.py)
-RESULTS = REPO / 'docs' / 'research' / 'experiments' / 'results'
+RESULTS = REPO / 'research' / 'results'
 
 RATE = AMC_CLAP.sample_rate        # 24 kHz
 WINDOW = AMC_CLAP.chunk_samples    # 10 s = 240,000 samples

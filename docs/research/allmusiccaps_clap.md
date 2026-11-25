@@ -3,7 +3,7 @@
 Desk research, 2026-11-21; first hands-on checks 2026-11-22 (section *Hands-on, 2026-11-22* below). Sources: the model and dataset cards on
 Hugging Face, the GitHub repo `MTG/allmusiccaps`, the OMAR-RQ paper (links at the end). The model card has **no
 benchmark numbers**, and the paper (ISMIR 2026) was not found online, so every quality claim below is a hypothesis to
-measure. Try it: [experiments/clap/allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb).
+measure. Try it: [research/experiments/clap/allmusiccaps.ipynb](../../research/experiments/clap/allmusiccaps.ipynb).
 
 ## The question
 
@@ -80,11 +80,11 @@ Step 1 of [text_search_clap.md](text_search_clap.md) (precision of the top 10 pe
 no number for LAION either. In order:
 
 1. Done 2026-11-22: `amc-all-layers` and `amc-te-sigreg` in the shared model interface
-   ([experiments/clap/benchmark_cpu.py](experiments/clap/benchmark_cpu.py)), extracted with
-   [extract_embeddings.py](experiments/clap/extract_embeddings.py) in the Windows research venv (CUDA).
+   ([research/experiments/clap/benchmark_cpu.py](../../research/experiments/clap/benchmark_cpu.py)), extracted with
+   [extract_embeddings.py](../../research/experiments/clap/extract_embeddings.py) in the Windows research venv (CUDA).
 2. ~3 prompts per genre tag (DnB, breakbeat, ...), precision of the top 10 and average precision for LAION light,
    MS CLAP 2023 and the two MTG variants: the genre-tag section of
-   [allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb). Also the similarity-map question from the backlog:
+   [allmusiccaps.ipynb](../../research/experiments/clap/allmusiccaps.ipynb). Also the similarity-map question from the backlog:
    neighbour purity with the user's labels, CNN14 vs the MTG audio embedding.
 3. It wins (step 2, 2026-11-22), so next: the ONNX export of `all_layers` (works, see the probe), DirectML (works,
    2.6x faster than LAION), int8, CPU time with sampled windows, then a model entry in the app. Publishing the conversion means
@@ -106,12 +106,12 @@ gets sentence-transformers 5.1.2, the system Python keeps 5.6). Laptop GPU with 
 
 ### Genre-tag retrieval: the MTG models win
 
-Run 2026-11-22 with the genre-tag section of [allmusiccaps.ipynb](experiments/clap/allmusiccaps.ipynb). Data: the
+Run 2026-11-22 with the genre-tag section of [allmusiccaps.ipynb](../../research/experiments/clap/allmusiccaps.ipynb). Data: the
 990 test-set tracks that all four models have (rating 4-5 with a colour), of which 744 carry a genre tag; labels from
 the DJ's own `genre` tags (9 labels with at least 5 tracks). Every 10 s window embedded, track = mean of the
 normalised windows. 27 prompts (3 styles x 9 labels), written before any result was seen. Metric: average precision
 (AP) of the whole ranking per prompt, then the mean; chance is the share of tagged tracks with the label.
-Per-prompt numbers: [experiments/results/2026-11-22_allmusiccaps_genre_ap.json](experiments/results/2026-11-22_allmusiccaps_genre_ap.json).
+Per-prompt numbers: [research/results/2026-11-22_allmusiccaps_genre_ap.json](../../research/results/2026-11-22_allmusiccaps_genre_ap.json).
 
 | Mean AP | LAION light (app) | MS CLAP 2023 | AMC `all_layers` | AMC `te_trained_sigreg` | chance |
 |---|---|---|---|---|---|
@@ -143,8 +143,8 @@ Per-prompt numbers: [experiments/results/2026-11-22_allmusiccaps_genre_ap.json](
 ### int8 and sampled windows, 2026-11-22
 
 Asked: try int8 (the 2026-11-20 int8 test broke LAION and CNN14 because the front end was quantized, see
-[2026-11-20_int8_benchmark.md](experiments/results/2026-11-20_int8_benchmark.md)). Numbers:
-[2026-11-22_allmusiccaps_int8_sampling.json](experiments/results/2026-11-22_allmusiccaps_int8_sampling.json).
+[2026-11-20_int8_benchmark.md](../../research/results/2026-11-20_int8_benchmark.md)). Numbers:
+[2026-11-22_allmusiccaps_int8_sampling.json](../../research/results/2026-11-22_allmusiccaps_int8_sampling.json).
 
 - **Audio int8 works if the first layer stays float.** `quantize_dynamic` (QInt8, per tensor) on the 72 MatMuls that
   multiply by a weight, keeping `embedding_layer/MatMul` (the layer that reads raw waveform patches) and the
@@ -188,7 +188,7 @@ embedded: sample windows on CPU).
 
 ### DirectML, 2026-11-22
 
-[experiments/clap/amclap_onnx.py](experiments/clap/amclap_onnx.py) (`export` in the research venv, `check` in the
+[research/experiments/clap/amclap_onnx.py](../../research/experiments/clap/amclap_onnx.py) (`export` in the research venv, `check` in the
 app's `.venv`): `all_layers` exported, then run with the app's runtime (onnxruntime-directml 1.24.4) and the app's
 session settings (`DML_OPTIONS`, no memory pattern, sequential). GTX 1650 Ti (4 GB) / i5-10300H. References: 24 real
 10 s windows from 6 test-set tracks and 8 prompts, embedded by PyTorch on the CPU.
@@ -238,7 +238,7 @@ up to Section 8; the tail (the values behind Figure 3, the final variants agains
   describe genre, scene and mood better than instrumentation (§5.4). Beats LAION-CLAP, TTMR++ and CLaMP3 on most
   other tasks.
 - **Not in the paper:** any mel-spectrogram encoder as a comparison, inference cost, compression or distillation.
-  The distilled students (experiments/distill/) are new ground, not a reproduction.
+  The distilled students (research/experiments/distill/) are new ground, not a reproduction.
 - **Licence statement:** "All materials derived from this work, including the AllMusicCaps dataset, model weights,
   and code, are released for non-commercial scientific research purposes only" (§1). That is narrower wording than
   the CC BY-NC-SA 4.0 on the weights' model card. To settle before shipping anything trained from these weights

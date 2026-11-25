@@ -3,7 +3,7 @@
 **Question:** can a small network, fed cheap log-mel features, put tracks into the AllMusicCaps CLAP audio space
 well enough for the map, closest matches and free-text search, at a fraction of the CPU cost? The original text
 encoder stays, so typed queries keep working. Background and literature: the distillation brief
-(`docs/research/AllMusicCaps_distillation_project - 2026-11-125.md`) and [../../allmusiccaps_clap.md](../../allmusiccaps_clap.md).
+(`docs/research/AllMusicCaps_distillation_project - 2026-11-125.md`) and [../../../docs/research/allmusiccaps_clap.md](../../../docs/research/allmusiccaps_clap.md).
 
 **Why:** on a GPU the teacher is already fast (~24 ms per 10 s window on DirectML). On the CPU it takes
 112-217 ms per window, and the app embeds every window, so 4-8 s per 6-minute track. Users without a GPU carry
@@ -23,7 +23,7 @@ that load.
 the app's session options; 10 random library tracks from the teacher cache (70 minutes, 426 windows, seed 1),
 decoded with the app's decoder; batch 8; students with random weights. One run, laptop in normal use (VS Code
 open), so the run-to-run variation is not measured. Raw numbers:
-[../results/2026-11-25_distill_phase0_speed.json](../results/2026-11-25_distill_phase0_speed.json).
+[../../results/2026-11-25_distill_phase0_speed.json](../../results/2026-11-25_distill_phase0_speed.json).
 
 **Per 6-minute track,** end to end (decode + model). CPU-s is CPU time over all threads, i.e. the load on the
 machine; a library of 5,000 tracks is the DJ's library.
@@ -67,7 +67,7 @@ machine; a library of 5,000 tracks is the DJ's library.
    teacher 3.7x faster on the CPU at no quality cost. The next lever after that is decoding: 6 windows need only
    60 s of a 6-minute track, so decoding only those parts would cut the 0.8 s floor for both.
 
-**Trained weights, same benchmark** (after Phase 1, [../results/2026-11-25_distill_speed_trained.json](../results/2026-11-25_distill_speed_trained.json)): `cnn4-small-64` trained runs at 30.9 ms per window (random weights: 30.3) and 1.01 s / 0.99 CPU-s per 6-minute track with 6 windows; the teacher on every window, 4 threads, 6.31 s / 22.7 CPU-s in the same run. Speed does not depend on training, as assumed: 6.2x faster and 23x less CPU time than the app today.
+**Trained weights, same benchmark** (after Phase 1, [../../results/2026-11-25_distill_speed_trained.json](../../results/2026-11-25_distill_speed_trained.json)): `cnn4-small-64` trained runs at 30.9 ms per window (random weights: 30.3) and 1.01 s / 0.99 CPU-s per 6-minute track with 6 windows; the teacher on every window, 4 threads, 6.31 s / 22.7 CPU-s in the same run. Speed does not depend on training, as assumed: 6.2x faster and 23x less CPU time than the app today.
 
 **Decision:** Phase 1 is worth doing.
 
@@ -101,7 +101,7 @@ machine; a library of 5,000 tracks is the DJ's library.
 **Setup:** as planned above, except mixed precision: fp16 gives NaN from the first step on the GTX 1650 Ti (and is
 slower there), so training runs in fp32. Batch 32, AdamW 3e-4, at most 10 epochs, patience 3; 23,920 training
 windows from 1,500 tracks. One run per model (seed 0). Raw numbers:
-[../results/2026-11-25_distill_phase1.json](../results/2026-11-25_distill_phase1.json); charts:
+[../../results/2026-11-25_distill_phase1.json](../../results/2026-11-25_distill_phase1.json); charts:
 [phase1_eval.ipynb](phase1_eval.ipynb).
 
 **Test split** (1,272 tracks, 6 windows each, artists never seen in training):
@@ -151,11 +151,11 @@ Genre AP against the teacher and LAION, paired bootstrap over test tracks (500 r
    128-band `mnv3s-128`.
 
 **Free-text queries beyond genre tags** (`evaluate.py --queries`): 59 queries, the prompt list of
-[../../allmusiccaps_prompts.md](../../allmusiccaps_prompts.md) (genres, other dance music, far from the library,
+[../../data/allmusiccaps_prompts.md](../../data/allmusiccaps_prompts.md) (genres, other dance music, far from the library,
 mood, limits) and the 5 long descriptions of the brief. For each query, the teacher's ranking of the 1,272 test
 tracks against each student's (same text vector) and, as a yardstick for how much two different good models agree,
 LAION's (its own text encoder). Raw numbers:
-[../results/2026-11-25_distill_query_agreement.json](../results/2026-11-25_distill_query_agreement.json).
+[../../results/2026-11-25_distill_query_agreement.json](../../results/2026-11-25_distill_query_agreement.json).
 
 | Agreement with the teacher's ranking | `cnn4-64` | `cnn4-small-64` | LAION CLAP |
 |---|---|---|---|
@@ -184,7 +184,7 @@ A separate venv, so nothing here changes the app's `.venv` or the exe (torch 2.8
 ```
 uv venv .research_cache\venv-distill --python 3.12
 uv pip install --python .research_cache\venv-distill\Scripts\python.exe torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu126
-uv pip install --python .research_cache\venv-distill\Scripts\python.exe -r docs\research\experiments\distill\requirements.txt
+uv pip install --python .research_cache\venv-distill\Scripts\python.exe -r research\experiments\distill\requirements.txt
 ```
 
 If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on another drive first.
@@ -212,4 +212,4 @@ If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on a
 then open http://127.0.0.1:5000. `benchmark_speed.py --log-json <results.json>` logs an earlier benchmark.
 
 Outputs: `.research_cache/distill/` (git-ignored: ONNX files, feature cache, MLflow store) and one small JSON
-per run in [../results/](../results/).
+per run in [../../results/](../../results/).

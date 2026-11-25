@@ -75,7 +75,7 @@ MS_CLAP = EmbeddingModel(
 
 # MTG's music-trained CLAP (docs/research/allmusiccaps_clap.md): OMAR-RQ audio encoder on raw 24 kHz audio +
 # all-mpnet-base-v2 text encoder. Better than LAION on the DJ's genre tags (mean AP 0.33 vs 0.21) and faster on
-# DirectML (24 ms per window at batch 4). Files from docs/research/experiments/clap/amclap_onnx.py export, published as
+# DirectML (24 ms per window at batch 4). Files from research/experiments/clap/amclap_onnx.py export, published as
 # csipapicsa/songselector-clap-amc under the weights' CC BY-NC-SA 4.0 (credit to MTG, non-commercial).
 AMC_CLAP = EmbeddingModel(
     id='mtg-allmusiccaps-all-layers', name='AllMusicCaps CLAP (MTG)',

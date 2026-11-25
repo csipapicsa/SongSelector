@@ -3,9 +3,9 @@
 Two steps, two environments:
 
     # 1. export + PyTorch references on real test-set windows (research venv: torch, amclap)
-    .research_cache\\venv-clap\\Scripts\\python docs\\research\\experiments\\clap\\amclap_onnx.py export
+    .research_cache\\venv-clap\\Scripts\\python research\\experiments\\clap\\amclap_onnx.py export
     # 2. parity and speed with the app's onnxruntime-directml and session settings (the app's venv)
-    .venv\\Scripts\\python docs\\research\\experiments\\clap\\amclap_onnx.py check
+    .venv\\Scripts\\python research\\experiments\\clap\\amclap_onnx.py check
 
 Output: .research_cache/onnx/amc-all-layers/{audio.onnx, text.onnx, tokenizer.json, reference.npz}; `check` prints a
 JSON line per provider. Each DirectML batch size is timed in a fresh process (`time BATCH`): in one process the
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[4]
+REPO = Path(__file__).resolve().parents[3]
 OUT = REPO / '.research_cache' / 'onnx' / 'amc-all-layers'
 MODEL_ID = 'mtg-upf/allmusiccaps_all_layers'
 RATE, WINDOW = 24000, 24000 * 10

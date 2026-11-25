@@ -21,6 +21,7 @@ from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import REPO, bootstrap, fmt, fold_splits, load_labels, load_vectors, locked_test, snapshot_data
+
 from songselector.core.traktor_collection import canonical_path, nml_track_path
 
 warnings.filterwarnings('ignore')
@@ -49,8 +50,12 @@ def parse_collection(snapshot):
     if not target.exists():
         shutil.copy2(NML, target)
     today = date.fromtimestamp(target.stat().st_mtime)
-    rows, membership, nodes = {}, Counter(), 0
-    for event, entry in ET.iterparse(target, events=('end',)):
+
+    def number(value):
+        return float(value) if value not in (None, '') else np.nan
+
+    rows, membership = {}, Counter()
+    for _event, entry in ET.iterparse(target, events=('end',)):
         if entry.tag != 'ENTRY':
             continue
         location = entry.find('LOCATION')
@@ -67,7 +72,6 @@ def parse_collection(snapshot):
         loud = entry.find('LOUDNESS')
         loud = loud.attrib if loud is not None else {}
         cues = entry.findall('CUE_V2')
-        number = lambda value: float(value) if value not in (None, '') else np.nan
         rows[path] = dict(
             bpm=number(tempo.get('BPM')) if tempo is not None else np.nan,
             bpm_quality=number(tempo.get('BPM_QUALITY')) if tempo is not None else np.nan,
@@ -115,7 +119,6 @@ for name in ('playcount', 'hotcues', 'playlists', 'days_since_import', 'bitrate_
 
 # %%
 def predict(kind, x_train, m_train, y_train, x_test, m_test):
-    classes = np.unique(y_train)
     if kind == 'sound':
         from sklearn.linear_model import LogisticRegression
         pca = PCA(100, random_state=0).fit(x_train)

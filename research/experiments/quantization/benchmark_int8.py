@@ -9,9 +9,9 @@ activations quantised on the fly), so they take the same raw audio as the origin
 window length and sample rate per model, batch size per provider, half the CPU cores, the same session options.
 
     # 1. int8 files (needs the `onnx` package; any onnxruntime has the quantizer):
-    .research_cache\\venv-ort-cuda\\Scripts\\python docs\\research\\experiments\\quantization\\benchmark_int8.py quantize
+    .research_cache\\venv-ort-cuda\\Scripts\\python research\\experiments\\quantization\\benchmark_int8.py quantize
     # 2. decode 10 random tracks once, run every model x precision x provider in its own process, compare:
-    .venv\\Scripts\\python docs\\research\\experiments\\quantization\\benchmark_int8.py run --tracks E:\\DJ
+    .venv\\Scripts\\python research\\experiments\\quantization\\benchmark_int8.py run --tracks E:\\DJ
 
 CPU and DirectML run in the app's environment (onnxruntime-directml); CUDA in .research_cache\\venv-ort-cuda
 (onnxruntime-gpu 1.22 + NVIDIA's CUDA 12 / cuDNN 9 pip packages). Model files: dist\\models (the exports);
@@ -30,12 +30,12 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[4]
+REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'src'))
 from songselector.core.embedding_models import CNN14, LAION_CLAP  # noqa: E402  (pure Python, no Qt)
 
 WORK = REPO / '.research_cache' / 'int8'
-RESULTS = REPO / 'docs' / 'research' / 'experiments' / 'results'
+RESULTS = REPO / 'research' / 'results'
 FP32_FOLDER = REPO / 'dist' / 'models'
 CUDA_PYTHON = REPO / '.research_cache' / 'venv-ort-cuda' / 'Scripts' / 'python.exe'
 APP_PYTHON = REPO / '.venv' / 'Scripts' / 'python.exe'
@@ -185,7 +185,7 @@ def compare(name, count, provider='cpu', k=10):
 
 # ---- 5. what the user sees: the app's percentages, fp32 vs int8 ------------------------------------------------
 
-PROMPTS = [  # the research notebook's prompts (docs/research/experiments/clap/text_search.ipynb)
+PROMPTS = [  # the research notebook's prompts (research/experiments/clap/text_search.ipynb)
     'dark rolling drum and bass with a heavy reese bassline', 'hypnotic psychedelic techno with swirling acid synths',
     'dark warehouse rave, pounding kick and distorted acid 303 line',
     'euphoric trance with rising synth arpeggios and a big build-up',

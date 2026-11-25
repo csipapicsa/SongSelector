@@ -1,7 +1,7 @@
 """Downloads the model files into the models folder.
 
 The files are the ONNX exports made by scripts/export_cnn14_onnx.py, scripts/export_clap_onnx.py and (AllMusicCaps)
-docs/research/experiments/clap/amclap_onnx.py. Each model has
+research/experiments/clap/amclap_onnx.py. Each model has
 its own Hugging Face repo (since 2026-11-20) with a model card naming the source, the changes and the licence
 (packaging/models/hf/). The app downloads from the commit that added the files, so a later change to a repo cannot
 change what this version downloads. `Model download URL` in the settings points the app at another copy instead: a
