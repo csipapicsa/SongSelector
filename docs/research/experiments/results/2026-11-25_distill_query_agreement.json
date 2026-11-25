@@ -1,0 +1,1517 @@
+{
+ "date": "2026-11-25",
+ "question": "Free-text queries beyond genre tags: how alike are the rankings of the test tracks by the teacher (6 windows) and by each student / by LAION CLAP?",
+ "tracks": 1272,
+ "queries": 59,
+ "chance_top10": 0.007861635220125786,
+ "by_section": {
+  "Core genres of the library | cnn4-small-64-n1500": {
+   "top10": 0.16,
+   "top50": 0.342,
+   "spearman": 0.7979
+  },
+  "Core genres of the library | cnn4-64-n1500": {
+   "top10": 0.15,
+   "top50": 0.376,
+   "spearman": 0.8111
+  },
+  "Core genres of the library | laion-clap": {
+   "top10": 0.05,
+   "top50": 0.076,
+   "spearman": 0.221
+  },
+  "Other dance music | cnn4-small-64-n1500": {
+   "top10": 0.17,
+   "top50": 0.388,
+   "spearman": 0.732
+  },
+  "Other dance music | cnn4-64-n1500": {
+   "top10": 0.21,
+   "top50": 0.39,
+   "spearman": 0.7492
+  },
+  "Other dance music | laion-clap": {
+   "top10": 0.06,
+   "top50": 0.16,
+   "spearman": 0.2566
+  },
+  "Far from the library | cnn4-small-64-n1500": {
+   "top10": 0.2125,
+   "top50": 0.3775,
+   "spearman": 0.7307
+  },
+  "Far from the library | cnn4-64-n1500": {
+   "top10": 0.2625,
+   "top50": 0.4075,
+   "spearman": 0.7499
+  },
+  "Far from the library | laion-clap": {
+   "top10": 0.1625,
+   "top50": 0.185,
+   "spearman": 0.2344
+  },
+  "Mood and flow | cnn4-small-64-n1500": {
+   "top10": 0.19,
+   "top50": 0.37,
+   "spearman": 0.7192
+  },
+  "Mood and flow | cnn4-64-n1500": {
+   "top10": 0.22,
+   "top50": 0.386,
+   "spearman": 0.7355
+  },
+  "Mood and flow | laion-clap": {
+   "top10": 0.07,
+   "top50": 0.144,
+   "spearman": 0.227
+  },
+  "Probing the limits | cnn4-small-64-n1500": {
+   "top10": 0.1938,
+   "top50": 0.3725,
+   "spearman": 0.7144
+  },
+  "Probing the limits | cnn4-64-n1500": {
+   "top10": 0.2125,
+   "top50": 0.3938,
+   "spearman": 0.723
+  },
+  "Probing the limits | laion-clap": {
+   "top10": 0.0562,
+   "top50": 0.0863,
+   "spearman": 0.0606
+  },
+  "Long descriptions (brief) | cnn4-small-64-n1500": {
+   "top10": 0.14,
+   "top50": 0.344,
+   "spearman": 0.7841
+  },
+  "Long descriptions (brief) | cnn4-64-n1500": {
+   "top10": 0.16,
+   "top50": 0.364,
+   "spearman": 0.791
+  },
+  "Long descriptions (brief) | laion-clap": {
+   "top10": 0.16,
+   "top50": 0.168,
+   "spearman": 0.156
+  }
+ },
+ "per_query": [
+  {
+   "section": "Core genres of the library",
+   "query": "liquid drum and bass with soulful vocals and lush pads",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.52,
+   "spearman": 0.8693
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "liquid drum and bass with soulful vocals and lush pads",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.5,
+   "spearman": 0.8837
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "liquid drum and bass with soulful vocals and lush pads",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.08,
+   "spearman": -0.0617
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "dark neurofunk with distorted, twisting basslines",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.42,
+   "spearman": 0.856
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "dark neurofunk with distorted, twisting basslines",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.42,
+   "spearman": 0.8703
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "dark neurofunk with distorted, twisting basslines",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.0,
+   "spearman": 0.0977
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "old-school jungle with chopped amen breaks and reggae bass",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.28,
+   "spearman": 0.8485
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "old-school jungle with chopped amen breaks and reggae bass",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.38,
+   "spearman": 0.8581
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "old-school jungle with chopped amen breaks and reggae bass",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.06,
+   "spearman": 0.528
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "jump-up drum and bass, bouncy and cheeky",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.38,
+   "spearman": 0.8616
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "jump-up drum and bass, bouncy and cheeky",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.44,
+   "spearman": 0.867
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "jump-up drum and bass, bouncy and cheeky",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.04,
+   "spearman": 0.2369
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "funky breakbeat with a groovy bassline and chopped drum breaks",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.22,
+   "spearman": 0.758
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "funky breakbeat with a groovy bassline and chopped drum breaks",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.3,
+   "spearman": 0.7671
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "funky breakbeat with a groovy bassline and chopped drum breaks",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.1,
+   "spearman": 0.4284
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "nu-skool breaks with acid squelches, early 2000s",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.28,
+   "spearman": 0.7309
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "nu-skool breaks with acid squelches, early 2000s",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.3,
+   "spearman": 0.7493
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "nu-skool breaks with acid squelches, early 2000s",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.14,
+   "spearman": 0.4286
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "big beat with funky samples and a rock swagger",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.34,
+   "spearman": 0.7878
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "big beat with funky samples and a rock swagger",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.42,
+   "spearman": 0.8045
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "big beat with funky samples and a rock swagger",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.04,
+   "spearman": 0.3584
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "psychedelic breaks with trance arpeggios",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.32,
+   "spearman": 0.8093
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "psychedelic breaks with trance arpeggios",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.26,
+   "spearman": 0.8159
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "psychedelic breaks with trance arpeggios",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.18,
+   "spearman": 0.4013
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "robotic electro with 808 drums and vocoder",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.08,
+   "spearman": 0.623
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "robotic electro with 808 drums and vocoder",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.16,
+   "spearman": 0.6471
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "robotic electro with 808 drums and vocoder",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.06,
+   "spearman": -0.2927
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "progressive breaks, deep and hypnotic",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.5,
+   "top50": 0.58,
+   "spearman": 0.8345
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "progressive breaks, deep and hypnotic",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.58,
+   "spearman": 0.8481
+  },
+  {
+   "section": "Core genres of the library",
+   "query": "progressive breaks, deep and hypnotic",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.06,
+   "spearman": 0.0854
+  },
+  {
+   "section": "Other dance music",
+   "query": "deep house with warm chords and a smooth groove",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.4,
+   "top50": 0.66,
+   "spearman": 0.7566
+  },
+  {
+   "section": "Other dance music",
+   "query": "deep house with warm chords and a smooth groove",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.66,
+   "spearman": 0.7578
+  },
+  {
+   "section": "Other dance music",
+   "query": "deep house with warm chords and a smooth groove",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.36,
+   "spearman": 0.3638
+  },
+  {
+   "section": "Other dance music",
+   "query": "minimal techno, hypnotic and repetitive",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.3,
+   "top50": 0.5,
+   "spearman": 0.8344
+  },
+  {
+   "section": "Other dance music",
+   "query": "minimal techno, hypnotic and repetitive",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.44,
+   "spearman": 0.8475
+  },
+  {
+   "section": "Other dance music",
+   "query": "minimal techno, hypnotic and repetitive",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.34,
+   "spearman": 0.6243
+  },
+  {
+   "section": "Other dance music",
+   "query": "dark industrial techno, pounding and relentless",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.3,
+   "spearman": 0.6453
+  },
+  {
+   "section": "Other dance music",
+   "query": "dark industrial techno, pounding and relentless",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.28,
+   "spearman": 0.662
+  },
+  {
+   "section": "Other dance music",
+   "query": "dark industrial techno, pounding and relentless",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.2,
+   "spearman": 0.1243
+  },
+  {
+   "section": "Other dance music",
+   "query": "acid house with a squelchy 303 line",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.46,
+   "spearman": 0.7137
+  },
+  {
+   "section": "Other dance music",
+   "query": "acid house with a squelchy 303 line",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.5,
+   "spearman": 0.7212
+  },
+  {
+   "section": "Other dance music",
+   "query": "acid house with a squelchy 303 line",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.16,
+   "spearman": 0.491
+  },
+  {
+   "section": "Other dance music",
+   "query": "uplifting trance with euphoric build-ups",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.38,
+   "spearman": 0.8243
+  },
+  {
+   "section": "Other dance music",
+   "query": "uplifting trance with euphoric build-ups",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.36,
+   "spearman": 0.8437
+  },
+  {
+   "section": "Other dance music",
+   "query": "uplifting trance with euphoric build-ups",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.24,
+   "spearman": 0.3664
+  },
+  {
+   "section": "Other dance music",
+   "query": "UK garage with shuffled beats and chopped vocals",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.44,
+   "spearman": 0.8008
+  },
+  {
+   "section": "Other dance music",
+   "query": "UK garage with shuffled beats and chopped vocals",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.4,
+   "spearman": 0.8096
+  },
+  {
+   "section": "Other dance music",
+   "query": "UK garage with shuffled beats and chopped vocals",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.12,
+   "spearman": 0.4014
+  },
+  {
+   "section": "Other dance music",
+   "query": "dubstep with heavy wobble bass",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.24,
+   "spearman": 0.5695
+  },
+  {
+   "section": "Other dance music",
+   "query": "dubstep with heavy wobble bass",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.22,
+   "spearman": 0.6097
+  },
+  {
+   "section": "Other dance music",
+   "query": "dubstep with heavy wobble bass",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.04,
+   "spearman": 0.2004
+  },
+  {
+   "section": "Other dance music",
+   "query": "footwork, fast and frantic with chopped samples",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.32,
+   "spearman": 0.7848
+  },
+  {
+   "section": "Other dance music",
+   "query": "footwork, fast and frantic with chopped samples",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.36,
+   "spearman": 0.8185
+  },
+  {
+   "section": "Other dance music",
+   "query": "footwork, fast and frantic with chopped samples",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.04,
+   "spearman": -0.2493
+  },
+  {
+   "section": "Other dance music",
+   "query": "Detroit techno with soulful strings",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.24,
+   "spearman": 0.6797
+  },
+  {
+   "section": "Other dance music",
+   "query": "Detroit techno with soulful strings",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.6922
+  },
+  {
+   "section": "Other dance music",
+   "query": "Detroit techno with soulful strings",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.02,
+   "spearman": -0.0238
+  },
+  {
+   "section": "Other dance music",
+   "query": "disco with funky strings and a four-on-the-floor beat",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.7109
+  },
+  {
+   "section": "Other dance music",
+   "query": "disco with funky strings and a four-on-the-floor beat",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.7294
+  },
+  {
+   "section": "Other dance music",
+   "query": "disco with funky strings and a four-on-the-floor beat",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.08,
+   "spearman": 0.2671
+  },
+  {
+   "section": "Far from the library",
+   "query": "smooth jazz with saxophone and brushed drums",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.42,
+   "spearman": 0.8566
+  },
+  {
+   "section": "Far from the library",
+   "query": "smooth jazz with saxophone and brushed drums",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.46,
+   "spearman": 0.8741
+  },
+  {
+   "section": "Far from the library",
+   "query": "smooth jazz with saxophone and brushed drums",
+   "model": "laion-clap",
+   "top10": 0.4,
+   "top50": 0.42,
+   "spearman": 0.2957
+  },
+  {
+   "section": "Far from the library",
+   "query": "ambient drone, slow and meditative",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.4,
+   "top50": 0.6,
+   "spearman": 0.8721
+  },
+  {
+   "section": "Far from the library",
+   "query": "ambient drone, slow and meditative",
+   "model": "cnn4-64-n1500",
+   "top10": 0.5,
+   "top50": 0.64,
+   "spearman": 0.8749
+  },
+  {
+   "section": "Far from the library",
+   "query": "ambient drone, slow and meditative",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.5176
+  },
+  {
+   "section": "Far from the library",
+   "query": "roots reggae with a deep bass and offbeat guitar",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.22,
+   "spearman": 0.8604
+  },
+  {
+   "section": "Far from the library",
+   "query": "roots reggae with a deep bass and offbeat guitar",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.32,
+   "spearman": 0.8758
+  },
+  {
+   "section": "Far from the library",
+   "query": "roots reggae with a deep bass and offbeat guitar",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.0,
+   "spearman": 0.095
+  },
+  {
+   "section": "Far from the library",
+   "query": "aggressive heavy metal with distorted guitars",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.36,
+   "spearman": 0.7294
+  },
+  {
+   "section": "Far from the library",
+   "query": "aggressive heavy metal with distorted guitars",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.7475
+  },
+  {
+   "section": "Far from the library",
+   "query": "aggressive heavy metal with distorted guitars",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.16,
+   "spearman": 0.4718
+  },
+  {
+   "section": "Far from the library",
+   "query": "classical piano piece, gentle and romantic",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.4,
+   "top50": 0.56,
+   "spearman": 0.7253
+  },
+  {
+   "section": "Far from the library",
+   "query": "classical piano piece, gentle and romantic",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.58,
+   "spearman": 0.7379
+  },
+  {
+   "section": "Far from the library",
+   "query": "classical piano piece, gentle and romantic",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.16,
+   "spearman": 0.2351
+  },
+  {
+   "section": "Far from the library",
+   "query": "boom bap hip hop with dusty samples",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.3,
+   "top50": 0.38,
+   "spearman": 0.6919
+  },
+  {
+   "section": "Far from the library",
+   "query": "boom bap hip hop with dusty samples",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.4,
+   "spearman": 0.7195
+  },
+  {
+   "section": "Far from the library",
+   "query": "boom bap hip hop with dusty samples",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.1,
+   "spearman": 0.0837
+  },
+  {
+   "section": "Far from the library",
+   "query": "bossa nova with nylon guitar and soft vocals",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.22,
+   "spearman": 0.475
+  },
+  {
+   "section": "Far from the library",
+   "query": "bossa nova with nylon guitar and soft vocals",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.2,
+   "spearman": 0.4912
+  },
+  {
+   "section": "Far from the library",
+   "query": "bossa nova with nylon guitar and soft vocals",
+   "model": "laion-clap",
+   "top10": 0.3,
+   "top50": 0.14,
+   "spearman": 0.1076
+  },
+  {
+   "section": "Far from the library",
+   "query": "shoegaze with washed-out guitars",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.26,
+   "spearman": 0.6353
+  },
+  {
+   "section": "Far from the library",
+   "query": "shoegaze with washed-out guitars",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.32,
+   "spearman": 0.6781
+  },
+  {
+   "section": "Far from the library",
+   "query": "shoegaze with washed-out guitars",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.16,
+   "spearman": 0.0684
+  },
+  {
+   "section": "Mood and flow",
+   "query": "warm-up music, relaxed but groovy",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.3,
+   "spearman": 0.8314
+  },
+  {
+   "section": "Mood and flow",
+   "query": "warm-up music, relaxed but groovy",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.36,
+   "spearman": 0.8439
+  },
+  {
+   "section": "Mood and flow",
+   "query": "warm-up music, relaxed but groovy",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.06,
+   "spearman": 0.0481
+  },
+  {
+   "section": "Mood and flow",
+   "query": "peak-time energy, euphoric and driving",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.44,
+   "spearman": 0.8574
+  },
+  {
+   "section": "Mood and flow",
+   "query": "peak-time energy, euphoric and driving",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.48,
+   "spearman": 0.8782
+  },
+  {
+   "section": "Mood and flow",
+   "query": "peak-time energy, euphoric and driving",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.0,
+   "spearman": 0.2433
+  },
+  {
+   "section": "Mood and flow",
+   "query": "late-night, dark and hypnotic",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.6,
+   "top50": 0.6,
+   "spearman": 0.7124
+  },
+  {
+   "section": "Mood and flow",
+   "query": "late-night, dark and hypnotic",
+   "model": "cnn4-64-n1500",
+   "top10": 0.6,
+   "top50": 0.54,
+   "spearman": 0.7204
+  },
+  {
+   "section": "Mood and flow",
+   "query": "late-night, dark and hypnotic",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.04,
+   "spearman": -0.0598
+  },
+  {
+   "section": "Mood and flow",
+   "query": "melancholic and emotional, bittersweet",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.16,
+   "spearman": 0.6162
+  },
+  {
+   "section": "Mood and flow",
+   "query": "melancholic and emotional, bittersweet",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.16,
+   "spearman": 0.6266
+  },
+  {
+   "section": "Mood and flow",
+   "query": "melancholic and emotional, bittersweet",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.1,
+   "spearman": 0.1901
+  },
+  {
+   "section": "Mood and flow",
+   "query": "playful and cheeky, fun party track",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.3,
+   "top50": 0.44,
+   "spearman": 0.8603
+  },
+  {
+   "section": "Mood and flow",
+   "query": "playful and cheeky, fun party track",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.44,
+   "spearman": 0.8699
+  },
+  {
+   "section": "Mood and flow",
+   "query": "playful and cheeky, fun party track",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.18,
+   "spearman": 0.4589
+  },
+  {
+   "section": "Mood and flow",
+   "query": "tense and building, suspenseful",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.26,
+   "spearman": 0.7228
+  },
+  {
+   "section": "Mood and flow",
+   "query": "tense and building, suspenseful",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.28,
+   "spearman": 0.7155
+  },
+  {
+   "section": "Mood and flow",
+   "query": "tense and building, suspenseful",
+   "model": "laion-clap",
+   "top10": 0.3,
+   "top50": 0.32,
+   "spearman": 0.1762
+  },
+  {
+   "section": "Mood and flow",
+   "query": "sunny, uplifting, feel-good summer vibe",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.6233
+  },
+  {
+   "section": "Mood and flow",
+   "query": "sunny, uplifting, feel-good summer vibe",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.4,
+   "spearman": 0.6513
+  },
+  {
+   "section": "Mood and flow",
+   "query": "sunny, uplifting, feel-good summer vibe",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.18,
+   "spearman": 0.2296
+  },
+  {
+   "section": "Mood and flow",
+   "query": "aggressive and raw, rave energy",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.38,
+   "spearman": 0.6465
+  },
+  {
+   "section": "Mood and flow",
+   "query": "aggressive and raw, rave energy",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.38,
+   "spearman": 0.677
+  },
+  {
+   "section": "Mood and flow",
+   "query": "aggressive and raw, rave energy",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.16,
+   "spearman": 0.2409
+  },
+  {
+   "section": "Mood and flow",
+   "query": "chilled after-hours comedown",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.44,
+   "spearman": 0.6829
+  },
+  {
+   "section": "Mood and flow",
+   "query": "chilled after-hours comedown",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.48,
+   "spearman": 0.7008
+  },
+  {
+   "section": "Mood and flow",
+   "query": "chilled after-hours comedown",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.14,
+   "spearman": 0.3164
+  },
+  {
+   "section": "Mood and flow",
+   "query": "cinematic and epic, big atmosphere",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.6383
+  },
+  {
+   "section": "Mood and flow",
+   "query": "cinematic and epic, big atmosphere",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.34,
+   "spearman": 0.6714
+  },
+  {
+   "section": "Mood and flow",
+   "query": "cinematic and epic, big atmosphere",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.26,
+   "spearman": 0.4263
+  },
+  {
+   "section": "Probing the limits",
+   "query": "female vocals",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.4,
+   "top50": 0.52,
+   "spearman": 0.7393
+  },
+  {
+   "section": "Probing the limits",
+   "query": "female vocals",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.56,
+   "spearman": 0.7575
+  },
+  {
+   "section": "Probing the limits",
+   "query": "female vocals",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.06,
+   "spearman": -0.0843
+  },
+  {
+   "section": "Probing the limits",
+   "query": "male vocals",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.4,
+   "top50": 0.54,
+   "spearman": 0.7476
+  },
+  {
+   "section": "Probing the limits",
+   "query": "male vocals",
+   "model": "cnn4-64-n1500",
+   "top10": 0.5,
+   "top50": 0.54,
+   "spearman": 0.7627
+  },
+  {
+   "section": "Probing the limits",
+   "query": "male vocals",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.0,
+   "spearman": -0.1661
+  },
+  {
+   "section": "Probing the limits",
+   "query": "instrumental",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.34,
+   "spearman": 0.7162
+  },
+  {
+   "section": "Probing the limits",
+   "query": "instrumental",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.34,
+   "spearman": 0.7259
+  },
+  {
+   "section": "Probing the limits",
+   "query": "instrumental",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.02,
+   "spearman": 0.3097
+  },
+  {
+   "section": "Probing the limits",
+   "query": "track with a long ambient intro",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.3,
+   "top50": 0.34,
+   "spearman": 0.8124
+  },
+  {
+   "section": "Probing the limits",
+   "query": "track with a long ambient intro",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.38,
+   "spearman": 0.8302
+  },
+  {
+   "section": "Probing the limits",
+   "query": "track with a long ambient intro",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.22,
+   "spearman": 0.2761
+  },
+  {
+   "section": "Probing the limits",
+   "query": "170 BPM",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.3,
+   "spearman": 0.4422
+  },
+  {
+   "section": "Probing the limits",
+   "query": "170 BPM",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.34,
+   "spearman": 0.4308
+  },
+  {
+   "section": "Probing the limits",
+   "query": "170 BPM",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.14,
+   "spearman": 0.3058
+  },
+  {
+   "section": "Probing the limits",
+   "query": "120 BPM",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.24,
+   "spearman": 0.7171
+  },
+  {
+   "section": "Probing the limits",
+   "query": "120 BPM",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.26,
+   "spearman": 0.7077
+  },
+  {
+   "section": "Probing the limits",
+   "query": "120 BPM",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.1,
+   "spearman": 0.0869
+  },
+  {
+   "section": "Probing the limits",
+   "query": "no vocals",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.22,
+   "spearman": 0.7386
+  },
+  {
+   "section": "Probing the limits",
+   "query": "no vocals",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.22,
+   "spearman": 0.7634
+  },
+  {
+   "section": "Probing the limits",
+   "query": "no vocals",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.02,
+   "spearman": -0.306
+  },
+  {
+   "section": "Probing the limits",
+   "query": "90s rave",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.46,
+   "spearman": 0.7432
+  },
+  {
+   "section": "Probing the limits",
+   "query": "90s rave",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.44,
+   "spearman": 0.7534
+  },
+  {
+   "section": "Probing the limits",
+   "query": "90s rave",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.12,
+   "spearman": 0.461
+  },
+  {
+   "section": "Probing the limits",
+   "query": "modern production",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.26,
+   "spearman": 0.7469
+  },
+  {
+   "section": "Probing the limits",
+   "query": "modern production",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.28,
+   "spearman": 0.7527
+  },
+  {
+   "section": "Probing the limits",
+   "query": "modern production",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.08,
+   "spearman": -0.0985
+  },
+  {
+   "section": "Probing the limits",
+   "query": "lo-fi, dusty and warm",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.3,
+   "top50": 0.6,
+   "spearman": 0.7555
+  },
+  {
+   "section": "Probing the limits",
+   "query": "lo-fi, dusty and warm",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.64,
+   "spearman": 0.7576
+  },
+  {
+   "section": "Probing the limits",
+   "query": "lo-fi, dusty and warm",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.02,
+   "spearman": -0.0975
+  },
+  {
+   "section": "Probing the limits",
+   "query": "crisp, polished, loud",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.4,
+   "spearman": 0.8565
+  },
+  {
+   "section": "Probing the limits",
+   "query": "crisp, polished, loud",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.5,
+   "spearman": 0.8785
+  },
+  {
+   "section": "Probing the limits",
+   "query": "crisp, polished, loud",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.04,
+   "spearman": -0.0666
+  },
+  {
+   "section": "Probing the limits",
+   "query": "live drummer",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.26,
+   "spearman": 0.8544
+  },
+  {
+   "section": "Probing the limits",
+   "query": "live drummer",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.22,
+   "spearman": 0.8602
+  },
+  {
+   "section": "Probing the limits",
+   "query": "live drummer",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.04,
+   "spearman": 0.0283
+  },
+  {
+   "section": "Probing the limits",
+   "query": "drum machine",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.3,
+   "top50": 0.46,
+   "spearman": 0.8366
+  },
+  {
+   "section": "Probing the limits",
+   "query": "drum machine",
+   "model": "cnn4-64-n1500",
+   "top10": 0.4,
+   "top50": 0.48,
+   "spearman": 0.839
+  },
+  {
+   "section": "Probing the limits",
+   "query": "drum machine",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.22,
+   "spearman": 0.2488
+  },
+  {
+   "section": "Probing the limits",
+   "query": "piano",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.26,
+   "spearman": 0.6648
+  },
+  {
+   "section": "Probing the limits",
+   "query": "piano",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.32,
+   "spearman": 0.6757
+  },
+  {
+   "section": "Probing the limits",
+   "query": "piano",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.12,
+   "spearman": 0.088
+  },
+  {
+   "section": "Probing the limits",
+   "query": "saxophone",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.2,
+   "spearman": 0.3118
+  },
+  {
+   "section": "Probing the limits",
+   "query": "saxophone",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.2,
+   "spearman": 0.3286
+  },
+  {
+   "section": "Probing the limits",
+   "query": "saxophone",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.12,
+   "spearman": -0.0771
+  },
+  {
+   "section": "Probing the limits",
+   "query": "acoustic guitar",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.6,
+   "top50": 0.56,
+   "spearman": 0.7469
+  },
+  {
+   "section": "Probing the limits",
+   "query": "acoustic guitar",
+   "model": "cnn4-64-n1500",
+   "top10": 0.5,
+   "top50": 0.58,
+   "spearman": 0.7434
+  },
+  {
+   "section": "Probing the limits",
+   "query": "acoustic guitar",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.06,
+   "spearman": 0.0611
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Hypnotic, psychedelic dance music with rolling tribal percussion and a deep, restrained bassline.",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.1,
+   "top50": 0.32,
+   "spearman": 0.7384
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Hypnotic, psychedelic dance music with rolling tribal percussion and a deep, restrained bassline.",
+   "model": "cnn4-64-n1500",
+   "top10": 0.1,
+   "top50": 0.34,
+   "spearman": 0.7515
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Hypnotic, psychedelic dance music with rolling tribal percussion and a deep, restrained bassline.",
+   "model": "laion-clap",
+   "top10": 0.1,
+   "top50": 0.14,
+   "spearman": -0.0613
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Dusty old-school breakbeats, spacious dub textures, and a slightly menacing late-night atmosphere.",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.28,
+   "spearman": 0.7404
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Dusty old-school breakbeats, spacious dub textures, and a slightly menacing late-night atmosphere.",
+   "model": "cnn4-64-n1500",
+   "top10": 0.0,
+   "top50": 0.38,
+   "spearman": 0.7432
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Dusty old-school breakbeats, spacious dub textures, and a slightly menacing late-night atmosphere.",
+   "model": "laion-clap",
+   "top10": 0.0,
+   "top50": 0.04,
+   "spearman": 0.0786
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Progressive club music with slowly evolving pads and a driving syncopated groove.",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.4,
+   "top50": 0.44,
+   "spearman": 0.8423
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Progressive club music with slowly evolving pads and a driving syncopated groove.",
+   "model": "cnn4-64-n1500",
+   "top10": 0.3,
+   "top50": 0.44,
+   "spearman": 0.8458
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Progressive club music with slowly evolving pads and a driving syncopated groove.",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.2,
+   "spearman": 0.3443
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Warm, hazy, euphoric music with organic percussion and little vocal presence.",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.0,
+   "top50": 0.32,
+   "spearman": 0.8101
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Warm, hazy, euphoric music with organic percussion and little vocal presence.",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.28,
+   "spearman": 0.8199
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Warm, hazy, euphoric music with organic percussion and little vocal presence.",
+   "model": "laion-clap",
+   "top10": 0.3,
+   "top50": 0.24,
+   "spearman": 0.0514
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Sparse mechanical rhythms, dark atmospheres and an evolving rather than an aggressive energy.",
+   "model": "cnn4-small-64-n1500",
+   "top10": 0.2,
+   "top50": 0.36,
+   "spearman": 0.7892
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Sparse mechanical rhythms, dark atmospheres and an evolving rather than an aggressive energy.",
+   "model": "cnn4-64-n1500",
+   "top10": 0.2,
+   "top50": 0.38,
+   "spearman": 0.7945
+  },
+  {
+   "section": "Long descriptions (brief)",
+   "query": "Sparse mechanical rhythms, dark atmospheres and an evolving rather than an aggressive energy.",
+   "model": "laion-clap",
+   "top10": 0.2,
+   "top50": 0.22,
+   "spearman": 0.367
+  }
+ ]
+}
