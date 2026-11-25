@@ -33,6 +33,8 @@ library snapshots, extracted vectors, feature caches, MLflow stores and the rese
   so it can be read without running it again. Outputs can show track names, so they stay on this machine: git stores
   notebooks without them through the nbstripout filter in `.gitattributes`. Once per clone:
   `.research_cache\venv-distill\Scripts\nbstripout --install`. CI fails if a notebook with outputs is committed.
+  Switching to a branch without the notebook (or with a different version of it) replaces the file, and its local
+  outputs are gone: run it again afterwards.
 
 ## Rules
 
