@@ -57,7 +57,7 @@ imports `QColor` for color tables. This is a known wart, see BACKLOG.)
 | `cover_art.py` | `find_cover(path)`: embedded picture (front cover first; ID3, FLAC, MP4), else cover.jpg / folder.jpg next to the file; `cache_keys` for the thumbnail cache. No Qt |
 | `traktor_smartlist.py` | Traktor smartlist queries (`$BPM > 126 & $GENRE % "break"`): tokenizer, parser (`&` before `\|`, parentheses), evaluation on `TraktorCollection` records; `SmartlistError` says why a query cannot be evaluated |
 | `placement.py` | `place_box`: the first corner next to a point where a box (map label, info card) covers no other box and stays in view; plain pixel rectangles, no Qt |
-| `embedding_models.py` | The embedding models (CNN14, LAION CLAP, Microsoft CLAP): files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
+| `embedding_models.py` | The embedding models: `MODELS` offered (CNN14, AllMusicCaps CLAP, LAION CLAP), `RETIRED_MODELS` known but not offered (Microsoft CLAP), `PREFERRED_SIMILARITY_IDS` (the similarity model until one is chosen: the first with its files); files, sample rate, window, size, batch sizes, text settings, cache file. Must not import Qt |
 | `embeddings.py` | Embeddings: `load_audio_rates` (one decode, several sample rates), `OnnxEmbedder` (any model, onnxruntime, GPU if available), `EmbeddingStore` (one cache file per model), `run_analysis` (entry point of the analysis process, all enabled models). Must not import Qt |
 | `text_search.py` | Free-text search: `tokenize`, `TextEncoder` (CLAP text side, onnxruntime), `rank`, `run_text_encoder` (entry point of the text search process). Must not import Qt |
 | `eta.py` | `Eta`: time left of the embedding analysis from its progress counts, over a sliding 5-minute window; `format_left` ("about 3 h 25 min left"). No Qt |
@@ -153,7 +153,7 @@ It holds:
 | `SongSelector_settings.json` | UI settings. Before 1.1 it was `SpotNextTrack_settings.json`; `config.init_settings()` moves that one to the new name once and keeps it as `SpotNextTrack_settings.json.bak` | on close |
 | `library.sqlite` | Collection, Song Selector rating/color, saved lists (see below) | on every change |
 | `embeddings.sqlite` | CNN14 embeddings, a cache that can be deleted and recomputed (see below) | by the analysis process |
-| `embeddings-laion-clap.sqlite`, `embeddings-ms-clap.sqlite` | The CLAP models' caches, same layout | by the analysis process |
+| `embeddings-amc-clap.sqlite`, `embeddings-laion-clap.sqlite` | The CLAP models' caches, same layout (`embeddings-ms-clap.sqlite` of Microsoft CLAP, retired, is no longer opened) | by the analysis process |
 | `models/cnn14.onnx` | Optional location of the embedding model. Order: model chosen in *Analysis*, this file, then `config.DEFAULT_EMBEDDING_MODEL` (`SONGSELECTOR_EMBEDDING_MODEL=none` disables the default; tests and verification do). `scripts/export_cnn14_onnx.py` creates the file from the published PANNs checkpoint | never |
 | `imported_tracks.json` | Imports saved by versions ≤ 4.5.0 | never; read once, kept as a backup |
 

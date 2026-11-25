@@ -241,11 +241,12 @@ def _layout(keys, vectors, stored, dims, should_stop, projection=DEFAULT_PROJECT
 
 
 def layout_cache_id(store, projection):
-    """The `model` a layout is cached under: t-SNE under the model's own id (as before layouts could be chosen),
-    others under '<model id>:<projection>'; None for PCA, which is computed every time (a second, and exact)."""
+    """The `model` a layout is cached under: t-SNE under the model's own id (as before layouts could be chosen, so
+    those caches stay valid), others under '<model id>:<projection>'; None for PCA, which is computed every time (a
+    second, and exact)."""
     if projection == 'pca':
         return None
-    return store.spec.id if projection == DEFAULT_PROJECTION else f'{store.spec.id}:{projection}'
+    return store.spec.id if projection == 'tsne' else f'{store.spec.id}:{projection}'
 
 
 def build_map_data(store, rearrange=False, should_stop=lambda: False, with_3d=False, only=None,

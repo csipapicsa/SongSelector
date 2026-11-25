@@ -10,6 +10,12 @@ from that period still mention 4.x numbers.
 
 ## [Unreleased]
 
+- **New defaults: UMAP layout and the MTG model.** The map is laid out with UMAP unless you pick another layout.
+  With no model chosen, the map and the description search use AllMusicCaps CLAP (MTG) once it's downloaded, then
+  LAION CLAP, then CNN14; a model you chose stays as it is.
+- **Microsoft CLAP is no longer offered.** For DJ music it was the weakest model. Its cache
+  (`embeddings-ms-clap.sqlite`) and model files are left alone and can be deleted; a setting that chose it falls back
+  to the default above.
 - **Choose the map's layout: t-SNE, UMAP or PCA.** A *Layout* box below the map. t-SNE (as before) keeps the most of
   each track's nearest neighbours; UMAP is as good on a short List and takes seconds instead of minutes for 3,000
   tracks; PCA is instant and keeps the large-scale distances best. Each layout of the library map is kept, so

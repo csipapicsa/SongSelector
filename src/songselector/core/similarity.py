@@ -258,14 +258,14 @@ def umap_layout(vectors, neighbours=UMAP_NEIGHBOURS, epochs=None, seed=0, should
     return (y - y.mean(0)).astype(np.float32)
 
 
-# The map's layouts: setting `Map projection`. t-SNE first: the default, and the layout cached under the model's own
-# id (older versions' caches stay valid); the others are cached under '<model id>:<name>'.
+# The map's layouts: setting `Map projection`, in the Layout box's order. UMAP is the default since 2026-11-24 (the
+# user found it separates the library better, and it takes seconds instead of minutes); t-SNE was before.
 PROJECTIONS = {
-    'tsne': ('t-SNE', tsne_layout),
     'umap': ('UMAP', umap_layout),
+    'tsne': ('t-SNE', tsne_layout),
     'pca': ('PCA', pca_layout),
 }
-DEFAULT_PROJECTION = 'tsne'
+DEFAULT_PROJECTION = 'umap'
 
 
 def project(vectors, projection=DEFAULT_PROJECTION, should_stop=lambda: False, dims=2):
