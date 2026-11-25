@@ -80,16 +80,28 @@ def mean_std(x, dim):
 
 # ---- Students ------------------------------------------------------------------------------------------------
 
-class MfccMlp(nn.Module):
-    def __init__(self, n_mels=64, n_mfcc=40, hidden=512, dim=DIM):
+class Student(nn.Module):
+    """Every student: forward(audio) = embed_mel(frontend(audio)). The front end has no learned weights, so training
+    can start from cached log-mels (embed_mel) and the exported model (forward) still computes exactly the same."""
+
+    def __init__(self, n_mels):
         super().__init__()
+        self.n_mels = n_mels
         self.frontend = LogMel(n_mels)
+
+    def forward(self, audio):
+        return self.embed_mel(self.frontend(audio))
+
+
+class MfccMlp(Student):
+    def __init__(self, n_mels=64, n_mfcc=40, hidden=512, dim=DIM):
+        super().__init__(n_mels)
         self.register_buffer('dct', torch.from_numpy(dct_matrix(n_mels, n_mfcc)), persistent=False)
         self.norm = nn.BatchNorm1d(2 * n_mfcc)
         self.mlp = nn.Sequential(nn.Linear(2 * n_mfcc, hidden), nn.ReLU(inplace=True), nn.Linear(hidden, dim))
 
-    def forward(self, audio):
-        mfcc = torch.matmul(self.frontend(audio).transpose(1, 2), self.dct)   # (batch, frames, n_mfcc)
+    def embed_mel(self, mel):
+        mfcc = torch.matmul(mel.transpose(1, 2), self.dct)   # (batch, frames, n_mfcc)
         return self.mlp(self.norm(mean_std(mfcc, 1)))
 
 
@@ -99,13 +111,12 @@ class ConvBlock(nn.Sequential):
                          nn.ReLU(inplace=True), nn.AvgPool2d(pool))
 
 
-class Cnn4(nn.Module):
+class Cnn4(Student):
     """Log-mel image -> 4 conv blocks (each halves frequency and time) -> mean over frequency -> mean and std over
     time -> linear projection to the teacher's 512 dimensions."""
 
     def __init__(self, channels=(32, 64, 128, 256), n_mels=64, dim=DIM):
-        super().__init__()
-        self.frontend = LogMel(n_mels)
+        super().__init__(n_mels)
         self.norm = nn.BatchNorm1d(n_mels)          # per mel band, learned (PANNs' bn0)
         blocks, cin = [], 1
         for cout in channels:
@@ -114,27 +125,26 @@ class Cnn4(nn.Module):
         self.blocks = nn.Sequential(*blocks)
         self.head = nn.Linear(2 * cin, dim)
 
-    def forward(self, audio):
-        x = self.blocks(self.norm(self.frontend(audio)).unsqueeze(1))   # (batch, channels, mels / 16, frames / 16)
+    def embed_mel(self, mel):
+        x = self.blocks(self.norm(mel).unsqueeze(1))   # (batch, channels, mels / 16, frames / 16)
         return self.head(mean_std(x.mean(2), -1))
 
 
-class MobileNetV3S(nn.Module):
+class MobileNetV3S(Student):
     """torchvision's MobileNetV3-Small body on a 1-channel log-mel image, with the same pooling and head as Cnn4."""
 
     def __init__(self, n_mels=128, dim=DIM):
-        super().__init__()
+        super().__init__(n_mels)
         from torchvision.models import mobilenet_v3_small
         body = mobilenet_v3_small(weights=None).features
         first = body[0][0]
         body[0][0] = nn.Conv2d(1, first.out_channels, first.kernel_size, first.stride, first.padding, bias=False)
-        self.frontend = LogMel(n_mels)
         self.norm = nn.BatchNorm1d(n_mels)
         self.body = body
         self.head = nn.Linear(2 * 576, dim)
 
-    def forward(self, audio):
-        x = self.body(self.norm(self.frontend(audio)).unsqueeze(1))
+    def embed_mel(self, mel):
+        x = self.body(self.norm(mel).unsqueeze(1))
         return self.head(mean_std(x.mean(2), -1))
 
 

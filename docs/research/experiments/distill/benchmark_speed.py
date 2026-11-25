@@ -40,6 +40,7 @@ from common import (  # noqa: E402
     WINDOW,
     WORK,
     decode,
+    mlflow_experiment,
     sampled_indices,
     teacher_tracks,
     windows_of,
@@ -191,6 +192,42 @@ def print_table(runs):
               f"{run['rss_peak_mb']:7.0f}")
 
 
+RUN_METRICS = ['load_s', 'rss_after_load_mb', 'rss_peak_mb', 'onnx_mb', 'window_ms_b1_median', 'window_ms_b1_p95',
+               'window_ms_b8']
+
+
+def onnx_params_m(path):
+    """Parameters in millions: the weights stored in the ONNX file (None if the file is not there)."""
+    import onnx
+    if not Path(path).is_file():
+        return None
+    graph = onnx.load(str(path), load_external_data=False).graph
+    return sum(int(np.prod(tensor.dims)) for tensor in graph.initializer) / 1e6
+
+
+def log_to_mlflow(report, json_path):
+    """One parent run per benchmark (setup, machine, the JSON as artifact) with a nested run per (model, threads):
+    the parent answers "which benchmark", the children are the rows to compare in the MLflow UI."""
+    mlflow = mlflow_experiment('distill-speed')
+    setup, machine = report['setup'], report['machine']
+    tags = {'phase': '0', 'git_commit': setup['git_commit'], 'cpu': machine['cpu']}
+    with mlflow.start_run(run_name=f"phase0-{report['date']}", tags=tags, description=report['question']) as parent:
+        mlflow.log_params({key: value for key, value in setup.items() if key != 'git_commit'})
+        mlflow.log_params({f'machine.{key}': value for key, value in machine.items()})
+        mlflow.log_artifact(str(json_path))
+        for run in report['runs']:
+            role = 'teacher' if run['model'] == 'teacher' else 'student'
+            with mlflow.start_run(run_name=f"{run['model']}-t{run['threads']}", nested=True, tags={**tags, 'role': role}):
+                params = {'model': run['model'], 'threads': run['threads'], 'batch': run['batch'],
+                          'onnxruntime': run['onnxruntime']}
+                size = onnx_params_m(model_path(run['model']))
+                if size is not None:
+                    params['params_m'] = round(size, 3)
+                mlflow.log_params(params)
+                mlflow.log_metrics({**{key: run[key] for key in RUN_METRICS}, **run['summary']})
+    print(f'Logged to MLflow: experiment distill-speed, run {parent.info.run_id}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--models', nargs='+', default=['teacher', *STUDENT_NAMES])
@@ -202,10 +239,14 @@ def main():
     parser.add_argument('--out', type=Path, default=RESULTS / f'{date.today()}_distill_phase0_speed.json')
     parser.add_argument('--worker', nargs=2, metavar=('MODEL', 'THREADS'), help=argparse.SUPPRESS)
     parser.add_argument('--tracks-file', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--no-mlflow', action='store_true', help='only write the JSON')
+    parser.add_argument('--log-json', type=Path, help='log an earlier results JSON to MLflow, without measuring')
     args = parser.parse_args()
     if args.worker:
         tracks = json.loads(args.tracks_file.read_text(encoding='utf-8'))
         return worker(args.worker[0], int(args.worker[1]), tracks, args.batch, args.repeats)
+    if args.log_json:
+        return log_to_mlflow(json.loads(args.log_json.read_text(encoding='utf-8')), args.log_json)
 
     missing = [name for name in args.models if not model_path(name).is_file()]
     if missing:
@@ -247,6 +288,8 @@ def main():
     args.out.write_text(json.dumps(report, indent=1), encoding='utf-8')
     print_table(runs)
     print(f'\nWrote {args.out}')
+    if not args.no_mlflow:
+        log_to_mlflow(report, args.out)
 
 
 if __name__ == '__main__':
