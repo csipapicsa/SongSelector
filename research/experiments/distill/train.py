@@ -224,6 +224,7 @@ def main():
     parser.add_argument('--eval-train', action='store_true', help='per epoch: cosine on training windows, eval mode')
     parser.add_argument('--phase', default='2', help='MLflow tag')
     parser.add_argument('--name-suffix', default='', help="added to the run name, e.g. 'overfit'")
+    parser.add_argument('--question', help="MLflow tag grouping runs by the question they answer, e.g. 'structure'")
     args = parser.parse_args()
 
     def log(message):
@@ -234,7 +235,8 @@ def main():
     data = load_data(args.train_tracks, args.seed, n_mels)
     mlflow = mlflow_experiment(args.experiment)
     name = f"{args.student}-n{data['train_track_count']}" + (f'-{args.name_suffix}' if args.name_suffix else '')
-    with mlflow.start_run(run_name=name, tags={'phase': args.phase, 'kind': kind}):
+    tags = {'phase': args.phase, 'kind': kind, **({'question': args.question} if args.question else {})}
+    with mlflow.start_run(run_name=name, tags=tags):
         mlflow.log_params({'student': args.student, 'train_tracks': data['train_track_count'],
                            'train_windows': len(data['train']['rows']), 'val_windows': len(data['val']['rows']),
                            'test_windows': len(data['test']['rows']), 'manifest_sha': data['manifest_sha'],

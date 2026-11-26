@@ -372,7 +372,11 @@ New-Item -ItemType Junction -Path .research_cache\distill\data -Target D:\SongSe
 | [requirements.txt](requirements.txt) | Pinned versions of the venv |
 
 **MLflow:** runs are stored in `.research_cache/distill/mlflow.db` (experiments `distill-speed` for Phase 0,
-`distill-train` for training runs, `distill-robustness` for the audio-quality check, `distill-smoke` for smoke runs). To browse them, from the repo root:
+`distill-train` for training runs, `distill-robustness` for the audio-quality check, `distill-smoke` for smoke runs).
+Each run has a `question` tag saying what it was for: in `distill-train` `reference` (teacher, LAION, trivial
+baselines), `architecture` (Phase 1), `learning-curve`, `sanity` (overfit test), `seeds` (noise), `recipe` (epochs,
+learning-rate schedule), `structure` (Phase 2 model structure). In the UI, filter with `tags.question = 'seeds'` or
+add the tag as a column; `train.py --question <name>` sets it on new runs. To browse them, from the repo root:
 
 ```
 .research_cache\venv-distill\Scripts\mlflow ui --backend-store-uri sqlite:///.research_cache/distill/mlflow.db
