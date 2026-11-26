@@ -22,12 +22,14 @@ count differs from the snapshot (decoder changed since the app analysed it) is s
 Output in .research_cache/distill/data/:
   manifest.parquet   one row per track: path_key, artist, genre, split, train_rank, frames, ok, first row, windows
   mel64.npy          (windows, 64, 1001) float16 log-mel
+  mel128.npy         the same windows with 128 bands (--mels 128; 9 GB, for the 128-band students only)
   teacher.npy        (windows, 512) float32 teacher vectors (as cached by the app, not normalised)
   windows.npz        per window: its track (manifest row) and window index in the track
   meta.json          front end, seed, counts, timing
 
     .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py
     .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py --split-only
+    .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py --mels 128
 """
 import argparse
 import json
@@ -180,6 +182,79 @@ def lower_priority():
     psutil.Process().nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)   # the laptop stays usable
 
 
+def decode_all(manifest, workers, store):
+    """Decode every manifest track in a pool of processes; store(row, result) gets each one as it finishes."""
+    started = time.time()
+    with ProcessPoolExecutor(workers, initializer=lower_priority) as pool:
+        pending, rows = {}, iter(range(len(manifest)))
+        done = 0
+        while True:
+            while len(pending) < 2 * workers:   # a few tracks in flight: bounded memory
+                row = next(rows, None)
+                if row is None:
+                    break
+                track = manifest.iloc[row]
+                pending[pool.submit(load_windows, track['file_path'], int(track['frames']), track['indices'])] = row
+            if not pending:
+                break
+            finished, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in finished:
+                store(pending.pop(future), future.result())
+                done += 1
+                if done % 100 == 0 or done == len(manifest):
+                    elapsed = time.time() - started
+                    print(f'{done}/{len(manifest)} tracks, {elapsed / 60:.1f} min, '
+                          f'ETA {elapsed / done * (len(manifest) - done) / 60:.1f} min', flush=True)
+    return (time.time() - started) / 60
+
+
+def mels_only(n_mels, workers):
+    """Another log-mel resolution of the cached windows: mel<n_mels>.npy, row for row like mel64.npy (manifest,
+    teacher vectors and split unchanged). Every track is decoded again; its windows also go through the 64-band front
+    end and are compared with mel64.npy, so each row of the new cache is shown to be the same audio."""
+    import pandas as pd
+    import torch
+    from students import LogMel
+    manifest = pd.read_parquet(DATA / 'manifest.parquet')
+    reference = np.load(DATA / f'mel{N_MELS}.npy', mmap_mode='r')
+    path = DATA / f'mel{n_mels}.npy'
+    mel = np.lib.format.open_memmap(path, mode='w+', dtype=np.float16,
+                                    shape=(len(reference), n_mels, reference.shape[2]))
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    frontend, check = LogMel(n_mels).to(device).eval(), LogMel(N_MELS).to(device).eval()
+    worst, failed = [0.0], []
+    todo = manifest[manifest.ok].reset_index()   # 'index' = the manifest row, as in windows.npz
+
+    def store(row, result):
+        state, value = result
+        track = todo.iloc[row]
+        if state != 'ok':   # this track was cached before: the audio or the decoder changed since
+            failed.append(f"{track['path_key']}: {value}")
+            return
+        first, count = int(track['first']), int(track['windows'])
+        with torch.inference_mode():
+            audio = torch.from_numpy(value).to(device)
+            mel[first:first + count] = frontend(audio).half().cpu().numpy()
+            again = check(audio).half().cpu().numpy().astype(np.float32)
+        diff = float(np.abs(again - reference[first:first + count].astype(np.float32)).max())
+        # float16 rounds log-mels near 10-20 in steps of 0.008-0.016; another window would differ by whole units
+        if diff > 0.05:
+            sys.exit(f"{track['path_key']}: {N_MELS}-band check failed, max difference {diff:.3f} from mel{N_MELS}.npy")
+        worst[0] = max(worst[0], diff)
+
+    minutes = decode_all(todo, workers, store)
+    mel.flush()
+    if failed:
+        sys.exit(f'{len(failed)} cached tracks could not be decoded the same way again, e.g. {failed[:3]}')
+    meta = json.loads((DATA / 'meta.json').read_text(encoding='utf-8'))
+    meta.setdefault('extra_mel_caches', {})[str(n_mels)] = {
+        'file': path.name, 'created': datetime.now().isoformat(timespec='seconds'), 'minutes': minutes,
+        'tracks': len(todo), 'windows': len(reference), 'n_fft': frontend.n_fft, 'hop': frontend.hop,
+        'computed_on': device, f'max_diff_vs_mel{N_MELS}': worst[0]}
+    (DATA / 'meta.json').write_text(json.dumps(meta, indent=1), encoding='utf-8')
+    print(json.dumps(meta['extra_mel_caches'][str(n_mels)], indent=1))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--seed', type=int, default=0)
@@ -187,9 +262,14 @@ def main():
     parser.add_argument('--limit', type=int, help='only the first N tracks (a quick test)')
     parser.add_argument('--split-only', action='store_true',
                         help='re-split the existing cache (manifest only, no decoding); keeps the old manifest')
+    parser.add_argument('--mels', type=int, metavar='N',
+                        help='add mel<N>.npy for the cached windows (e.g. 128); nothing else changes')
     args = parser.parse_args()
     if args.split_only:
         split_only(args.seed)
+        return
+    if args.mels:
+        mels_only(args.mels, args.workers)
         return
 
     import torch
@@ -222,27 +302,7 @@ def main():
         mel[first:first + count] = features.half().cpu().numpy()
         teacher[first:first + count] = teacher_vectors(track['path_key'])[track['indices']]
 
-    started = time.time()
-    with ProcessPoolExecutor(args.workers, initializer=lower_priority) as pool:
-        pending, rows = {}, iter(range(len(manifest)))
-        done = 0
-        while True:
-            while len(pending) < 2 * args.workers:   # a few tracks in flight: bounded memory
-                row = next(rows, None)
-                if row is None:
-                    break
-                track = manifest.iloc[row]
-                pending[pool.submit(load_windows, track['file_path'], int(track['frames']), track['indices'])] = row
-            if not pending:
-                break
-            finished, _ = wait(pending, return_when=FIRST_COMPLETED)
-            for future in finished:
-                store(pending.pop(future), future.result())
-                done += 1
-                if done % 100 == 0 or done == len(manifest):
-                    elapsed = time.time() - started
-                    print(f'{done}/{len(manifest)} tracks, {elapsed / 60:.1f} min, '
-                          f'ETA {elapsed / done * (len(manifest) - done) / 60:.1f} min', flush=True)
+    minutes = decode_all(manifest, args.workers, store)
     mel.flush()
     teacher.flush()
 
@@ -254,7 +314,7 @@ def main():
     window_of = np.concatenate([np.asarray(i, dtype=np.int32) for i in manifest.indices])
     np.savez(DATA / 'windows.npz', track=track_of, window=window_of)
     meta = {
-        'created': datetime.now().isoformat(timespec='seconds'), 'seed': args.seed, 'minutes': (time.time() - started) / 60,
+        'created': datetime.now().isoformat(timespec='seconds'), 'seed': args.seed, 'minutes': minutes,
         'tracks': len(manifest), 'windows': total, 'splits': counts,
         'ok_by_split': manifest[manifest.ok].split.value_counts().to_dict(),
         'skipped': manifest[~manifest.ok].status.value_counts().to_dict(),

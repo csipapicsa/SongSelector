@@ -12,7 +12,8 @@ and the app compares directions. AdamW with a fixed learning rate, fp32 on the G
 the validation window cosine (at most --max-epochs, stop after --patience epochs without a better one), and the
 best epoch's weights are kept. No augmentation: the targets belong to the unchanged audio.
 
-Logged per run (experiment distill-train): settings, train loss and validation cosine per epoch (with --eval-train
+Logged per run (experiment distill-train): settings, per epoch the train loss, the validation cosine (which picks the
+best epoch) and the validation top-10 neighbour overlap (watched only, not used to choose) (with --eval-train
 also the cosine on up to 4,096 training windows in eval mode, comparable with the validation cosine; the train loss
 is measured in training mode, while the weights change), then for the best
 weights val/test fidelity (evaluate.fidelity) and test genre AP, the ONNX export (front end included, checked
@@ -28,7 +29,15 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA, WORK, mlflow_experiment  # noqa: E402
-from evaluate import EXPERIMENT, fidelity, genre_ap, genres_of, text_vectors, track_vectors  # noqa: E402
+from evaluate import (  # noqa: E402
+    EXPERIMENT,
+    fidelity,
+    genre_ap,
+    genres_of,
+    text_vectors,
+    top_k_overlap,
+    track_vectors,
+)
 
 BASELINES = ['mean', 'ridge-mfcc40']
 
@@ -37,11 +46,19 @@ def unit(x):
     return x / np.maximum(np.linalg.norm(x, axis=-1, keepdims=True), 1e-9)
 
 
-def load_data(train_tracks, seed):
+def mel_cache(n_mels):
+    """The log-mel cache for n_mels bands: the same windows, row for row, in every resolution."""
+    path = DATA / f'mel{n_mels}.npy'
+    if not path.exists():
+        sys.exit(f'{path.name} is missing: build it with prepare_data.py --mels {n_mels}')
+    return np.load(path, mmap_mode='r')
+
+
+def load_data(train_tracks, seed, n_mels=64):
     import pandas as pd
     manifest = pd.read_parquet(DATA / 'manifest.parquet')
     track = np.load(DATA / 'windows.npz')['track']
-    mel = np.load(DATA / 'mel64.npy', mmap_mode='r')
+    mel = mel_cache(n_mels)
     teacher = np.load(DATA / 'teacher.npy', mmap_mode='r')
     ok = manifest.ok.to_numpy()
     train_ids = manifest.index[ok & (manifest.split == 'train').to_numpy()
@@ -129,6 +146,8 @@ def train_student(name, data, args, mlflow, log):
     train_unit = unit(data['train']['teacher'])
     train_target = torch.from_numpy(train_unit).to(device)
     val_target = unit(data['val']['teacher'])
+    val_tracks = data['val']['tracks']
+    val_teacher_tracks, _ = track_vectors(data['val']['teacher'], val_tracks)
     rng = np.random.default_rng(args.seed)
     check_rows = None
     if args.eval_train:   # a fixed sample, drawn apart from the training order
@@ -153,11 +172,14 @@ def train_student(name, data, args, mlflow, log):
             if scheduler is not None:
                 scheduler.step()
             losses.append(loss.item())
-        val_cos = float((unit(predict(model, val_mel, device, amp)) * val_target).sum(1).mean())
+        val_prediction = predict(model, val_mel, device, amp)
+        val_cos = float((unit(val_prediction) * val_target).sum(1).mean())
         if not np.isfinite(val_cos):
             sys.exit(f'epoch {epoch}: validation cosine is {val_cos} (NaN in training?)')
-        metrics = {'train_loss': float(np.mean(losses)), 'val_cos': val_cos, 'epoch_s': time.time() - started,
-                   'lr': optimizer.param_groups[0]['lr']}
+        # Neighbour agreement on validation, logged to watch it; the best epoch is still chosen on val_cos.
+        val_top10 = top_k_overlap(track_vectors(val_prediction, val_tracks)[0], val_teacher_tracks)
+        metrics = {'train_loss': float(np.mean(losses)), 'val_cos': val_cos, 'val_top10': val_top10,
+                   'epoch_s': time.time() - started, 'lr': optimizer.param_groups[0]['lr']}
         if check_rows is not None:
             metrics['train_cos'] = float((unit(predict(model, train_mel[check_rows], device, amp))
                                           * train_unit[check_rows]).sum(1).mean())
@@ -165,7 +187,8 @@ def train_student(name, data, args, mlflow, log):
         improved = val_cos > best['cos']
         log(f'epoch {epoch:2d}: train loss {np.mean(losses):.4f}, '
             + (f'train cosine {metrics["train_cos"]:.4f}, ' if check_rows is not None else '')
-            + f'val cosine {val_cos:.4f}{" (best)" if improved else ""}, {time.time() - started:.0f} s')
+            + f'val cosine {val_cos:.4f}{" (best)" if improved else ""}, val top-10 {val_top10:.3f}, '
+            + f'{time.time() - started:.0f} s')
         if improved:
             best = {'cos': val_cos, 'epoch': epoch,
                     'state': {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}}
@@ -206,15 +229,16 @@ def main():
     def log(message):
         print(message, flush=True)
 
-    data = load_data(args.train_tracks, args.seed)
-    mlflow = mlflow_experiment(args.experiment)
     kind = 'baseline' if args.student in BASELINES else 'student'
+    n_mels = STUDENTS[args.student]().n_mels if kind == 'student' else 64
+    data = load_data(args.train_tracks, args.seed, n_mels)
+    mlflow = mlflow_experiment(args.experiment)
     name = f"{args.student}-n{data['train_track_count']}" + (f'-{args.name_suffix}' if args.name_suffix else '')
     with mlflow.start_run(run_name=name, tags={'phase': args.phase, 'kind': kind}):
         mlflow.log_params({'student': args.student, 'train_tracks': data['train_track_count'],
                            'train_windows': len(data['train']['rows']), 'val_windows': len(data['val']['rows']),
                            'test_windows': len(data['test']['rows']), 'manifest_sha': data['manifest_sha'],
-                           'seed': args.seed})
+                           'seed': args.seed, 'n_mels': n_mels})
         started = time.time()
         if kind == 'baseline':
             predictions = fit_baseline(args.student, data, log)

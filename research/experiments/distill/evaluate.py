@@ -221,7 +221,7 @@ def student_test_tracks(run_name):
     model.load_state_dict(torch.load(WORK / 'trained' / run_name / 'state_dict.pt', weights_only=True))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     rows, track_ids, _ = load_split('test')
-    mel = np.asarray(np.load(DATA / 'mel64.npy', mmap_mode='r')[rows])
+    mel = np.asarray(np.load(DATA / f'mel{model.n_mels}.npy', mmap_mode='r')[rows])
     return track_vectors(predict(model.to(device), mel, device), track_ids)
 
 
