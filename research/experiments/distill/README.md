@@ -355,6 +355,64 @@ training time and +26 % CPU). Results:
 [../../results/2026-11-26_distill_phase2_structure.json](../../results/2026-11-26_distill_phase2_structure.json)
 (`evaluate.py --export-json ... --phase 2 --about 2-structure --runs <name patterns>`).
 
+## Phase 2, relational loss and more windows, 2026-11-26 (stopped by the user; partial results)
+
+**How far is the teacher from itself?** (`teacher_stability.py`) The student's top-10 overlap is measured against the
+teacher on the same windows. As a scale: the teacher on 6 random windows of each validation track vs on 6 *other*
+windows keeps **0.52** of its top-10 (5 draws, 0.51-0.53); vs all 16 windows, 0.70. Measured the same way (6
+windows, ~300 validation tracks) the temporal student agrees with the teacher at 0.40. The top-10 is full of
+near-ties (a track's 1st neighbour at cosine 0.94, its 10th at 0.87), so which moments of a song are heard moves
+the list nearly as much as student vs teacher does. 1.0 is not a meaningful target. Whether the remaining
+differences matter is a question for the listening test.
+
+**Relational loss** (`train.py --loss`). Each window's target vector stays (window term, 1 - cosine), and a second
+term asks how the window relates to others. Both compare directions after removing the teacher's mean unit window
+vector: it has length 0.67, so raw cosines are crowded (1st / 10th / median neighbour 0.93 / 0.89 / 0.53), while
+centred they spread out (0.83 / 0.73 / −0.03).
+
+- `cosine+neighbours`: for each window, a softmax over its centred cosine to all 1,199 training tracks (the
+  teacher's track vectors, fixed), KL(teacher || student). Temperature 0.05, chosen from the teacher's own
+  distribution: ~63 % of the weight on the 10 nearest tracks, perplexity ~32. This aims at the metric (which tracks
+  are nearest), as in CompRess / SEED with teacher tracks as anchors. Batches of 32 hold few close pairs, hence
+  anchors rather than the batch.
+- `cosine+batch-relations`: the classic relational distillation (Park et al. 2019): squared difference of the
+  batch's centred cosine matrices.
+- Weights from gradient balance on the trained temporal student: at weight 1 the neighbour term pulls ~20x as hard
+  as the window term (still 0.95 nats to go, the window term 0.08), the batch term ~0.5x. Runs: neighbours 0.05
+  (both pull alike) and 0.5 (neighbours dominate), batch relations 2. The window term must stay strong: free-text
+  search needs the student's vectors where the teacher's are, not only the right neighbours.
+- Epoch chosen on validation top-10 (`--select val_top10`); each run also logs what choosing on cosine would have
+  given (`if_val_cos_*`), so the loss and the selection rule can be told apart.
+
+Results so far (one seed each; the user stopped the training at the end of the day, so this is not complete):
+
+| Temporal student, 40 epochs | Test top-10 | Test window cos | Genre AP | Best val top-10 (any epoch) | Val cos, chosen epoch |
+|---|---|---|---|---|---|
+| Cosine loss (seeds 0 / 1 / 2, above) | 0.230 / 0.235 / 0.233 | 0.876 / 0.875 / 0.877 | 0.290 / 0.282 / 0.280 | 0.437-0.450 | 0.842-0.844 |
+| + batch relations, weight 2 | 0.235 (0.234 if chosen on cosine) | 0.867 | 0.298 | 0.431 | 0.834 |
+| + neighbours, weight 0.5 (stopped at epoch 37 of 40) | n/a | n/a | n/a | 0.410 | 0.787 |
+| + neighbours, weight 0.05 | crashed at epoch 9 (out of memory, below); not rerun | | | | |
+
+- **Batch relations:** neighbours on par with the cosine loss (inside its seed range), the vectors less faithful
+  (window cosine −0.009, 4x the seed range). Choosing the epoch on validation top-10 instead of cosine: +0.001, as
+  expected.
+- **Neighbours at 0.5** (the neighbour term dominating): worse on validation in both measures, so the student gave
+  up its position in the space without getting the neighbours right. No test result (stopped before the end).
+- **Open:** neighbours at the balanced weight 0.05, and the all-windows run (cache built, not run). With
+  `code_commit` tags both can be started again from this commit.
+
+**All windows of the training tracks** (`prepare_data.py --extra-train-windows`, `train.py --all-windows`): the app
+cache holds the teacher's vector for every 10 s window, ~39 per track; training used 16. The extra cache adds
+26,807 windows (1,199 tracks, 3.4 GB on D:; every track's cached windows decoded again matched `mel64.npy`
+exactly). No teacher runs needed. Windows of one song are alike, so this is worth less than 2.4x the data; it
+is the cheap test of "more data" before an outside dataset (FMA).
+
+On the way: a training run died for want of 4 MB while the cache was built beside it. The cause was Windows' commit
+limit, not RAM (17 GB free): RAM + page files = 41 GB, ~25 GB of it promised to other programs, plus 7.4 GB
+for the run, which loaded its log-mels. Training now reads each batch from the memory-mapped cache (`CachedRows`:
+file-cache pages are not charged; ~1 ms per batch once cached). One damaged MP3 decoded differently on the first
+build attempt (0.22 off) and the same on the second: tracks that do not reproduce are skipped, not trusted.
+
 ## Side check: audio quality, original vs 64 kbps MP3, 2026-11-26
 
 Question (user): free training sets are often low quality; how much does audio quality change the log-mel input and
@@ -413,6 +471,7 @@ New-Item -ItemType Junction -Path .research_cache\distill\data -Target D:\SongSe
 | [train.py](train.py) | Phase 1: baselines and students, early stopping, one MLflow run each, ONNX of the best weights |
 | [evaluate.py](evaluate.py) | Fidelity and genre-AP metrics; `python evaluate.py` logs the reference runs, `--bootstrap RUN...` the paired bootstrap, `--export-json` the results file |
 | [codec_robustness.py](codec_robustness.py) | Side check: teacher and students on originals vs low-bitrate MP3 copies (vectors, neighbours, log-mel per band) |
+| [teacher_stability.py](teacher_stability.py) | The teacher's own top-10 on other windows of the same songs: a scale for the students' top-10 overlap |
 | [phase1_eval.ipynb](phase1_eval.ipynb) | Charts and tables from MLflow: all runs, genre AP, training curves, per-label AP, learning curve, cost vs quality (kernel: the venv, registered as `venv-distill`) |
 | [requirements.txt](requirements.txt) | Pinned versions of the venv |
 
@@ -428,6 +487,24 @@ add the tag as a column; `train.py --question <name>` sets it on new runs. To br
 ```
 
 then open http://127.0.0.1:5000. `benchmark_speed.py --log-json <results.json>` logs an earlier benchmark.
+
+**Getting a run back (code, environment, model).** Each part is kept separately:
+
+- *Code:* every training run since 2026-11-26 (commit 0d43008) has the tags `code_commit` and `code_dirty`. If
+  `code_dirty` is `false`, `git checkout <code_commit>` is exactly the code it ran. If `true`, the run also holds
+  `code/uncommitted.diff` (and `code/untracked/` for new files): check out the commit, then `git apply` the diff.
+  MLflow's own `mlflow.source.git.commit` is only the commit the work started from, so it is not enough on its own.
+  Earlier runs have only MLflow's tag, which misses any edits not yet committed when they started (the git history
+  of the day is the best guide). The first relational run was tagged by hand (`code_commit`, with a note).
+- *Model structures* are never edited in place: a new structure is a new `STUDENTS` entry (e.g. `cnn4-small-64-tcn`
+  next to `cnn4-small-64`), and its new parts start at zero. Old checkpoints still load strictly.
+- *Environment:* `environment/packages.txt` in each run (Python and every installed package with its version);
+  [requirements.txt](requirements.txt) pins the venv itself.
+- *Trained model:* each student run stores `model/state_dict.pt` and the ONNX file. A trained model can be used again
+  without retraining; retraining from the code gives the same numbers up to GPU nondeterminism (seed noise is
+  measured).
+- *Data:* the feature cache is not versioned (git-ignored, ~16 GB on D:). It is rebuilt with `prepare_data.py` from
+  the frozen teacher snapshot (seeded split); each run logs `manifest_sha` to show which split it used.
 
 Outputs: `.research_cache/distill/` (git-ignored: ONNX files, feature cache, MLflow store) and one small JSON
 per run in [../../results/](../../results/).

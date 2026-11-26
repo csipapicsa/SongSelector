@@ -212,8 +212,18 @@ One PR per block below, in this order; each with tests (a failing test first for
             the missing fine structure; select the best epoch on validation top-10 overlap, not window cosine. On
             `cnn4-small-64-tcn`. Validation top-10 is noisy (seed range up to 0.028, epoch to epoch ~0.005-0.02);
             with the cosine loss, choosing the epoch on it would gain at most 0.007 on validation.
-      - [ ] **Data pilot:** FMA medium (25,000 clips of 30 s, 16 genres, ~22 GB download, ~10 GB log-mel cache, about
-            an hour of teacher on the GPU). 30 s clips are enough for training (the student sees 10 s windows); keep
+            **Partly done, stopped by the user 2026-11-26** (distill README "relational loss and more windows"):
+            `--loss cosine+batch-relations` (weight 2) gave test top-10 0.235, on par with the cosine loss, but window
+            cosine −0.009; `cosine+neighbours` at weight 0.5 was worse on validation (stopped at epoch 37); at the
+            balanced weight 0.05 not run to the end (crashed, out of memory). Selection on validation top-10: +0.001.
+            Scale: the teacher on 6 other windows of the same songs keeps only 0.52 of its top-10 (the student,
+            same windows: 0.40).
+      - [ ] **All windows of the training tracks** (user 2026-11-26: before FMA): 26,807 more windows (39 per track
+            instead of 16) from the teacher cache, no teacher runs; `train.py --all-windows`. Cache built (3.4 GB on
+            D:), not run.
+      - [ ] **Data pilot** (user 2026-11-26: after the relational loss and all-windows results): FMA medium (25,000
+            clips of 30 s, 16 genres, ~22 GB download, ~10 GB log-mel cache, about an hour of teacher on the GPU;
+            fits D: and 32 GB RAM; medium over small for its electronic share). 30 s clips are enough for training (the student sees 10 s windows); keep
             the test on whole tracks of the user's library. Measure whether misses stop following unfamiliarity.
       - [ ] Then: blind listening test of the closest matches before any claim about quality.
       - [x] Audio quality (2026-11-26, distill README "Side check"): a 64 kbps MP3 copy changes the log-mel above
