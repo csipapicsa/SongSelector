@@ -267,6 +267,49 @@ average and/or 128 mel bands; relational distillation with model choice on valid
 FMA medium (30 s clips are enough to train on; the test stays on whole tracks). Listening test (E11) before any claim
 about quality.
 
+## Phase 2, model structure, 2026-11-26
+
+Why: after its 4 conv blocks the CNN has one frame per 160 ms, each seeing ~0.46 s (about a beat), and then takes
+the mean and std over time: a "bag of beats" that is blind to the order of beats, bars and phrases, while the
+teacher (a transformer) relates the whole 10 s window. The learning-rate schedule (section 5) showed the neighbour
+gap is not optimisation. Three students, one change each from `cnn4-small-64`, all on the section 5 recipe (40 epochs,
+cosine schedule, seed 0, best epoch on validation cosine):
+
+- `cnn4-small-64-tcn`: 4 residual, dilated (1, 2, 4, 8), depthwise-separable 1-D convolutions over time after the CNN;
+  each frame then sees ~5.3 s (2-3 bars). +69 k parameters.
+- `cnn4-small-64-attn`: attentive statistics pooling (a learned weight per frame and channel) instead of the plain
+  mean/std. Still order-blind: it can learn which moments count, not what follows what. +17 k parameters.
+- `cnn4-small-128`: 128 mel bands instead of 64 (`prepare_data.py --mels 128`, 9 GB cache, checked row for row
+  against the 64-band cache).
+
+Both new parts start at zero, so each new student begins as exactly the plain one (checked) and only uses the new
+part if it helps. Validation top-10 overlap is now logged per epoch (watched, not used to choose the epoch).
+
+| Seed 0 | Test window cos | Track cos | Top-10 overlap | Genre AP | Val top-10 | Train cos | Train time | CPU ms/window |
+|---|---|---|---|---|---|---|---|---|
+| Plain (`cnn4-small-64`, section 5) | 0.869 | 0.931 | 0.222 | 0.289 | 0.389 | 0.878 | 32 min | 35.0 |
+| Attentive pooling | 0.870 | 0.932 | 0.223 | 0.288 | 0.405 | 0.883 | 37 min | 38.1 |
+| 128 mel bands | 0.871 | 0.932 | 0.218 | 0.286 | 0.399 | 0.875 | 78 min | 44.2 |
+| **Temporal blocks** | **0.876** | **0.939** | **0.230** | 0.290 | **0.437** | **0.917** | 36 min | 38.4 |
+
+CPU: `benchmark_speed.py`, 1 thread, 10 library tracks
+([../../results/2026-11-26_distill_structure_speed.json](../../results/2026-11-26_distill_structure_speed.json));
+per 6-minute track with 6 windows 1.14 s plain, 1.18 s temporal, 1.23 s with 128 bands (0.9 s of it decoding).
+
+- **Only temporal context moves anything:** +0.008 top-10 overlap on test, +0.007 window cosine; attentive pooling and
+  128 bands are within the seed range (0.005). The student lacks context over time, not frequency detail or a
+  smarter average. The temporal blocks cost +3 ms per window on the CPU.
+- **Validation overstates the gain** (+0.048 vs +0.008 on test). Not because the test music is less familiar: test
+  windows are slightly closer to the training data than validation windows (median closest-training cosine 0.954 vs
+  0.942). The two numbers measure different things: validation picks 10 of 301 tracks from 16-window track vectors,
+  test 10 of 1,272 from 6 windows. Measured alike (validation with 6 windows; test in random 301-track pools) the plain
+  student scores 0.365 on both; the temporal one 0.396 / 0.381 (+0.031 / +0.016). Raw validation and test top-10
+  numbers must not be compared directly.
+- **The temporal student fits its training data much better** (training cosine 0.917 vs 0.878) than it generalises
+  (validation +0.009): the gap grew from 0.045 to 0.075. It has capacity that 1,199 tracks do not fill, which is
+  the case where more data helps; the learning curve below measures it.
+- It is also clearly more robust to low-bitrate audio (side check below).
+
 ## Side check: audio quality, original vs 64 kbps MP3, 2026-11-26
 
 Question (user): free training sets are often low quality; how much does audio quality change the log-mel input and
@@ -306,6 +349,13 @@ uv pip install --python .research_cache\venv-distill\Scripts\python.exe -r resea
 ```
 
 If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on another drive first.
+
+The feature cache (`.research_cache/distill/data`, 13 GB with `mel128.npy`) can live on another drive behind a
+directory junction, so every path in the code stays the same. On the development machine it is on D: (2026-11-26):
+
+```
+New-Item -ItemType Junction -Path .research_cache\distill\data -Target D:\SongSelector-research\distill\data
+```
 
 ## Files
 
