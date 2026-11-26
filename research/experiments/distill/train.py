@@ -93,6 +93,33 @@ def load_data(train_tracks, seed, n_mels=64, all_windows=False):
     return data
 
 
+class CachedRows:
+    """A split's log-mels read batch by batch from the memory-mapped cache files (the cached windows, then any extra
+    ones), instead of loaded whole. The pages then sit in the OS file cache, which Windows does not charge against
+    its commit limit; a loaded array is charged. On 2026-11-26 a training run holding 2.5 GB died for want of 4 MB
+    once another job ran beside it (commit 41 GB = RAM + page files, ~25 GB of it other programs), and
+    --all-windows needs ~6 GB. Reading costs ~1 ms per batch of 32 once the file is cached (~13 ms cold)."""
+
+    def __init__(self, data, split):
+        self.parts = [(data['mel'], data[split]['rows'])]
+        if data[split].get('extra_rows') is not None:
+            self.parts.append((data['extra_mel'], data[split]['extra_rows']))
+        self.offsets = np.cumsum([0] + [len(rows) for _, rows in self.parts])
+
+    def __len__(self):
+        return int(self.offsets[-1])
+
+    def __getitem__(self, index):
+        index = np.asarray(index)
+        first = self.parts[0][0]
+        out = np.empty((len(index),) + first.shape[1:], dtype=first.dtype)
+        for (cache, rows), start, stop in zip(self.parts, self.offsets[:-1], self.offsets[1:]):
+            mine = (index >= start) & (index < stop)
+            if mine.any():
+                out[mine] = cache[rows[index[mine] - start]]
+        return out
+
+
 def mel_of(data, split):
     """The split's log-mels in memory (float16; the training split is a few GB, ~6 GB with --all-windows)."""
     rows, extra = data[split]['rows'], data[split].get('extra_rows')
@@ -226,7 +253,7 @@ def train_student(name, data, args, mlflow, log):
     amp = args.amp and device == 'cuda'
     scaler = torch.amp.GradScaler(enabled=amp)
 
-    train_mel, val_mel = mel_of(data, 'train'), mel_of(data, 'val')
+    train_mel, val_mel = CachedRows(data, 'train'), mel_of(data, 'val')
     train_unit = unit(data['train']['teacher'])
     train_target = torch.from_numpy(train_unit).to(device)
     loss_fn = make_loss(args.loss, data, device, args.aux_weight, args.tau)
