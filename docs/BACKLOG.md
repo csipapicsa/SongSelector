@@ -196,16 +196,22 @@ One PR per block below, in this order; each with tests (a failing test first for
       Trying it in the app: branch `experiment/amc-clap` (model entry, not on Get models). Weights CC BY-NC-SA 4.0 (publishing the conversion is the user's call).
 - [ ] Research: a small student in AllMusicCaps' audio space for CPU-only machines (distillation;
       `research/experiments/distill/README.md`, plan `docs/research/allmusiccaps_distillation_phase2.md`).
-      State 2026-11-25: a 0.23 M-parameter CNN, 40 epochs with a cosine learning-rate schedule (now the recipe):
-      window cosine 0.869, top-10 neighbour overlap 0.22 (teacher 1.0; seed noise 0.005). The learning-rate schedule
+      State 2026-11-26: a 0.30 M-parameter CNN with temporal blocks, 40 epochs with a cosine learning-rate schedule:
+      window cosine 0.876, top-10 neighbour overlap 0.233 (teacher 1.0; seed noise 0.005). Before (2026-11-25, no
+      temporal blocks): 0.869 / 0.22. The learning-rate schedule
       steadied training but did not help the neighbours, so the gap is not optimisation. Diagnostics: the student
       keeps the teacher's coarse directions, not the fine ones the neighbours need; misses follow how unlike the
       training data a track is. Next, pick one (user, 2026-11-25: model structure is the focus; no 10x model):
-      - [ ] **Model structure:** the CNN averages over time, which blurs rhythm and arrangement. Try temporal
-            modelling (a wider receptive field over time, attention pooling instead of the mean) and/or 128 mel bands
-            for finer timbre.
+      - [x] **Model structure** (2026-11-26, distill README "Phase 2, model structure"): 4 residual dilated temporal
+            blocks after the CNN (each frame sees ~5.3 s instead of ~0.46 s) raise test top-10 overlap 0.219 → 0.233
+            over three seeds (every seed above every plain seed), window cosine +0.007, for +69 k parameters and +3 ms
+            per window on the CPU; also more robust to low bitrates. Attentive pooling and 128 mel bands: no
+            measurable gain, dropped. `cnn4-small-64-tcn` is the student from here. Learning curve: each doubling of
+            the training tracks gains half the one before (~+0.01 expected from 2,400 tracks).
       - [ ] **Relational loss:** train on the batch's track-to-track similarities (relational distillation), aimed at
-            the missing fine structure; select the best epoch on validation top-10 overlap, not window cosine.
+            the missing fine structure; select the best epoch on validation top-10 overlap, not window cosine. On
+            `cnn4-small-64-tcn`. Validation top-10 is noisy (seed range up to 0.028, epoch to epoch ~0.005-0.02);
+            with the cosine loss, choosing the epoch on it would gain at most 0.007 on validation.
       - [ ] **Data pilot:** FMA medium (25,000 clips of 30 s, 16 genres, ~22 GB download, ~10 GB log-mel cache, about
             an hour of teacher on the GPU). 30 s clips are enough for training (the student sees 10 s windows); keep
             the test on whole tracks of the user's library. Measure whether misses stop following unfamiliarity.
