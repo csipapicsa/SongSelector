@@ -1,0 +1,1633 @@
+{
+ "date": "2026-11-26",
+ "question": "Codec robustness: original vs a 64 kbps MP3 copy of 98 test tracks. Does the teacher drift (then low-quality data is a problem for distillation itself), and does the student drift more?",
+ "setup": {
+  "tracks": 98,
+  "kbps": 64,
+  "seed": 0,
+  "encoder": "libmp3lame CBR, PyAV",
+  "sources": {
+   "mp3float": 99,
+   "pcm_s16le": 1
+  },
+  "source_kbps_median": 259.0,
+  "max_abs_lag_samples": 0,
+  "skipped": {
+   "1869": "length 9039203 vs 9038049",
+   "1940": "length 9678706 vs 9678689"
+  },
+  "sources_with_damaged_frames": 0,
+  "queries_with_exact_duplicates": 25,
+  "pool": "1272 test tracks",
+  "windows_per_track": 6,
+  "encode_minutes": 0.018628485997517905
+ },
+ "models": {
+  "teacher": {
+   "window_cos_mean": 0.9696677327156067,
+   "window_cos_p5": 0.8891626000404358,
+   "window_cos_min": 0.3362734913825989,
+   "track_cos_mean": 0.9824709892272949,
+   "track_cos_min": 0.8997172117233276,
+   "top10_stable": 0.6357142857142856,
+   "self_first": 0.9591836734693877,
+   "nn10_cos_median": 0.9245434403419495,
+   "fresh_vs_pool_cos_min": 0.9999998807907104
+  },
+  "cnn4-small-64-n1199-cosine": {
+   "window_cos_mean": 0.9382468461990356,
+   "window_cos_p5": 0.8455352187156677,
+   "window_cos_min": 0.7021386027336121,
+   "track_cos_mean": 0.9478354454040527,
+   "track_cos_min": 0.8572587966918945,
+   "top10_stable": 0.30714285714285716,
+   "self_first": 0.5408163265306123,
+   "nn10_cos_median": 0.962847888469696,
+   "fresh_vs_pool_cos_min": 0.9999998807907104,
+   "fidelity_orig": 0.8545532822608948,
+   "fidelity_copy": 0.8149392008781433
+  },
+  "cnn4-small-64-tcn-n1199-cosine": {
+   "window_cos_mean": 0.9553089737892151,
+   "window_cos_p5": 0.855173647403717,
+   "window_cos_min": 0.5401182174682617,
+   "track_cos_mean": 0.975140392780304,
+   "track_cos_min": 0.9129600524902344,
+   "top10_stable": 0.5091836734693879,
+   "self_first": 0.7755102040816326,
+   "nn10_cos_median": 0.9637517929077148,
+   "fresh_vs_pool_cos_min": 0.9999998807907104,
+   "fidelity_orig": 0.8588804006576538,
+   "fidelity_copy": 0.8388820290565491
+  }
+ },
+ "mel_bands": {
+  "mean_abs_diff_all": 0.6902250051498413,
+  "mean_abs_diff_below_4k": 0.20214883983135223,
+  "mean_abs_diff_above_8k": 3.7419166564941406,
+  "per_band": [
+   {
+    "band": 0,
+    "centre_hz": 62.0,
+    "mean_diff": -0.08869999647140503,
+    "mean_abs_diff": 0.16089999675750732
+   },
+   {
+    "band": 1,
+    "centre_hz": 95.0,
+    "mean_diff": -0.09929999709129333,
+    "mean_abs_diff": 0.14350000023841858
+   },
+   {
+    "band": 2,
+    "centre_hz": 130.0,
+    "mean_diff": -0.08240000158548355,
+    "mean_abs_diff": 0.188400000333786
+   },
+   {
+    "band": 3,
+    "centre_hz": 166.0,
+    "mean_diff": -0.08590000122785568,
+    "mean_abs_diff": 0.1738000065088272
+   },
+   {
+    "band": 4,
+    "centre_hz": 204.0,
+    "mean_diff": -0.09889999777078629,
+    "mean_abs_diff": 0.15410000085830688
+   },
+   {
+    "band": 5,
+    "centre_hz": 243.0,
+    "mean_diff": -0.09969999641180038,
+    "mean_abs_diff": 0.1518000066280365
+   },
+   {
+    "band": 6,
+    "centre_hz": 284.0,
+    "mean_diff": -0.09769999980926514,
+    "mean_abs_diff": 0.17020000517368317
+   },
+   {
+    "band": 7,
+    "centre_hz": 327.0,
+    "mean_diff": -0.09880000352859497,
+    "mean_abs_diff": 0.1664000004529953
+   },
+   {
+    "band": 8,
+    "centre_hz": 372.0,
+    "mean_diff": -0.10080000013113022,
+    "mean_abs_diff": 0.15479999780654907
+   },
+   {
+    "band": 9,
+    "centre_hz": 419.0,
+    "mean_diff": -0.10109999775886536,
+    "mean_abs_diff": 0.15629999339580536
+   },
+   {
+    "band": 10,
+    "centre_hz": 467.0,
+    "mean_diff": -0.10010000318288803,
+    "mean_abs_diff": 0.15700000524520874
+   },
+   {
+    "band": 11,
+    "centre_hz": 518.0,
+    "mean_diff": -0.1023000031709671,
+    "mean_abs_diff": 0.1492999941110611
+   },
+   {
+    "band": 12,
+    "centre_hz": 571.0,
+    "mean_diff": -0.1005999967455864,
+    "mean_abs_diff": 0.15330000221729279
+   },
+   {
+    "band": 13,
+    "centre_hz": 627.0,
+    "mean_diff": -0.10040000081062317,
+    "mean_abs_diff": 0.15629999339580536
+   },
+   {
+    "band": 14,
+    "centre_hz": 685.0,
+    "mean_diff": -0.10159999877214432,
+    "mean_abs_diff": 0.15150000154972076
+   },
+   {
+    "band": 15,
+    "centre_hz": 745.0,
+    "mean_diff": -0.09560000151395798,
+    "mean_abs_diff": 0.15929999947547913
+   },
+   {
+    "band": 16,
+    "centre_hz": 808.0,
+    "mean_diff": -0.09539999812841415,
+    "mean_abs_diff": 0.15539999306201935
+   },
+   {
+    "band": 17,
+    "centre_hz": 874.0,
+    "mean_diff": -0.09350000321865082,
+    "mean_abs_diff": 0.155799999833107
+   },
+   {
+    "band": 18,
+    "centre_hz": 943.0,
+    "mean_diff": -0.09049999713897705,
+    "mean_abs_diff": 0.1607999950647354
+   },
+   {
+    "band": 19,
+    "centre_hz": 1014.0,
+    "mean_diff": -0.09279999881982803,
+    "mean_abs_diff": 0.15520000457763672
+   },
+   {
+    "band": 20,
+    "centre_hz": 1089.0,
+    "mean_diff": -0.09120000153779984,
+    "mean_abs_diff": 0.15919999778270721
+   },
+   {
+    "band": 21,
+    "centre_hz": 1167.0,
+    "mean_diff": -0.08709999918937683,
+    "mean_abs_diff": 0.1688999980688095
+   },
+   {
+    "band": 22,
+    "centre_hz": 1248.0,
+    "mean_diff": -0.08619999885559082,
+    "mean_abs_diff": 0.16089999675750732
+   },
+   {
+    "band": 23,
+    "centre_hz": 1333.0,
+    "mean_diff": -0.08190000057220459,
+    "mean_abs_diff": 0.16779999434947968
+   },
+   {
+    "band": 24,
+    "centre_hz": 1422.0,
+    "mean_diff": -0.06920000165700912,
+    "mean_abs_diff": 0.18729999661445618
+   },
+   {
+    "band": 25,
+    "centre_hz": 1514.0,
+    "mean_diff": -0.06480000168085098,
+    "mean_abs_diff": 0.18520000576972961
+   },
+   {
+    "band": 26,
+    "centre_hz": 1611.0,
+    "mean_diff": -0.06239999830722809,
+    "mean_abs_diff": 0.19009999930858612
+   },
+   {
+    "band": 27,
+    "centre_hz": 1712.0,
+    "mean_diff": -0.04749999940395355,
+    "mean_abs_diff": 0.21400000154972076
+   },
+   {
+    "band": 28,
+    "centre_hz": 1817.0,
+    "mean_diff": -0.03840000182390213,
+    "mean_abs_diff": 0.21070000529289246
+   },
+   {
+    "band": 29,
+    "centre_hz": 1927.0,
+    "mean_diff": -0.029100000858306885,
+    "mean_abs_diff": 0.21660000085830688
+   },
+   {
+    "band": 30,
+    "centre_hz": 2041.0,
+    "mean_diff": -0.028999999165534973,
+    "mean_abs_diff": 0.24789999425411224
+   },
+   {
+    "band": 31,
+    "centre_hz": 2161.0,
+    "mean_diff": -0.011500000022351742,
+    "mean_abs_diff": 0.2459000051021576
+   },
+   {
+    "band": 32,
+    "centre_hz": 2286.0,
+    "mean_diff": -0.003000000026077032,
+    "mean_abs_diff": 0.2531999945640564
+   },
+   {
+    "band": 33,
+    "centre_hz": 2416.0,
+    "mean_diff": -0.021900000050663948,
+    "mean_abs_diff": 0.26179999113082886
+   },
+   {
+    "band": 34,
+    "centre_hz": 2552.0,
+    "mean_diff": -0.01119999960064888,
+    "mean_abs_diff": 0.25429999828338623
+   },
+   {
+    "band": 35,
+    "centre_hz": 2693.0,
+    "mean_diff": 0.002300000051036477,
+    "mean_abs_diff": 0.25279998779296875
+   },
+   {
+    "band": 36,
+    "centre_hz": 2841.0,
+    "mean_diff": -0.012500000186264515,
+    "mean_abs_diff": 0.27489998936653137
+   },
+   {
+    "band": 37,
+    "centre_hz": 2996.0,
+    "mean_diff": -0.029999999329447746,
+    "mean_abs_diff": 0.2957000136375427
+   },
+   {
+    "band": 38,
+    "centre_hz": 3157.0,
+    "mean_diff": -0.008799999952316284,
+    "mean_abs_diff": 0.28299999237060547
+   },
+   {
+    "band": 39,
+    "centre_hz": 3325.0,
+    "mean_diff": -0.006200000178068876,
+    "mean_abs_diff": 0.2865000069141388
+   },
+   {
+    "band": 40,
+    "centre_hz": 3501.0,
+    "mean_diff": -0.054499998688697815,
+    "mean_abs_diff": 0.3212999999523163
+   },
+   {
+    "band": 41,
+    "centre_hz": 3684.0,
+    "mean_diff": -0.07010000199079514,
+    "mean_abs_diff": 0.34299999475479126
+   },
+   {
+    "band": 42,
+    "centre_hz": 3875.0,
+    "mean_diff": -0.05640000104904175,
+    "mean_abs_diff": 0.33730000257492065
+   },
+   {
+    "band": 43,
+    "centre_hz": 4074.0,
+    "mean_diff": -0.06960000097751617,
+    "mean_abs_diff": 0.350600004196167
+   },
+   {
+    "band": 44,
+    "centre_hz": 4283.0,
+    "mean_diff": -0.1404999941587448,
+    "mean_abs_diff": 0.4002000093460083
+   },
+   {
+    "band": 45,
+    "centre_hz": 4500.0,
+    "mean_diff": -0.19850000739097595,
+    "mean_abs_diff": 0.46149998903274536
+   },
+   {
+    "band": 46,
+    "centre_hz": 4727.0,
+    "mean_diff": -0.18230000138282776,
+    "mean_abs_diff": 0.4553999900817871
+   },
+   {
+    "band": 47,
+    "centre_hz": 4963.0,
+    "mean_diff": -0.20029999315738678,
+    "mean_abs_diff": 0.46959999203681946
+   },
+   {
+    "band": 48,
+    "centre_hz": 5210.0,
+    "mean_diff": -0.2847999930381775,
+    "mean_abs_diff": 0.5239999890327454
+   },
+   {
+    "band": 49,
+    "centre_hz": 5468.0,
+    "mean_diff": -0.4092000126838684,
+    "mean_abs_diff": 0.6517000198364258
+   },
+   {
+    "band": 50,
+    "centre_hz": 5737.0,
+    "mean_diff": -0.43529999256134033,
+    "mean_abs_diff": 0.6744999885559082
+   },
+   {
+    "band": 51,
+    "centre_hz": 6018.0,
+    "mean_diff": -0.5156000256538391,
+    "mean_abs_diff": 0.7452999949455261
+   },
+   {
+    "band": 52,
+    "centre_hz": 6311.0,
+    "mean_diff": -0.6861000061035156,
+    "mean_abs_diff": 0.8885999917984009
+   },
+   {
+    "band": 53,
+    "centre_hz": 6616.0,
+    "mean_diff": -0.845300018787384,
+    "mean_abs_diff": 1.0442999601364136
+   },
+   {
+    "band": 54,
+    "centre_hz": 6935.0,
+    "mean_diff": -1.020400047302246,
+    "mean_abs_diff": 1.2110999822616577
+   },
+   {
+    "band": 55,
+    "centre_hz": 7268.0,
+    "mean_diff": -1.1583000421524048,
+    "mean_abs_diff": 1.3336999416351318
+   },
+   {
+    "band": 56,
+    "centre_hz": 7616.0,
+    "mean_diff": -1.603700041770935,
+    "mean_abs_diff": 1.7497999668121338
+   },
+   {
+    "band": 57,
+    "centre_hz": 7978.0,
+    "mean_diff": -1.9330999851226807,
+    "mean_abs_diff": 2.070199966430664
+   },
+   {
+    "band": 58,
+    "centre_hz": 8357.0,
+    "mean_diff": -2.3640999794006348,
+    "mean_abs_diff": 2.4899001121520996
+   },
+   {
+    "band": 59,
+    "centre_hz": 8752.0,
+    "mean_diff": -2.7816998958587646,
+    "mean_abs_diff": 2.890700101852417
+   },
+   {
+    "band": 60,
+    "centre_hz": 9164.0,
+    "mean_diff": -3.1737000942230225,
+    "mean_abs_diff": 3.269399881362915
+   },
+   {
+    "band": 61,
+    "centre_hz": 9594.0,
+    "mean_diff": -3.7195000648498535,
+    "mean_abs_diff": 3.811300039291382
+   },
+   {
+    "band": 62,
+    "centre_hz": 10043.0,
+    "mean_diff": -4.500999927520752,
+    "mean_abs_diff": 4.57919979095459
+   },
+   {
+    "band": 63,
+    "centre_hz": 10511.0,
+    "mean_diff": -5.343999862670898,
+    "mean_abs_diff": 5.410999774932861
+   }
+  ]
+ },
+ "per_track": [
+  {
+   "row": 1,
+   "teacher/track_cos": 0.9916200041770935,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9137899875640869,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.973110020160675,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 7,
+   "teacher/track_cos": 0.9779099822044373,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9837200045585632,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.8,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9781100153923035,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 56,
+   "teacher/track_cos": 0.9846400022506714,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9489700198173523,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9719099998474121,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 125,
+   "teacher/track_cos": 0.9956499934196472,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9725099802017212,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9609599709510803,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 141,
+   "lag_samples": 0
+  },
+  {
+   "row": 165,
+   "teacher/track_cos": 0.9411200284957886,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9711400270462036,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9844499826431274,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 187,
+   "teacher/track_cos": 0.9976000189781189,
+   "teacher/top10_stable": 1.0,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9729700088500977,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9858599901199341,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 225,
+   "lag_samples": 0
+  },
+  {
+   "row": 202,
+   "teacher/track_cos": 0.9986500144004822,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9847300052642822,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9951900243759155,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 203,
+   "lag_samples": 0
+  },
+  {
+   "row": 223,
+   "teacher/track_cos": 0.9992600083351135,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9793800115585327,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9917899966239929,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 170,
+   "lag_samples": 0
+  },
+  {
+   "row": 227,
+   "teacher/track_cos": 0.991129994392395,
+   "teacher/top10_stable": 0.5,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9898099899291992,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9946600198745728,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 205,
+   "lag_samples": 0
+  },
+  {
+   "row": 336,
+   "teacher/track_cos": 0.9991599917411804,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9883300065994263,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9944900274276733,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 252,
+   "lag_samples": 0
+  },
+  {
+   "row": 378,
+   "teacher/track_cos": 0.9948800206184387,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9736899733543396,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9860600233078003,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 239,
+   "lag_samples": 0
+  },
+  {
+   "row": 421,
+   "teacher/track_cos": 0.9984300136566162,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9607099890708923,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9836500287055969,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 217,
+   "lag_samples": 0
+  },
+  {
+   "row": 478,
+   "teacher/track_cos": 0.977180004119873,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.954800009727478,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9737600088119507,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 489,
+   "teacher/track_cos": 0.9569799900054932,
+   "teacher/top10_stable": 0.1,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8987900018692017,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9649199843406677,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 218,
+   "lag_samples": 0
+  },
+  {
+   "row": 496,
+   "teacher/track_cos": 0.9779700040817261,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9446899890899658,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9875400066375732,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 557,
+   "teacher/track_cos": 0.9779700040817261,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9446899890899658,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9875400066375732,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 201,
+   "lag_samples": 0
+  },
+  {
+   "row": 647,
+   "teacher/track_cos": 0.9958800077438354,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9915400147438049,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.9,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9946900010108948,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 161,
+   "lag_samples": 0
+  },
+  {
+   "row": 650,
+   "teacher/track_cos": 0.9769399762153625,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9365699887275696,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9782500267028809,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 707,
+   "teacher/track_cos": 0.9981200098991394,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9292299747467041,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9526500105857849,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 338,
+   "lag_samples": 0
+  },
+  {
+   "row": 739,
+   "teacher/track_cos": 0.9470999836921692,
+   "teacher/top10_stable": 0.2,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.947350025177002,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9351300001144409,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 858,
+   "teacher/track_cos": 0.9991899728775024,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9945099949836731,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.8,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9908499717712402,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.9,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 954,
+   "teacher/track_cos": 0.9667400121688843,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9420099854469299,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9647499918937683,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 323,
+   "lag_samples": 0
+  },
+  {
+   "row": 1082,
+   "teacher/track_cos": 0.9948700070381165,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.955269992351532,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9748200178146362,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 1084,
+   "teacher/track_cos": 0.9897500276565552,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9822199940681458,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9944800138473511,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 1156,
+   "teacher/track_cos": 0.9900599718093872,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8827199935913086,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9569200277328491,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 322,
+   "lag_samples": 0
+  },
+  {
+   "row": 1198,
+   "teacher/track_cos": 0.9948300123214722,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9054800271987915,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.953719973564148,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1244,
+   "teacher/track_cos": 0.9915900230407715,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8859599828720093,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9595500230789185,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 1249,
+   "teacher/track_cos": 0.982420027256012,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9573100209236145,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9863799810409546,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1275,
+   "teacher/track_cos": 0.9780399799346924,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9090999960899353,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9685900211334229,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 1344,
+   "teacher/track_cos": 0.9897699952125549,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9713799953460693,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.988349974155426,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1348,
+   "teacher/track_cos": 0.954479992389679,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9323700070381165,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9890000224113464,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1377,
+   "teacher/track_cos": 0.9891300201416016,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9429900050163269,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9826200008392334,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1398,
+   "teacher/track_cos": 0.9680299758911133,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9544600248336792,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9733700156211853,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 260,
+   "lag_samples": 0
+  },
+  {
+   "row": 1413,
+   "teacher/track_cos": 0.9953799843788147,
+   "teacher/top10_stable": 0.5,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9662799835205078,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9918299913406372,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 1436,
+   "teacher/track_cos": 0.9912599921226501,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9655600190162659,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9903900027275085,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 257,
+   "lag_samples": 0
+  },
+  {
+   "row": 1479,
+   "teacher/track_cos": 0.9877499938011169,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9585300087928772,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.7,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9708099961280823,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1490,
+   "teacher/track_cos": 0.9956600069999695,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9298999905586243,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9427400231361389,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.1,
+   "ext": "mp3",
+   "source_kbps": 257,
+   "lag_samples": 0
+  },
+  {
+   "row": 1498,
+   "teacher/track_cos": 0.9790999889373779,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9402999877929688,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.7,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9585199952125549,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1521,
+   "teacher/track_cos": 0.9948300123214722,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9054800271987915,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.953719973564148,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1527,
+   "teacher/track_cos": 0.9724799990653992,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9528099894523621,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9838799834251404,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1528,
+   "teacher/track_cos": 0.9734899997711182,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9268199801445007,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9616400003433228,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1571,
+   "teacher/track_cos": 0.982420027256012,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9573100209236145,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9863799810409546,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1650,
+   "teacher/track_cos": 0.9646900296211243,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9479900002479553,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9853900074958801,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1705,
+   "teacher/track_cos": 0.9965500235557556,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9246500134468079,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.966480016708374,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1731,
+   "teacher/track_cos": 0.9976900219917297,
+   "teacher/top10_stable": 1.0,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9644399881362915,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9761099815368652,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 1790,
+   "teacher/track_cos": 0.9789900183677673,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9279900193214417,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9632999897003174,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1792,
+   "teacher/track_cos": 0.9946900010108948,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9388800263404846,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9682300090789795,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 1888,
+   "teacher/track_cos": 0.9861000180244446,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9710900187492371,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9724199771881104,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 1912,
+   "teacher/track_cos": 0.9616699814796448,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9106900095939636,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9708200097084045,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 1954,
+   "teacher/track_cos": 0.9284800291061401,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8925300240516663,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9534199833869934,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 323,
+   "lag_samples": 0
+  },
+  {
+   "row": 2013,
+   "teacher/track_cos": 0.976580023765564,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9020799994468689,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9523199796676636,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2038,
+   "teacher/track_cos": 0.9878399968147278,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9221600294113159,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9788900017738342,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 326,
+   "lag_samples": 0
+  },
+  {
+   "row": 2224,
+   "teacher/track_cos": 0.9948800206184387,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9555799961090088,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.6,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9724199771881104,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 323,
+   "lag_samples": 0
+  },
+  {
+   "row": 2231,
+   "teacher/track_cos": 0.9569900035858154,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.88646000623703,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.917169988155365,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 323,
+   "lag_samples": 0
+  },
+  {
+   "row": 2277,
+   "teacher/track_cos": 0.9958999752998352,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9726099967956543,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.6,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9935100078582764,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.9,
+   "ext": "mp3",
+   "source_kbps": 323,
+   "lag_samples": 0
+  },
+  {
+   "row": 2296,
+   "teacher/track_cos": 0.9438199996948242,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9169700145721436,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9573900103569031,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 340,
+   "lag_samples": 0
+  },
+  {
+   "row": 2389,
+   "teacher/track_cos": 0.9982600212097168,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9872199892997742,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.8,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9884200096130371,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2391,
+   "teacher/track_cos": 0.9882599711418152,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9787600040435791,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9920200109481812,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2411,
+   "teacher/track_cos": 0.998420000076294,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9962700009346008,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.7,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9983800053596497,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 2425,
+   "teacher/track_cos": 0.9899100065231323,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9932299852371216,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.6,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9968100190162659,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.9,
+   "ext": "mp3",
+   "source_kbps": 260,
+   "lag_samples": 0
+  },
+  {
+   "row": 2462,
+   "teacher/track_cos": 0.9879500269889832,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9805399775505066,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.7,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9906299710273743,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2473,
+   "teacher/track_cos": 0.9925600290298462,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9863100051879883,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.6,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9975699782371521,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2475,
+   "teacher/track_cos": 0.9964900016784668,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9938700199127197,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.8,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.996749997138977,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 260,
+   "lag_samples": 0
+  },
+  {
+   "row": 2524,
+   "teacher/track_cos": 0.9936599731445312,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9678199887275696,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9883999824523926,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 2538,
+   "teacher/track_cos": 0.9927899837493896,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9866399765014648,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9969499707221985,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2554,
+   "teacher/track_cos": 0.9982900023460388,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9426800012588501,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9853299856185913,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2559,
+   "teacher/track_cos": 0.9963799715042114,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9880200028419495,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9940599799156189,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 260,
+   "lag_samples": 0
+  },
+  {
+   "row": 2600,
+   "teacher/track_cos": 0.9845399856567383,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9559400081634521,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9733999967575073,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 260,
+   "lag_samples": 0
+  },
+  {
+   "row": 2602,
+   "teacher/track_cos": 0.9982100129127502,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9923099875450134,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9961199760437012,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2603,
+   "teacher/track_cos": 0.998170018196106,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9755300283432007,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9824600219726562,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2606,
+   "teacher/track_cos": 0.9981899857521057,
+   "teacher/top10_stable": 1.0,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.986739993095398,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9945799708366394,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  },
+  {
+   "row": 2657,
+   "teacher/track_cos": 0.9752900004386902,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9164900183677673,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.944130003452301,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 257,
+   "lag_samples": 0
+  },
+  {
+   "row": 2677,
+   "teacher/track_cos": 0.9964100122451782,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8876000046730042,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9280800223350525,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 2688,
+   "teacher/track_cos": 0.9747400283813477,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9702200293540955,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.4,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9876300096511841,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 2692,
+   "teacher/track_cos": 0.976140022277832,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.962440013885498,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9839000105857849,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 258,
+   "lag_samples": 0
+  },
+  {
+   "row": 2730,
+   "teacher/track_cos": 0.92330002784729,
+   "teacher/top10_stable": 0.2,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9027400016784668,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9481199979782104,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "wav",
+   "source_kbps": 1411,
+   "lag_samples": 0
+  },
+  {
+   "row": 2754,
+   "teacher/track_cos": 0.9685999751091003,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9566599726676941,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.3,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9746000170707703,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 260,
+   "lag_samples": 0
+  },
+  {
+   "row": 2767,
+   "teacher/track_cos": 0.8997200131416321,
+   "teacher/top10_stable": 0.2,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8865600228309631,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9446600079536438,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 433,
+   "lag_samples": 0
+  },
+  {
+   "row": 2834,
+   "teacher/track_cos": 0.989139974117279,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9961699843406677,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.7,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9969800114631653,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.9,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2838,
+   "teacher/track_cos": 0.9728000164031982,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8612499833106995,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.6,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9691399931907654,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.4,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2839,
+   "teacher/track_cos": 0.9581500291824341,
+   "teacher/top10_stable": 0.2,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.906470000743866,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9677000045776367,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2859,
+   "teacher/track_cos": 0.9783099889755249,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9681000113487244,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9817699790000916,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.3,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2873,
+   "teacher/track_cos": 0.9682999849319458,
+   "teacher/top10_stable": 0.3,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8855299949645996,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9307100176811218,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.0,
+   "ext": "mp3",
+   "source_kbps": 129,
+   "lag_samples": 0
+  },
+  {
+   "row": 2934,
+   "teacher/track_cos": 0.9985399842262268,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.986840009689331,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.995169997215271,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2949,
+   "teacher/track_cos": 0.9548400044441223,
+   "teacher/top10_stable": 0.2,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.926859974861145,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9656299948692322,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2979,
+   "teacher/track_cos": 0.9736499786376953,
+   "teacher/top10_stable": 0.6,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9468600153923035,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9861699938774109,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.9,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 2981,
+   "teacher/track_cos": 0.9992799758911133,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9616100192070007,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9909899830818176,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 3028,
+   "teacher/track_cos": 0.9928900003433228,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.85725998878479,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9304900169372559,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 3030,
+   "teacher/track_cos": 0.9995099902153015,
+   "teacher/top10_stable": 0.9,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.953220009803772,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9779499769210815,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 3085,
+   "teacher/track_cos": 0.9859099984169006,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9164699912071228,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.2,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9638000130653381,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 3092,
+   "teacher/track_cos": 0.9879800081253052,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9862899780273438,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9958999752998352,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.5,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 3101,
+   "teacher/track_cos": 0.9981099963188171,
+   "teacher/top10_stable": 1.0,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9867799878120422,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.6,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9904599785804749,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.9,
+   "ext": "mp3",
+   "source_kbps": 193,
+   "lag_samples": 0
+  },
+  {
+   "row": 3104,
+   "teacher/track_cos": 0.98676997423172,
+   "teacher/top10_stable": 1.0,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8772900104522705,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.7,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9129599928855896,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.6,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 3110,
+   "teacher/track_cos": 0.9541199803352356,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9535899758338928,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9826400279998779,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 3122,
+   "teacher/track_cos": 0.9963099956512451,
+   "teacher/top10_stable": 0.7,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9964200258255005,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.8,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9982500076293945,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 321,
+   "lag_samples": 0
+  },
+  {
+   "row": 3130,
+   "teacher/track_cos": 0.9701399803161621,
+   "teacher/top10_stable": 0.5,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.8996999859809875,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.0,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9388700127601624,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.2,
+   "ext": "mp3",
+   "source_kbps": 225,
+   "lag_samples": 0
+  },
+  {
+   "row": 3140,
+   "teacher/track_cos": 0.9906700253486633,
+   "teacher/top10_stable": 0.8,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9052299857139587,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.1,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.9843699932098389,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.8,
+   "ext": "mp3",
+   "source_kbps": 225,
+   "lag_samples": 0
+  },
+  {
+   "row": 3205,
+   "teacher/track_cos": 0.9961000084877014,
+   "teacher/top10_stable": 0.4,
+   "cnn4-small-64-n1199-cosine/track_cos": 0.9810100197792053,
+   "cnn4-small-64-n1199-cosine/top10_stable": 0.5,
+   "cnn4-small-64-tcn-n1199-cosine/track_cos": 0.994920015335083,
+   "cnn4-small-64-tcn-n1199-cosine/top10_stable": 0.7,
+   "ext": "mp3",
+   "source_kbps": 259,
+   "lag_samples": 0
+  }
+ ]
+}

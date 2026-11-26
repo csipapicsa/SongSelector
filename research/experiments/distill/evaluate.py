@@ -221,7 +221,7 @@ def student_test_tracks(run_name):
     model.load_state_dict(torch.load(WORK / 'trained' / run_name / 'state_dict.pt', weights_only=True))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     rows, track_ids, _ = load_split('test')
-    mel = np.asarray(np.load(DATA / 'mel64.npy', mmap_mode='r')[rows])
+    mel = np.asarray(np.load(DATA / f'mel{model.n_mels}.npy', mmap_mode='r')[rows])
     return track_vectors(predict(model.to(device), mel, device), track_ids)
 
 
@@ -333,22 +333,30 @@ QUESTIONS = {
     '2': 'Phase 2 of the AllMusicCaps distillation, first steps: with a validation set that shares no artist with the '
          'test set, can the student overfit a few tracks (is the pipeline sound), how much does longer training give, '
          'and how large is the seed-to-seed noise?',
+    '2-structure': 'Phase 2 of the AllMusicCaps distillation, model structure: do temporal context (residual dilated '
+                   'temporal blocks), attentive statistics pooling or 128 mel bands bring the closest matches of '
+                   'cnn4-small-64 (40 epochs, cosine schedule) nearer the teacher\'s? Seeds 0-2 for the temporal and '
+                   'the plain student; a learning curve (300 / 600 / 1,199 training tracks) for the temporal one.',
 }
 
 
-def export_json(path, phase=None):
-    """The latest finished run of each name in distill-train (only those tagged with `phase`, if given), as a small
-    JSON for the repo (the MLflow store itself is local and git-ignored)."""
+def export_json(path, phase=None, patterns=None, about=None):
+    """The latest finished run of each name in distill-train (only those tagged with `phase`, and whose name matches
+    one of the shell `patterns`, if given), as a small JSON for the repo (the MLflow store itself is local and
+    git-ignored). `about` picks the QUESTIONS entry (default: the phase)."""
     import json
     from datetime import date
+    from fnmatch import fnmatchcase
     mlflow = mlflow_experiment(EXPERIMENT)
     runs = mlflow.search_runs(filter_string="attributes.status = 'FINISHED'", order_by=['attributes.start_time DESC'])
     if phase:
         runs = runs[runs['tags.phase'] == phase]
+    if patterns:
+        runs = runs[runs['tags.mlflow.runName'].map(lambda name: any(fnmatchcase(name, p) for p in patterns))]
     runs = runs.drop_duplicates('tags.mlflow.runName')
     meta = json.loads((DATA / 'meta.json').read_text(encoding='utf-8'))
     out = {'date': str(date.today()),
-           'question': QUESTIONS.get(phase or '1'),
+           'question': QUESTIONS.get(about or phase or '1'),
            'data': {key: meta[key] for key in ('tracks', 'windows', 'splits', 'train_windows_per_track',
                                                'eval_windows_per_track', 'frontend', 'resplit') if key in meta},
            'runs': []}
@@ -373,6 +381,9 @@ if __name__ == '__main__':
     parser.add_argument('--bootstrap', nargs='+', metavar='RUN', help='e.g. cnn4-small-64-n1500 cnn4-64-n1500')
     parser.add_argument('--export-json', type=Path, metavar='PATH', help='write the latest runs to a results JSON')
     parser.add_argument('--phase', help="with --export-json: only runs tagged with this phase, e.g. '2'")
+    parser.add_argument('--runs', nargs='+', metavar='PATTERN',
+                        help="with --export-json: only runs whose name matches one of these, e.g. 'cnn4-small-64-tcn-*'")
+    parser.add_argument('--about', help="with --export-json: the question text to use, e.g. '2-structure'")
     parser.add_argument('--queries', nargs='+', metavar='RUN', help='ranking agreement with the teacher per query')
     parser.add_argument('--queries-out', type=Path, metavar='PATH', help='JSON for --queries')
     arguments = parser.parse_args()
@@ -381,6 +392,6 @@ if __name__ == '__main__':
     elif arguments.bootstrap:
         bootstrap_runs(arguments.bootstrap)
     elif arguments.export_json:
-        export_json(arguments.export_json, arguments.phase)
+        export_json(arguments.export_json, arguments.phase, arguments.runs, arguments.about)
     else:
         log_references()

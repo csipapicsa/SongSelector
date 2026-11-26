@@ -17,7 +17,7 @@ that load.
 |---|---|---|
 | 0 | Is a student really cheaper end to end (decode + features + model)? Random weights: speed does not depend on training | done 2026-11-25: yes, see results |
 | 1 | How close can a trained student get? Teacher targets: the 130,705 window vectors already in the app's cache (3,380 tracks), no teacher runs needed | done 2026-11-25: on genre search a 1 MB student matches the teacher; closest matches differ, see results |
-| 2 | Make the student better where it is weak (closest matches): a clean split, sanity checks, longer training, then losses ([plan](../../../docs/research/allmusiccaps_distillation_phase2.md)) | in progress: split, overfit test, 40 epochs, seed noise, a look inside the space and a learning-rate schedule done 2026-11-25, see results |
+| 2 | Make the student better where it is weak (closest matches): a clean split, sanity checks, longer training, then losses ([plan](../../../docs/research/allmusiccaps_distillation_phase2.md)) | in progress: split, overfit test, 40 epochs, seed noise, a look inside the space and a learning-rate schedule done 2026-11-25; model structure done 2026-11-26 (temporal blocks adopted); see results |
 | 3 | Best student to ONNX (int8?), app integration as its own model entry | after 2 |
 
 ## Phase 0 results, 2026-11-25
@@ -267,6 +267,121 @@ average and/or 128 mel bands; relational distillation with model choice on valid
 FMA medium (30 s clips are enough to train on; the test stays on whole tracks). Listening test (E11) before any claim
 about quality.
 
+## Phase 2, model structure, 2026-11-26
+
+Why: after its 4 conv blocks the CNN has one frame per 160 ms, each seeing ~0.46 s (about a beat), and then takes
+the mean and std over time: a "bag of beats" that is blind to the order of beats, bars and phrases, while the
+teacher (a transformer) relates the whole 10 s window. The learning-rate schedule (section 5) showed the neighbour
+gap is not optimisation. Three students, one change each from `cnn4-small-64`, all on the section 5 recipe (40 epochs,
+cosine schedule, seed 0, best epoch on validation cosine):
+
+- `cnn4-small-64-tcn`: 4 residual, dilated (1, 2, 4, 8), depthwise-separable 1-D convolutions over time after the CNN;
+  each frame then sees ~5.3 s (2-3 bars). +69 k parameters.
+- `cnn4-small-64-attn`: attentive statistics pooling (a learned weight per frame and channel) instead of the plain
+  mean/std. Still order-blind: it can learn which moments count, not what follows what. +17 k parameters.
+- `cnn4-small-128`: 128 mel bands instead of 64 (`prepare_data.py --mels 128`, 9 GB cache, checked row for row
+  against the 64-band cache).
+
+Both new parts start at zero, so each new student begins as exactly the plain one (checked) and only uses the new
+part if it helps. Validation top-10 overlap is now logged per epoch (watched, not used to choose the epoch).
+
+| Seed 0 | Test window cos | Track cos | Top-10 overlap | Genre AP | Val top-10 | Train cos | Train time | CPU ms/window |
+|---|---|---|---|---|---|---|---|---|
+| Plain (`cnn4-small-64`, section 5) | 0.869 | 0.931 | 0.222 | 0.289 | 0.389 | 0.878 | 32 min | 35.0 |
+| Attentive pooling | 0.870 | 0.932 | 0.223 | 0.288 | 0.405 | 0.883 | 37 min | 38.1 |
+| 128 mel bands | 0.871 | 0.932 | 0.218 | 0.286 | 0.399 | 0.875 | 78 min | 44.2 |
+| **Temporal blocks** | **0.876** | **0.939** | **0.230** | 0.290 | **0.437** | **0.917** | 36 min | 38.4 |
+
+CPU: `benchmark_speed.py`, 1 thread, 10 library tracks
+([../../results/2026-11-26_distill_structure_speed.json](../../results/2026-11-26_distill_structure_speed.json));
+per 6-minute track with 6 windows 1.14 s plain, 1.18 s temporal, 1.23 s with 128 bands (0.9 s of it decoding).
+
+- **Only temporal context moves anything:** +0.008 top-10 overlap on test (+0.014 over three seeds, below), +0.007
+  window cosine; attentive pooling and 128 bands are within the seed range (0.005). The student lacks context over time, not frequency detail or a
+  smarter average. The temporal blocks cost +3 ms per window on the CPU.
+- **Validation overstates the gain** (+0.048 vs +0.008 on test). Not because the test music is less familiar: test
+  windows are slightly closer to the training data than validation windows (median closest-training cosine 0.954 vs
+  0.942). The two numbers measure different things: validation picks 10 of 301 tracks from 16-window track vectors,
+  test 10 of 1,272 from 6 windows. Measured alike (validation with 6 windows; test in random 301-track pools) the plain
+  student scores 0.365 on both; the temporal one 0.396 / 0.381 (+0.031 / +0.016). Raw validation and test top-10
+  numbers must not be compared directly.
+- **The temporal student fits its training data much better** (training cosine 0.917 vs 0.878) than it generalises
+  (validation +0.009): the gap grew from 0.045 to 0.075. It has capacity that 1,199 tracks do not fill, which is
+  the case where more data helps; the learning curve below measures it.
+- It is also clearly more robust to low-bitrate audio (side check below).
+
+**Seeds 1-2** of the temporal and the plain student (same recipe; seed 0 is the table above):
+
+| Test, seeds 0 / 1 / 2 | Window cos | Track cos | Top-10 overlap | Genre AP | Val top-10 | Best epoch |
+|---|---|---|---|---|---|---|
+| Plain | 0.869 / 0.867 / 0.870 | 0.931 / 0.929 / 0.931 | 0.222 / 0.220 / 0.216 | 0.289 / 0.295 / 0.289 | 0.389 / 0.416 / 0.413 | 35 / 34 / 30 |
+| Temporal | 0.876 / 0.875 / 0.877 | 0.939 / 0.937 / 0.939 | 0.230 / 0.235 / 0.233 | 0.290 / 0.282 / 0.280 | 0.437 / 0.436 / 0.443 | 33 / 23 / 27 |
+| Mean difference | +0.007 | +0.008 | **+0.014** | −0.007 | +0.033 | |
+
+- **The gain is real:** every temporal seed beats every plain seed on test top-10 overlap, window and track cosine.
+  Top-10 0.233 vs 0.219, about 2.5x the plain seed range (Welch t = 6.6, p = 0.003; with 3 runs against 3, "all
+  above all" is the most a rank test can say, one-sided p = 0.05). Seed 0 happened to be the temporal student's
+  weakest, so the single-seed table understates the gain.
+- **Genre AP 0.284 vs 0.291 is not significant** (p = 0.16) and lands on the teacher's own 0.285. Genre AP checks
+  that search stays useful; it does not follow fidelity (the 300- and 600-track students below score 0.295 / 0.298),
+  so it is not a target.
+- **Validation top-10 is noisy between runs:** the plain seeds span 0.389-0.416, 5x the test range (301 tracks
+  ranked among 301 vs 1,272 among 1,272). Within one run, over the last 15 epochs, consecutive epochs differ by
+  ~0.005 (median; up to 0.02) and span 0.01-0.025. For the next step, which picks the epoch on it: differences
+  between runs under ~0.03 mean little, and the maximum over epochs partly picks noise.
+- **Picking the epoch on validation top-10 instead of cosine would change little with this loss:** in the 7 runs
+  that log it per epoch, the best validation top-10 epoch beats the cosine-chosen one by 0.000-0.007 on validation
+  (a maximum over 40 noisy epochs, so biased upwards). With the cosine schedule both peak on the same late plateau.
+  The selection rule matters with a loss that targets neighbours, not on its own.
+
+**Learning curve** (temporal student, nested subsets of the training tracks, seed 0):
+
+| Training tracks | Test window cos | Track cos | Top-10 overlap | Genre AP | Val cos | Val top-10 | Train time |
+|---|---|---|---|---|---|---|---|
+| 300 | 0.848 | 0.915 | 0.167 | 0.295 | 0.810 | 0.346 | 11 min |
+| 600 | 0.865 | 0.931 | 0.209 | 0.298 | 0.829 | 0.398 | 19 min |
+| 1,199 | 0.876 | 0.939 | 0.230 | 0.290 | 0.842 | 0.437 | 36 min |
+
+- Each doubling gains about half the one before: top-10 +0.042 then +0.021, window cosine +0.017 then +0.011. If
+  that holds, 2,400 tracks would add ~+0.01 and the curve levels off near 0.25 (three points, one seed: a rough
+  guess). More data of the same kind is worth having for the final model but will not close the neighbour gap alone.
+- The gain comes from validation rising (0.810 → 0.842) while training cosine stays ~0.91: the train/validation gap
+  narrows 0.10 → 0.09 → 0.08 per doubling, the signature of a model limited by data, not by capacity.
+
+**Outcome:** `cnn4-small-64-tcn` (40 epochs, cosine schedule) replaces `cnn4-small-64` as the student for the loss
+experiments: +0.014 top-10 overlap, +0.007 window cosine, more robust to low bitrates, for +69 k parameters and +3 ms
+per window on the CPU. Attentive pooling and 128 bands are dropped (no measurable gain; 128 bands also costs 2.4x the
+training time and +26 % CPU). Results:
+[../../results/2026-11-26_distill_phase2_structure.json](../../results/2026-11-26_distill_phase2_structure.json)
+(`evaluate.py --export-json ... --phase 2 --about 2-structure --runs <name patterns>`).
+
+## Side check: audio quality, original vs 64 kbps MP3, 2026-11-26
+
+Question (user): free training sets are often low quality; how much does audio quality change the log-mel input and
+the vectors? [codec_robustness.py](codec_robustness.py): 98 test tracks (sources median 259 kbps) re-encoded to
+64 kbps MP3 (libmp3lame via PyAV); the app's decoder keeps the copy aligned to the sample, so the same windows hold the
+same moments. MLflow experiment `distill-robustness`; raw numbers:
+[../../results/2026-11-26_distill_codec_robustness.json](../../results/2026-11-26_distill_codec_robustness.json).
+
+| Original vs 64 kbps copy | Track cosine | Finds its own original first | Top-10 neighbours kept |
+|---|---|---|---|
+| Teacher | 0.982 | 96 % | 64 % |
+| Student, plain (`cnn4-small-64`, cosine recipe) | 0.948 | 54 % | 31 % |
+| Student, temporal (`cnn4-small-64-tcn`) | 0.975 | 78 % | 51 % |
+
+- The codec changes the log-mel only above ~5 kHz: below 4 kHz ≈ 0.9 dB on average, then −7 dB at 7.6 kHz, −14 dB at
+  9.2 kHz, −23 dB at 10.5 kHz (the top band). At 64 kbps the cut-off falls inside the mel range; at typical bitrates
+  (128 kbps and up) it should lie above the 12 kHz that the 24 kHz conversion keeps for every track (not measured).
+- The teacher still recognises the track, but a third of its top 10 changes (neighbours 5-15 are near-ties). The
+  students drift more (plain 2.9x the teacher's drift, temporal 1.4x) and agree less with the teacher on the copies
+  (plain 0.855 → 0.815). The temporal student is clearly the more robust one.
+- Exact duplicates in the library (25 of the 98 sampled tracks have one in the test pool) count as the track itself;
+  counted as misses they had made the teacher look like 86 % instead of 96 %.
+
+**Closed (user, 2026-11-26):** DJs play good-quality files, and the pipeline already converts every track the same
+way (24 kHz), so no codec augmentation or low-pass variants. If low-bitrate data (e.g. FMA) is used for training,
+check its bitrates first: below ~128 kbps the codec reaches into the bands the model uses.
+
 ## Setup
 
 A separate venv, so nothing here changes the app's `.venv` or the exe (torch 2.8 CUDA for training on the
@@ -280,6 +395,13 @@ uv pip install --python .research_cache\venv-distill\Scripts\python.exe -r resea
 
 If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on another drive first.
 
+The feature cache (`.research_cache/distill/data`, 13 GB with `mel128.npy`) can live on another drive behind a
+directory junction, so every path in the code stays the same. On the development machine it is on D: (2026-11-26):
+
+```
+New-Item -ItemType Junction -Path .research_cache\distill\data -Target D:\SongSelector-research\distill\data
+```
+
 ## Files
 
 | File | What |
@@ -290,11 +412,16 @@ If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on a
 | [prepare_data.py](prepare_data.py) | Data: artist-disjoint train / val / test split, log-mel cache and matching teacher vectors; `--split-only` re-splits the existing cache |
 | [train.py](train.py) | Phase 1: baselines and students, early stopping, one MLflow run each, ONNX of the best weights |
 | [evaluate.py](evaluate.py) | Fidelity and genre-AP metrics; `python evaluate.py` logs the reference runs, `--bootstrap RUN...` the paired bootstrap, `--export-json` the results file |
+| [codec_robustness.py](codec_robustness.py) | Side check: teacher and students on originals vs low-bitrate MP3 copies (vectors, neighbours, log-mel per band) |
 | [phase1_eval.ipynb](phase1_eval.ipynb) | Charts and tables from MLflow: all runs, genre AP, training curves, per-label AP, learning curve, cost vs quality (kernel: the venv, registered as `venv-distill`) |
 | [requirements.txt](requirements.txt) | Pinned versions of the venv |
 
 **MLflow:** runs are stored in `.research_cache/distill/mlflow.db` (experiments `distill-speed` for Phase 0,
-`distill-train` for Phase 1). To browse them, from the repo root:
+`distill-train` for training runs, `distill-robustness` for the audio-quality check, `distill-smoke` for smoke runs).
+Each run has a `question` tag saying what it was for: in `distill-train` `reference` (teacher, LAION, trivial
+baselines), `architecture` (Phase 1), `learning-curve`, `sanity` (overfit test), `seeds` (noise), `recipe` (epochs,
+learning-rate schedule), `structure` (Phase 2 model structure). In the UI, filter with `tags.question = 'seeds'` or
+add the tag as a column; `train.py --question <name>` sets it on new runs. To browse them, from the repo root:
 
 ```
 .research_cache\venv-distill\Scripts\mlflow ui --backend-store-uri sqlite:///.research_cache/distill/mlflow.db

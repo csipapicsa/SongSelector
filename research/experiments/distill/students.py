@@ -10,6 +10,11 @@ Candidates (README.md, "Experiment matrix"; letters as in the distillation brief
     cnn4-64         D  64-bin log-mel, 4 conv blocks (32-256 channels), the brief's first serious baseline.
     mnv3s-128       E  128-bin log-mel, MobileNetV3-Small (depthwise convolutions), 1-channel input.
 
+Phase 2, model structure (one change each from cnn4-small-64, README "Phase 2"):
+    cnn4-small-64-tcn    + 4 dilated temporal blocks after the CNN: sees ~5.3 s instead of ~0.46 s per frame
+    cnn4-small-64-attn   attentive statistics pooling over time instead of the plain mean and std
+    cnn4-small-128       128 mel bands instead of 64 (needs mel128.npy: prepare_data.py --mels 128)
+
     python students.py            export every student with random weights to .research_cache/distill/onnx/
 """
 import argparse
@@ -111,11 +116,59 @@ class ConvBlock(nn.Sequential):
                          nn.ReLU(inplace=True), nn.AvgPool2d(pool))
 
 
-class Cnn4(Student):
-    """Log-mel image -> 4 conv blocks (each halves frequency and time) -> mean over frequency -> mean and std over
-    time -> linear projection to the teacher's 512 dimensions."""
+class TemporalBlock(nn.Module):
+    """Residual, dilated, depthwise-separable 1-D convolution over time (as in TCN / Conv-TasNet): kernel 3 with
+    dilation d lets each frame see d frames further on both sides. The last BatchNorm's scale starts at zero (the
+    "zero-init residual" trick), so a new block is the identity and the student starts as its twin without blocks.
+    The ReLU sits before the pointwise convolution: a ReLU after a zero-scaled BatchNorm would get no gradient."""
 
-    def __init__(self, channels=(32, 64, 128, 256), n_mels=64, dim=DIM):
+    def __init__(self, channels, dilation):
+        super().__init__()
+        self.depthwise = nn.Conv1d(channels, channels, 3, padding=dilation, dilation=dilation, groups=channels,
+                                   bias=False)
+        self.norm1 = nn.BatchNorm1d(channels)
+        self.pointwise = nn.Conv1d(channels, channels, 1, bias=False)
+        self.norm2 = nn.BatchNorm1d(channels)
+        nn.init.zeros_(self.norm2.weight)
+
+    def forward(self, x):   # (batch, channels, frames), same shape out
+        return x + self.norm2(self.pointwise(F.relu(self.norm1(self.depthwise(x)))))
+
+
+class MeanStd(nn.Module):
+    def forward(self, x):   # (batch, channels, frames) -> (batch, 2 * channels)
+        return mean_std(x, -1)
+
+
+class AttentiveStats(nn.Module):
+    """Attentive statistics pooling (Okabe et al. 2018, as in ECAPA-TDNN): a softmax over time per channel weights the
+    frames, then the weighted mean and standard deviation. The plain mean counts a breakdown as much as a drop. The
+    last layer starts at zero, i.e. equal weights: exactly MeanStd, so training starts from the plain student."""
+
+    def __init__(self, channels, hidden=64):
+        super().__init__()
+        self.score = nn.Sequential(nn.Conv1d(channels, hidden, 1), nn.Tanh(), nn.Conv1d(hidden, channels, 1))
+        nn.init.zeros_(self.score[-1].weight)
+        nn.init.zeros_(self.score[-1].bias)
+
+    def forward(self, x):   # (batch, channels, frames) -> (batch, 2 * channels)
+        weight = torch.softmax(self.score(x), dim=-1)
+        mean = (weight * x).sum(-1)
+        var = torch.clamp((weight * x * x).sum(-1) - mean * mean, min=0.0)
+        return torch.cat([mean, torch.sqrt(var + 1e-5)], dim=-1)
+
+
+class Cnn4(Student):
+    """Log-mel image -> 4 conv blocks (each halves frequency and time) -> mean over frequency -> optional temporal
+    blocks -> statistics over time (mean and std, or attentive) -> linear projection to the teacher's 512 dimensions.
+
+    After the 4 blocks a frame stands for 16 input frames (160 ms) and sees 46 of them (~0.46 s, about one beat), so
+    the plain CNN is a "bag of beats": the order of beats, bars and phrases is lost in the mean over time, while the
+    teacher (a transformer) relates every part of the 10 s window to every other. temporal=(1, 2, 4, 8) widens the
+    view by 2 * (1 + 2 + 4 + 8) = 30 frames (+4.8 s, two to three bars at 128-174 BPM). Without temporal blocks and
+    with mean pooling the state dict is the same as before, so earlier runs still load."""
+
+    def __init__(self, channels=(32, 64, 128, 256), n_mels=64, dim=DIM, temporal=(), pooling='mean'):
         super().__init__(n_mels)
         self.norm = nn.BatchNorm1d(n_mels)          # per mel band, learned (PANNs' bn0)
         blocks, cin = [], 1
@@ -123,11 +176,13 @@ class Cnn4(Student):
             blocks.append(ConvBlock(cin, cout))
             cin = cout
         self.blocks = nn.Sequential(*blocks)
+        self.temporal = nn.Sequential(*[TemporalBlock(cin, d) for d in temporal])   # empty: no parameters
+        self.pool = AttentiveStats(cin) if pooling == 'attentive' else MeanStd()
         self.head = nn.Linear(2 * cin, dim)
 
     def embed_mel(self, mel):
         x = self.blocks(self.norm(mel).unsqueeze(1))   # (batch, channels, mels / 16, frames / 16)
-        return self.head(mean_std(x.mean(2), -1))
+        return self.head(self.pool(self.temporal(x.mean(2))))
 
 
 class MobileNetV3S(Student):
@@ -153,6 +208,10 @@ STUDENTS = {
     'cnn4-small-64': lambda: Cnn4((16, 32, 64, 128), 64),
     'cnn4-64': lambda: Cnn4((32, 64, 128, 256), 64),
     'mnv3s-128': lambda: MobileNetV3S(128),
+    # Phase 2, model structure: one change each from cnn4-small-64
+    'cnn4-small-64-tcn': lambda: Cnn4((16, 32, 64, 128), 64, temporal=(1, 2, 4, 8)),
+    'cnn4-small-64-attn': lambda: Cnn4((16, 32, 64, 128), 64, pooling='attentive'),
+    'cnn4-small-128': lambda: Cnn4((16, 32, 64, 128), 128),
 }
 
 
