@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import DATA, WORK, mlflow_experiment  # noqa: E402
+from common import DATA, WORK, log_code_state, mlflow_experiment  # noqa: E402
 from evaluate import (  # noqa: E402
     EXPERIMENT,
     fidelity,
@@ -61,7 +61,9 @@ def mel_cache(n_mels):
     return np.load(path, mmap_mode='r')
 
 
-def load_data(train_tracks, seed, n_mels=64):
+def load_data(train_tracks, seed, n_mels=64, all_windows=False):
+    """all_windows: the training tracks' other windows too (prepare_data.py --extra-train-windows), appended after
+    the cached ones; validation and test are unchanged."""
     import pandas as pd
     manifest = pd.read_parquet(DATA / 'manifest.parquet')
     track = np.load(DATA / 'windows.npz')['track']
@@ -76,13 +78,30 @@ def load_data(train_tracks, seed, n_mels=64):
                        ('test', manifest.index[ok & (manifest.split == 'test').to_numpy()])):
         rows = np.flatnonzero(np.isin(track, ids))
         data[split] = {'rows': rows, 'tracks': track[rows], 'teacher': np.asarray(teacher[rows], dtype=np.float32)}
+    if all_windows:
+        if n_mels != 64 or not (DATA / 'train-extra.npz').exists():
+            sys.exit('--all-windows needs the 64-band extra cache: prepare_data.py --extra-train-windows')
+        extra_track = np.load(DATA / 'train-extra.npz')['track']
+        extra_rows = np.flatnonzero(np.isin(extra_track, train_ids))
+        extra_teacher = np.load(DATA / 'teacher-train-extra.npy', mmap_mode='r')
+        data['extra_mel'] = np.load(DATA / 'mel64-train-extra.npy', mmap_mode='r')
+        train = data['train']
+        train['extra_rows'] = extra_rows
+        train['tracks'] = np.concatenate([train['tracks'], extra_track[extra_rows]])
+        train['teacher'] = np.concatenate([train['teacher'], np.asarray(extra_teacher[extra_rows], dtype=np.float32)])
     data['manifest_sha'] = hashlib.sha256((DATA / 'manifest.parquet').read_bytes()).hexdigest()[:12]
     return data
 
 
 def mel_of(data, split):
-    """The split's log-mels in memory (float16; the training split is a few GB)."""
-    return np.asarray(data['mel'][data[split]['rows']])
+    """The split's log-mels in memory (float16; the training split is a few GB, ~6 GB with --all-windows)."""
+    rows, extra = data[split]['rows'], data[split].get('extra_rows')
+    if extra is None:
+        return np.asarray(data['mel'][rows])
+    out = np.empty((len(rows) + len(extra),) + data['mel'].shape[1:], dtype=data['mel'].dtype)
+    out[:len(rows)] = data['mel'][rows]
+    out[len(rows):] = data['extra_mel'][extra]
+    return out
 
 
 # ---- Baselines -----------------------------------------------------------------------------------------------------
@@ -313,6 +332,8 @@ def main():
     parser.add_argument('--loss', choices=LOSSES, default='cosine', help='see make_loss')
     parser.add_argument('--aux-weight', type=float, default=1.0, help='weight of the relational part of --loss')
     parser.add_argument('--tau', type=float, default=0.05, help='softmax temperature of --loss cosine+neighbours')
+    parser.add_argument('--all-windows', action='store_true',
+                        help='train on every window of the training tracks, not only the 16 cached ones')
     parser.add_argument('--select', choices=SELECT_RULES, default='val_cos',
                         help='the best epoch by validation cosine or by validation top-10 overlap (also early '
                              'stopping); the other rule\'s test result is logged as if_<rule>_*')
@@ -323,15 +344,16 @@ def main():
 
     kind = 'baseline' if args.student in BASELINES else 'student'
     n_mels = STUDENTS[args.student]().n_mels if kind == 'student' else 64
-    data = load_data(args.train_tracks, args.seed, n_mels)
+    data = load_data(args.train_tracks, args.seed, n_mels, args.all_windows)
     mlflow = mlflow_experiment(args.experiment)
     name = f"{args.student}-n{data['train_track_count']}" + (f'-{args.name_suffix}' if args.name_suffix else '')
     tags = {'phase': args.phase, 'kind': kind, **({'question': args.question} if args.question else {})}
     with mlflow.start_run(run_name=name, tags=tags):
+        log_code_state(mlflow)
         mlflow.log_params({'student': args.student, 'train_tracks': data['train_track_count'],
-                           'train_windows': len(data['train']['rows']), 'val_windows': len(data['val']['rows']),
+                           'train_windows': len(data['train']['tracks']), 'val_windows': len(data['val']['rows']),
                            'test_windows': len(data['test']['rows']), 'manifest_sha': data['manifest_sha'],
-                           'seed': args.seed, 'n_mels': n_mels})
+                           'seed': args.seed, 'n_mels': n_mels, 'all_windows': args.all_windows})
         started = time.time()
         if kind == 'baseline':
             predictions = fit_baseline(args.student, data, log)

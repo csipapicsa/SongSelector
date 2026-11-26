@@ -23,6 +23,8 @@ Output in .research_cache/distill/data/:
   manifest.parquet   one row per track: path_key, artist, genre, split, train_rank, frames, ok, first row, windows
   mel64.npy          (windows, 64, 1001) float16 log-mel
   mel128.npy         the same windows with 128 bands (--mels 128; 9 GB, for the 128-band students only)
+  *-train-extra.*    every other window of the training tracks (--extra-train-windows; for train.py --all-windows):
+                     mel64-train-extra.npy, teacher-train-extra.npy, train-extra.npz (manifest row, window index)
   teacher.npy        (windows, 512) float32 teacher vectors (as cached by the app, not normalised)
   windows.npz        per window: its track (manifest row) and window index in the track
   meta.json          front end, seed, counts, timing
@@ -30,6 +32,7 @@ Output in .research_cache/distill/data/:
     .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py
     .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py --split-only
     .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py --mels 128
+    .research_cache\\venv-distill\\Scripts\\python research\\experiments\\distill\\prepare_data.py --extra-train-windows
 """
 import argparse
 import json
@@ -255,6 +258,65 @@ def mels_only(n_mels, workers):
     print(json.dumps(meta['extra_mel_caches'][str(n_mels)], indent=1))
 
 
+def extra_train_windows(workers):
+    """Every other window of the training tracks: all but the cached ones and the last one (zero-padded, as the 16
+    evenly spaced ones also leave it out). For train.py --all-windows; the base cache, the split and the val/test
+    windows stay as they are. Each track is decoded again; its cached windows go through the front end too and are
+    compared with mel64.npy (as in --mels), so the new windows are cut from the same audio at the same positions."""
+    import pandas as pd
+    import torch
+    from students import LogMel
+    manifest = pd.read_parquet(DATA / 'manifest.parquet')
+    reference = np.load(DATA / f'mel{N_MELS}.npy', mmap_mode='r')
+    todo = manifest[manifest.ok & (manifest.split == 'train')].reset_index()   # 'index' = the manifest row
+    extra = [sorted(set(range(int(frames) - 1)) - {int(i) for i in indices})
+             for frames, indices in zip(todo.frames, todo.indices)]
+    counts = np.array([len(e) for e in extra])
+    firsts = np.cumsum(counts) - counts
+    total = int(counts.sum())
+    print(f'{len(todo)} training tracks: {int(todo.windows.sum())} cached windows, {total} more', flush=True)
+    todo['indices'] = [[int(i) for i in indices] + e for indices, e in zip(todo.indices, extra)]   # cached first
+    mel = np.lib.format.open_memmap(DATA / 'mel64-train-extra.npy', mode='w+', dtype=np.float16,
+                                    shape=(total, N_MELS, reference.shape[2]))
+    teacher = np.lib.format.open_memmap(DATA / 'teacher-train-extra.npy', mode='w+', dtype=np.float32,
+                                        shape=(total, DIM))
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    frontend = LogMel(N_MELS).to(device).eval()
+    worst, failed = [0.0], []
+
+    def store(row, result):
+        state, value = result
+        track = todo.iloc[row]
+        if state != 'ok':
+            failed.append(f"{track['path_key']}: {value}")
+            return
+        cached, first = int(track['windows']), int(track['first'])
+        with torch.inference_mode():
+            features = frontend(torch.from_numpy(value).to(device)).half().cpu().numpy()
+        diff = float(np.abs(features[:cached].astype(np.float32)
+                            - reference[first:first + cached].astype(np.float32)).max())
+        if diff > 0.05:
+            sys.exit(f"{track['path_key']}: the cached windows came out different, max difference {diff:.3f}")
+        worst[0] = max(worst[0], diff)
+        start, count = int(firsts[row]), int(counts[row])
+        mel[start:start + count] = features[cached:]
+        teacher[start:start + count] = teacher_vectors(track['path_key'])[extra[row]]
+
+    minutes = decode_all(todo, workers, store)
+    mel.flush()
+    teacher.flush()
+    if failed:
+        sys.exit(f'{len(failed)} cached tracks could not be decoded the same way again, e.g. {failed[:3]}')
+    np.savez(DATA / 'train-extra.npz', track=np.repeat(todo['index'].to_numpy(), counts),
+             window=np.concatenate([np.asarray(e, dtype=np.int32) for e in extra]))
+    meta = json.loads((DATA / 'meta.json').read_text(encoding='utf-8'))
+    meta['train_extra'] = {'files': ['mel64-train-extra.npy', 'teacher-train-extra.npy', 'train-extra.npz'],
+                           'created': datetime.now().isoformat(timespec='seconds'), 'minutes': minutes,
+                           'tracks': len(todo), 'windows': total, f'max_diff_vs_mel{N_MELS}': worst[0]}
+    (DATA / 'meta.json').write_text(json.dumps(meta, indent=1), encoding='utf-8')
+    print(json.dumps(meta['train_extra'], indent=1))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--seed', type=int, default=0)
@@ -264,12 +326,17 @@ def main():
                         help='re-split the existing cache (manifest only, no decoding); keeps the old manifest')
     parser.add_argument('--mels', type=int, metavar='N',
                         help='add mel<N>.npy for the cached windows (e.g. 128); nothing else changes')
+    parser.add_argument('--extra-train-windows', action='store_true',
+                        help='add every other window of the training tracks (train.py --all-windows)')
     args = parser.parse_args()
     if args.split_only:
         split_only(args.seed)
         return
     if args.mels:
         mels_only(args.mels, args.workers)
+        return
+    if args.extra_train_windows:
+        extra_train_windows(args.workers)
         return
 
     import torch

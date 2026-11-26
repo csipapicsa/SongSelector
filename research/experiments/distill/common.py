@@ -115,3 +115,34 @@ def mlflow_experiment(name):
         mlflow.create_experiment(name, artifact_location=(MLFLOW_ARTIFACTS / name).as_uri())
     mlflow.set_experiment(name)
     return mlflow
+
+
+CODE_PATHS = ('research/experiments/distill/*.py', 'src/songselector/*.py')   # git pathspecs: * crosses folders
+
+
+def log_code_state(mlflow):
+    """Record in the active run exactly which code and packages it used, so it can be reproduced later.
+
+    mlflow.source.git.commit (set by MLflow) is only the commit the work started from; a run started on edited code
+    would point at code without those edits. So: tag code_commit and code_dirty (do the research code or the app
+    code it imports differ from that commit?), and if they do, log the difference (code/uncommitted.diff) and any
+    new, untracked files (code/untracked/). Also the installed packages (environment/packages.txt). Checkout of
+    code_commit + applying the diff gives the run's code; the packages file gives its environment."""
+    import importlib.metadata
+    import platform
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=REPO, capture_output=True, text=True, check=True).stdout
+
+    diff = git('diff', 'HEAD', '--', *CODE_PATHS)
+    untracked = git('ls-files', '--others', '--exclude-standard', '--', *CODE_PATHS).split()
+    mlflow.set_tags({'code_commit': git('rev-parse', 'HEAD').strip(),
+                     'code_dirty': str(bool(diff or untracked)).lower()})
+    if diff:
+        mlflow.log_text(diff, 'code/uncommitted.diff')
+    for name in untracked:
+        mlflow.log_artifact(str(REPO / name), 'code/untracked')
+    packages = sorted(f"{dist.metadata['Name']}=={dist.version}" for dist in importlib.metadata.distributions())
+    mlflow.log_text(f'python {platform.python_version()} on {platform.platform()}\n' + '\n'.join(packages) + '\n',
+                    'environment/packages.txt')
