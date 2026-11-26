@@ -267,6 +267,33 @@ average and/or 128 mel bands; relational distillation with model choice on valid
 FMA medium (30 s clips are enough to train on; the test stays on whole tracks). Listening test (E11) before any claim
 about quality.
 
+## Side check: audio quality, original vs 64 kbps MP3, 2026-11-26
+
+Question (user): free training sets are often low quality; how much does audio quality change the log-mel input and
+the vectors? [codec_robustness.py](codec_robustness.py): 98 test tracks (sources median 259 kbps) re-encoded to
+64 kbps MP3 (libmp3lame via PyAV); the app's decoder keeps the copy aligned to the sample, so the same windows hold the
+same moments. MLflow experiment `distill-robustness`; raw numbers:
+[../../results/2026-11-26_distill_codec_robustness.json](../../results/2026-11-26_distill_codec_robustness.json).
+
+| Original vs 64 kbps copy | Track cosine | Finds its own original first | Top-10 neighbours kept |
+|---|---|---|---|
+| Teacher | 0.982 | 96 % | 64 % |
+| Student, plain (`cnn4-small-64`, cosine recipe) | 0.948 | 54 % | 31 % |
+| Student, temporal (`cnn4-small-64-tcn`) | 0.975 | 78 % | 51 % |
+
+- The codec changes the log-mel only above ~5 kHz: below 4 kHz ≈ 0.9 dB on average, then −7 dB at 7.6 kHz, −14 dB at
+  9.2 kHz, −23 dB at 10.5 kHz (the top band). At 64 kbps the cut-off falls inside the mel range; at typical bitrates
+  (128 kbps and up) it should lie above the 12 kHz that the 24 kHz conversion keeps for every track (not measured).
+- The teacher still recognises the track, but a third of its top 10 changes (neighbours 5-15 are near-ties). The
+  students drift more (plain 2.9x the teacher's drift, temporal 1.4x) and agree less with the teacher on the copies
+  (plain 0.855 → 0.815). The temporal student is clearly the more robust one.
+- Exact duplicates in the library (25 of the 98 sampled tracks have one in the test pool) count as the track itself;
+  counted as misses they had made the teacher look like 86 % instead of 96 %.
+
+**Closed (user, 2026-11-26):** DJs play good-quality files, and the pipeline already converts every track the same
+way (24 kHz), so no codec augmentation or low-pass variants. If low-bitrate data (e.g. FMA) is used for training,
+check its bitrates first: below ~128 kbps the codec reaches into the bands the model uses.
+
 ## Setup
 
 A separate venv, so nothing here changes the app's `.venv` or the exe (torch 2.8 CUDA for training on the
@@ -290,11 +317,12 @@ If C: is short of space, point `UV_CACHE_DIR`, `TMP` and `TEMP` at a folder on a
 | [prepare_data.py](prepare_data.py) | Data: artist-disjoint train / val / test split, log-mel cache and matching teacher vectors; `--split-only` re-splits the existing cache |
 | [train.py](train.py) | Phase 1: baselines and students, early stopping, one MLflow run each, ONNX of the best weights |
 | [evaluate.py](evaluate.py) | Fidelity and genre-AP metrics; `python evaluate.py` logs the reference runs, `--bootstrap RUN...` the paired bootstrap, `--export-json` the results file |
+| [codec_robustness.py](codec_robustness.py) | Side check: teacher and students on originals vs low-bitrate MP3 copies (vectors, neighbours, log-mel per band) |
 | [phase1_eval.ipynb](phase1_eval.ipynb) | Charts and tables from MLflow: all runs, genre AP, training curves, per-label AP, learning curve, cost vs quality (kernel: the venv, registered as `venv-distill`) |
 | [requirements.txt](requirements.txt) | Pinned versions of the venv |
 
 **MLflow:** runs are stored in `.research_cache/distill/mlflow.db` (experiments `distill-speed` for Phase 0,
-`distill-train` for Phase 1). To browse them, from the repo root:
+`distill-train` for training runs, `distill-robustness` for the audio-quality check, `distill-smoke` for smoke runs). To browse them, from the repo root:
 
 ```
 .research_cache\venv-distill\Scripts\mlflow ui --backend-store-uri sqlite:///.research_cache/distill/mlflow.db

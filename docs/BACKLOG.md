@@ -210,6 +210,10 @@ One PR per block below, in this order; each with tests (a failing test first for
             an hour of teacher on the GPU). 30 s clips are enough for training (the student sees 10 s windows); keep
             the test on whole tracks of the user's library. Measure whether misses stop following unfamiliarity.
       - [ ] Then: blind listening test of the closest matches before any claim about quality.
+      - [x] Audio quality (2026-11-26, distill README "Side check"): a 64 kbps MP3 copy changes the log-mel above
+            ~5 kHz (up to −23 dB); the teacher keeps the track but a third of its top 10 changes, the students drift
+            more. **Closed (user):** DJs use good files and every track goes through the same 24 kHz conversion; no
+            codec augmentation. Check bitrates before training on low-bitrate data (FMA).
 - [ ] Research, low priority: a better similarity than cosine for CNN14 (classifier features, not trained for
       similarity; CLAP is trained on cosine, so it stays): PCA whitening, hubness reduction (CSLS), window-set
       comparison (Chamfer / Fréchet), or a learned metric from the user's playlists and sets. Evaluate with the user's
