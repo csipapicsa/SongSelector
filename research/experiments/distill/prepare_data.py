@@ -262,7 +262,8 @@ def extra_train_windows(workers):
     """Every other window of the training tracks: all but the cached ones and the last one (zero-padded, as the 16
     evenly spaced ones also leave it out). For train.py --all-windows; the base cache, the split and the val/test
     windows stay as they are. Each track is decoded again; its cached windows go through the front end too and are
-    compared with mel64.npy (as in --mels), so the new windows are cut from the same audio at the same positions."""
+    compared with mel64.npy (as in --mels), so the new windows are cut from the same audio at the same positions.
+    A track that fails the check (or no longer decodes) is skipped and counted: it keeps its 16 cached windows."""
     import pandas as pd
     import torch
     from students import LogMel
@@ -282,37 +283,46 @@ def extra_train_windows(workers):
                                         shape=(total, DIM))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     frontend = LogMel(N_MELS).to(device).eval()
-    worst, failed = [0.0], []
+    worst, skipped = [0.0], {}
+    usable = np.zeros(len(todo), dtype=bool)
 
     def store(row, result):
+        # A track that does not decode to the same cached windows again (e.g. a damaged MP3 the decoder resyncs
+        # differently) gets no extra windows: they are optional examples, and none may sit at a wrong position.
         state, value = result
         track = todo.iloc[row]
         if state != 'ok':
-            failed.append(f"{track['path_key']}: {value}")
+            skipped[track['path_key']] = value
             return
         cached, first = int(track['windows']), int(track['first'])
         with torch.inference_mode():
             features = frontend(torch.from_numpy(value).to(device)).half().cpu().numpy()
         diff = float(np.abs(features[:cached].astype(np.float32)
                             - reference[first:first + cached].astype(np.float32)).max())
-        if diff > 0.05:
-            sys.exit(f"{track['path_key']}: the cached windows came out different, max difference {diff:.3f}")
+        if diff > 0.05:   # float16 rounding is <= 0.016; another position differs by whole units
+            skipped[track['path_key']] = f'cached windows came out different, max difference {diff:.3f}'
+            return
         worst[0] = max(worst[0], diff)
         start, count = int(firsts[row]), int(counts[row])
         mel[start:start + count] = features[cached:]
         teacher[start:start + count] = teacher_vectors(track['path_key'])[extra[row]]
+        usable[row] = True
 
     minutes = decode_all(todo, workers, store)
     mel.flush()
     teacher.flush()
-    if failed:
-        sys.exit(f'{len(failed)} cached tracks could not be decoded the same way again, e.g. {failed[:3]}')
-    np.savez(DATA / 'train-extra.npz', track=np.repeat(todo['index'].to_numpy(), counts),
+    for key, reason in skipped.items():   # names stay in the local log only
+        print(f'skipped {key}: {reason}')
+    # Rows of skipped tracks stay in the arrays (zeros) with track -1, so train.py never picks them.
+    row_usable = np.repeat(usable, counts)
+    np.savez(DATA / 'train-extra.npz', track=np.where(row_usable, np.repeat(todo['index'].to_numpy(), counts), -1),
              window=np.concatenate([np.asarray(e, dtype=np.int32) for e in extra]))
     meta = json.loads((DATA / 'meta.json').read_text(encoding='utf-8'))
     meta['train_extra'] = {'files': ['mel64-train-extra.npy', 'teacher-train-extra.npy', 'train-extra.npz'],
                            'created': datetime.now().isoformat(timespec='seconds'), 'minutes': minutes,
-                           'tracks': len(todo), 'windows': total, f'max_diff_vs_mel{N_MELS}': worst[0]}
+                           'tracks': int(usable.sum()), 'windows': int(row_usable.sum()),
+                           'skipped_tracks': len(skipped), 'skipped_windows': int(total - row_usable.sum()),
+                           f'max_diff_vs_mel{N_MELS}': worst[0]}
     (DATA / 'meta.json').write_text(json.dumps(meta, indent=1), encoding='utf-8')
     print(json.dumps(meta['train_extra'], indent=1))
 

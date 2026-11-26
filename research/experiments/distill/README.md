@@ -429,5 +429,23 @@ add the tag as a column; `train.py --question <name>` sets it on new runs. To br
 
 then open http://127.0.0.1:5000. `benchmark_speed.py --log-json <results.json>` logs an earlier benchmark.
 
+**Getting a run back (code, environment, model).** Each part is kept separately:
+
+- *Code:* every training run since 2026-11-26 (commit 0d43008) has the tags `code_commit` and `code_dirty`. If
+  `code_dirty` is `false`, `git checkout <code_commit>` is exactly the code it ran. If `true`, the run also holds
+  `code/uncommitted.diff` (and `code/untracked/` for new files): check out the commit, then `git apply` the diff.
+  MLflow's own `mlflow.source.git.commit` is only the commit the work started from, so it is not enough on its own.
+  Earlier runs have only MLflow's tag, which misses any edits not yet committed when they started (the git history
+  of the day is the best guide). The first relational run was tagged by hand (`code_commit`, with a note).
+- *Model structures* are never edited in place: a new structure is a new `STUDENTS` entry (e.g. `cnn4-small-64-tcn`
+  next to `cnn4-small-64`), and its new parts start at zero. Old checkpoints still load strictly.
+- *Environment:* `environment/packages.txt` in each run (Python and every installed package with its version);
+  [requirements.txt](requirements.txt) pins the venv itself.
+- *Trained model:* each student run stores `model/state_dict.pt` and the ONNX file. A trained model can be used again
+  without retraining; retraining from the code gives the same numbers up to GPU nondeterminism (seed noise is
+  measured).
+- *Data:* the feature cache is not versioned (git-ignored, ~16 GB on D:). It is rebuilt with `prepare_data.py` from
+  the frozen teacher snapshot (seeded split); each run logs `manifest_sha` to show which split it used.
+
 Outputs: `.research_cache/distill/` (git-ignored: ONNX files, feature cache, MLflow store) and one small JSON
 per run in [../../results/](../../results/).
