@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from songselector.config import SPEED_COLUMN
+from songselector.config import MATCH_COLUMN, SPEED_COLUMN
 from songselector.core.color_search import COLOR_HELP, COLOR_NAMES, parse_color_values
 from songselector.core.search_filters import (
     COLOR_COLUMNS,
@@ -58,7 +58,8 @@ class AdvancedSearchRow(QWidget):
 
     def update_conditions(self, _column=None):
         selected = self.condition_combo.currentText()
-        conditions = list(TEXT_CONDITIONS)
+        # Match is a percentage: only the number comparisons make sense for it.
+        conditions = [] if self.column_combo.currentText() == MATCH_COLUMN else list(TEXT_CONDITIONS)
         # None offers every condition, so a numeric one is kept while the row is switched off.
         if self.column_combo.currentText() in NUMERIC_COLUMNS | {NO_COLUMN}:
             conditions += list(NUMERIC_COMPARISONS)
@@ -78,6 +79,13 @@ class AdvancedSearchRow(QWidget):
             self.value_edit.setCompleter(None)
             self.value_edit.setPlaceholderText('e.g. 8 (percent)')
             self.value_edit.setToolTip('Speed change to the master tempo, without the sign: 8 = from -8 % to +8 %.')
+            return
+        if self.column_combo.currentText() == MATCH_COLUMN:
+            self.value_edit.setCompleter(None)
+            self.value_edit.setPlaceholderText('e.g. 30 (percent)')
+            self.value_edit.setToolTip('How well a track matches the "Describe a sound" search, in percent (-100 to '
+                                       '100), as in the Match column.\nIt filters only while the List shows '
+                                       'description results; set Top to All to filter every analysed track.')
             return
         color = self.column_combo.currentText() in COLOR_COLUMNS
         self.value_edit.setCompleter(self.color_completer if color and not numeric else None)

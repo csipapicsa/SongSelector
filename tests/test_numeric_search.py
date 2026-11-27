@@ -19,6 +19,16 @@ class ComparisonTests(unittest.TestCase):
             self.assertFalse(matches_condition(bad, 'greater than', '0', 'Original BPM'))
             self.assertIsNone(parse_number(bad))
 
+    def test_match_filters_description_results_and_lets_tracks_without_a_match_through(self):
+        # Asked 2026-11-27: the description Match ('31%', -100 % to 100 %) as an Advanced Search criterion.
+        self.assertTrue(matches_condition('31%', 'at least (>=)', '30', 'Match'))
+        self.assertFalse(matches_condition('29%', 'at least (>=)', '30', 'Match'))
+        self.assertTrue(matches_condition('-12%', 'less than', '0', 'Match'))
+        self.assertTrue(matches_condition('31%', 'greater than', '30.5%', 'Match'))
+        # No description search shown: no Match value, and the rule does not hide every track.
+        for empty in ('', ' ', None):
+            self.assertTrue(matches_condition(empty, 'at least (>=)', '30', 'Match'))
+
     def test_existing_text_conditions(self):
         self.assertTrue(matches_condition('Tribal House', 'contains', 'tribal', 'Genre'))
         self.assertTrue(matches_condition('Tribal House', 'does not contain', 'techno', 'Genre'))
@@ -31,6 +41,18 @@ class NumericSearchGuiTests(unittest.TestCase):
     def setUpClass(cls):
         from PyQt5.QtWidgets import QApplication
         cls.application=QApplication.instance() or QApplication([])
+
+    def test_match_offers_only_number_comparisons_with_a_percent_hint(self):
+        from songselector.config import COMPLEX_SEARCH_COLUMNS
+        from songselector.ui.advanced_search_dialog import AdvancedSearchRow
+        self.assertIn('Match', COMPLEX_SEARCH_COLUMNS)
+        row = AdvancedSearchRow(COMPLEX_SEARCH_COLUMNS)
+        row.column_combo.setCurrentText('Match')
+        conditions = [row.condition_combo.itemText(i) for i in range(row.condition_combo.count())]
+        self.assertEqual(conditions, list(NUMERIC_COMPARISONS))
+        self.assertIn('percent', row.value_edit.placeholderText())
+        row.column_combo.setCurrentText('Genre')
+        self.assertIn('contains', [row.condition_combo.itemText(i) for i in range(row.condition_combo.count())])
 
     def test_numeric_options_follow_column_selection(self):
         from songselector.ui.advanced_search_dialog import AdvancedSearchRow

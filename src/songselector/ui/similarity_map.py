@@ -62,11 +62,11 @@ from PyQt5.QtWidgets import (
     QWidgetAction,
 )
 
-from songselector.config import FIELD_LABELS, SS_COLOR_COLUMN, SS_RATING_COLUMN, track_qcolor
+from songselector.config import FIELD_LABELS, MATCH_COLUMN, SS_COLOR_COLUMN, SS_RATING_COLUMN, track_qcolor
 from songselector.core.clustering import GROUPING_BY_NAME, GROUPING_METHODS, group_tracks
 from songselector.core.color_search import COLOR_NAMES
 from songselector.core.color_search import color_id as color_family
-from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, mix_type, parse_camelot
+from songselector.core.harmonic import MIX_TYPES, MIX_TYPES_BY_NAME, current_names, mix_type, parse_camelot
 from songselector.core.placement import (
     ABOVE_LEFT,
     ABOVE_RIGHT,
@@ -76,7 +76,7 @@ from songselector.core.placement import (
     corner_rect,
     place_box,
 )
-from songselector.core.search_filters import NUMERIC_COLUMNS
+from songselector.core.search_filters import NUMERIC_COLUMNS, parse_number
 from songselector.core.similarity import (
     DEFAULT_PROJECTION,
     EDGE_SAME_COLOR,
@@ -175,6 +175,12 @@ FOLLOW_DELAY_MS = 300
 # opacity; nearer dots lie above farther ones within their ring tier (selected, clicked, matches, others).
 ROTATE_SPEED, FAR_OPACITY, DEPTH_Z = 0.008, 0.35, 0.3
 FAR_SIZE, NEAR_SIZE = 0.5, 1.6   # 3D view: dot size (times DOT_SIZE) at the back and the front
+# While the List shows "Describe a sound" results, a dot's size follows its Match (asked 2026-11-27): from the weakest
+# match shown (smallest, times DOT_SIZE) to the best one (largest). Relative to the shown range, not to -100..100 %:
+# CLAP scores sit in a narrow band (often 10-40 %), so the full scale would draw every dot nearly the same size.
+MATCH_SIZES = (0.6, 2.2)
+# Bigger dots lie a little below smaller ones of the same ring tier, so a big dot never hides a small one.
+SMALL_ON_TOP = 0.05
 PERSPECTIVE = 3.0            # eye distance in radii of the cloud: lower is a stronger 3D effect
 DEFAULT_ANGLES = (0.6, -0.35)  # yaw, pitch of the first 3D view
 # Info cards on the map (hover, and a compared track): dark and rounded, like the selected label.
@@ -185,7 +191,8 @@ SORT_ROLE = Qt.UserRole + 2    # value a closest-match column sorts by (number o
 EDGE_COLORS = {
     'perfect_mix': '#4cd964', 'plus_1_mix': '#5ac8fa', 'minus_1_mix': '#5ac8fa',
     'scale_change': '#af7ff2', 'energy_boost': '#ff9f0a', 'mood_shifter': '#ff6fae',
-    'jaws_mix': '#ffd60a', 'diagonal_mix': '#a0a4ab', 'g_jump_sharp': '#30d5c8', EDGE_SAME_COLOR: None, EDGE_SAME_RATING: '#e5e5ea',
+    'jaws_mix': '#ffd60a', 'diagonal_mix': '#a0a4ab', 'g_jump_sharp_up': '#30d5c8', 'g_jump_sharp_down': '#30d5c8',
+    EDGE_SAME_COLOR: None, EDGE_SAME_RATING: '#e5e5ea',
 }
 EDGE_LABELS = {**{mix.name: mix.label for mix in MIX_TYPES},
                EDGE_SAME_COLOR: 'Same colour', EDGE_SAME_RATING: 'Same rating'}
@@ -370,6 +377,25 @@ def fit_width(item, max_width):
         item.setTextWidth(max_width)
 
 
+def match_scales(scores, sizes=MATCH_SIZES):
+    """{key: dot scale} from {key: Match in percent}. The dot's area grows evenly from the lowest score to the
+    highest (the eye compares dots by area, so the diameter grows with the square root). One score, or all equal:
+    normal size."""
+    if not scores:
+        return {}
+    low, high = min(scores.values()), max(scores.values())
+    if high <= low:
+        return dict.fromkeys(scores, 1.0)
+    small, large = sizes
+    return {key: math.sqrt(small ** 2 + (score - low) / (high - low) * (large ** 2 - small ** 2))
+            for key, score in scores.items()}
+
+
+def dot_gap(dot):
+    """Pixels from a dot's centre to its info boxes: DOT_SIZE for a normal dot, more for a bigger one."""
+    return DOT_SIZE * (1 + max(dot.scale(), 1.0)) / 2
+
+
 class Card(QGraphicsPathItem):
     """Rounded info card below and right of a dot (same pixel size at any zoom), at most `Map info width` pixels
     wide. Mouse clicks and hovering go through it to the dots underneath."""
@@ -384,6 +410,7 @@ class Card(QGraphicsPathItem):
         self.text = wrapping_text(self)
         self.text.setDefaultTextColor(QColor(CARD_TEXT))
         self.text.document().setDocumentMargin(8)
+        self.gap = DOT_SIZE   # pixels from the dot's centre (dot_gap: more beside a bigger dot)
         self.hide()
 
     def show_at(self, dot, html, max_width=INFO_WIDTH):
@@ -391,6 +418,7 @@ class Card(QGraphicsPathItem):
         self.text.setHtml(html)
         fit_width(self.text, max_width)
         self.setPos(dot.pos())
+        self.gap = dot_gap(dot)
         self.set_corner(BELOW_RIGHT)
         self.show()
 
@@ -400,7 +428,7 @@ class Card(QGraphicsPathItem):
 
     def set_corner(self, corner):
         """Draw the card at this corner of its dot (core.placement corners), in pixels."""
-        x, y, width, height = corner_rect((0, 0), self.box_size(), corner, DOT_SIZE)
+        x, y, width, height = corner_rect((0, 0), self.box_size(), corner, self.gap)
         path = QPainterPath()
         path.addRoundedRect(QRectF(x, y, width, height), 8, 8)
         self.setPath(path)
@@ -422,6 +450,7 @@ class MapLabel(QGraphicsRectItem):
         self.text.setDefaultTextColor(QColor('#f0f0f0'))
         self.text.document().setDocumentMargin(0)  # the padding is the box's (box_size, set_corner)
         self.corner = ABOVE_RIGHT
+        self.gap = DOT_SIZE
         self.hide()
 
     def set_html(self, html, max_width=INFO_WIDTH):
@@ -434,7 +463,7 @@ class MapLabel(QGraphicsRectItem):
         return box.width() + 12, box.height() + 8
 
     def set_corner(self, corner):
-        x, y, width, height = corner_rect((0, 0), self.box_size(), corner, DOT_SIZE)
+        x, y, width, height = corner_rect((0, 0), self.box_size(), corner, self.gap)
         self.setRect(QRectF(x, y, width, height))
         self.text.setPos(x + 6, y + 4)
         self.corner = corner
@@ -756,6 +785,7 @@ class SimilarityMapWidget(QWidget):
         self._projected_turn = self.turn_angle  # the turn the 2D dots are drawn at now
         self._projected = {}      # path_key -> QPointF on the scene (2D map or rotated 3D view)
         self._depth = {}          # path_key -> 0 (far) .. 1 (near) in the 3D view
+        self._match_scale = {}    # path_key -> dot size (times DOT_SIZE) from its Match while a description is shown
         self._edge_layers = []    # [(edges, alpha)] last computed; redrawn when the 3D view turns
         self._place_timer = None
         self.groups = {}          # path_key -> group (0 = largest, -1 = none) while grouping is on
@@ -804,10 +834,11 @@ class SimilarityMapWidget(QWidget):
         self.edges_button.setPopupMode(QToolButton.InstantPopup)
         edges_menu = QMenu(self.edges_button)
         self.edge_actions = {}
+        checked = current_names(settings.get('Map edges', DEFAULT_EDGES))  # a saved "G jump sharp": both signs
         for name, label in EDGE_LABELS.items():
             action = edges_menu.addAction(label)
             action.setCheckable(True)
-            action.setChecked(name in settings.get('Map edges', DEFAULT_EDGES))
+            action.setChecked(name in checked)
             action.toggled.connect(self._edges_changed)
             self.edge_actions[name] = action
         self.edges_button.setMenu(edges_menu)
@@ -1373,14 +1404,27 @@ class SimilarityMapWidget(QWidget):
         self._follow_dots()
 
     def _apply_depth(self, key, dot):
-        """3D view: near dots bigger and opaque, far dots smaller and faded; 2D: plain."""
+        """3D view: near dots bigger and opaque, far dots smaller and faded; 2D: plain. Either way a description
+        search sizes the dots by their Match on top of that."""
         depth = self._depth.get(key)
+        size = self._match_scale.get(key, 1.0)
         if depth is None:
             dot.setOpacity(1.0)
-            dot.setScale(1.0)
+            dot.setScale(size)
         else:
             dot.setOpacity(FAR_OPACITY + (1 - FAR_OPACITY) * depth)
-            dot.setScale(FAR_SIZE + (NEAR_SIZE - FAR_SIZE) * depth)
+            dot.setScale(size * (FAR_SIZE + (NEAR_SIZE - FAR_SIZE) * depth))
+
+    def _match_scores(self):
+        """{key: Match in percent} of the dots on the map with a description match (the List's Match column).
+        Playlist tracks shown only as markers do not count."""
+        scores = {}
+        for key, fields in self.fields.items():
+            if key in self.dots and key not in self._markers:
+                score = parse_number(fields.get(MATCH_COLUMN, ''))
+                if score is not None:
+                    scores[key] = score
+        return scores
 
     def _dots_rect(self):
         xs = [point.x() for point in self._projected.values()] or [0]
@@ -1418,14 +1462,17 @@ class SimilarityMapWidget(QWidget):
         boxes have a fixed pixel size, so this runs again when the zoom or the 3D view's angle changes."""
         viewport = self.view.viewport().rect()
         bounds = (0, 0, viewport.width(), viewport.height())
-        shown = [(box, corners, self.view.mapFromScene(box.pos()))
-                 for box, corners in ((self.label, LABEL_CORNERS), (self.preview_card, CORNERS),
-                                      (self.hover_card, CORNERS))
-                 if box.isVisible()]
-        half = DOT_SIZE / 2 + 2
-        taken = [(point.x() - half, point.y() - half, 2 * half, 2 * half) for _box, _corners, point in shown]
+        boxes = ((self.label, self.selected_key, LABEL_CORNERS), (self.preview_card, self.preview_key, CORNERS),
+                 (self.hover_card, self.hover_key, CORNERS))
+        for box, key, _corners in boxes:
+            box.gap = dot_gap(self.dots[key]) if key in self.dots else DOT_SIZE  # beside a big dot, not on it
+        shown = [(box, corners, self.view.mapFromScene(box.pos())) for box, _key, corners in boxes if box.isVisible()]
+        taken = []
+        for box, _corners, point in shown:
+            half = box.gap - DOT_SIZE / 2 + 2   # the dot's radius (at least a normal dot's) and 2 pixels
+            taken.append((point.x() - half, point.y() - half, 2 * half, 2 * half))
         for box, corners, point in shown:
-            corner, rect = place_box((point.x(), point.y()), box.box_size(), taken, bounds, DOT_SIZE, corners)
+            corner, rect = place_box((point.x(), point.y()), box.box_size(), taken, bounds, box.gap, corners)
             box.set_corner(corner)
             taken.append(rect)
 
@@ -1482,6 +1529,8 @@ class SimilarityMapWidget(QWidget):
 
     def _refresh(self):
         shown = 0
+        scores = self._match_scores()
+        self._match_scale = match_scales(scores)
         for key, dot in self.dots.items():
             fields = self.fields.get(key)
             dot.setVisible(fields is not None)
@@ -1489,6 +1538,7 @@ class SimilarityMapWidget(QWidget):
                 continue
             shown += 1
             dot.setBrush(QBrush(self._dot_colour(key, fields)))
+            self._apply_depth(key, dot)
             self._outline(key)
         missing = len(self.fields) - shown - len([key for key in self._markers if key not in self.dots])
         if self.only is None:
@@ -1500,6 +1550,9 @@ class SimilarityMapWidget(QWidget):
             on_map = sum(1 for key in self.highlighted if key in self.dots)
             note += (f'; {on_map} of {len(self.highlighted)} selected Playlist tracks shown (amber'
                      + (', dashed: not in the List' if self._markers else '') + ')')
+        if len(scores) > 1:
+            note += (f'; dot size: Match, {min(scores.values()):.0f} % (smallest) to '
+                     f'{max(scores.values()):.0f} % (largest)')
         self._base_status = f'{shown} tracks on the map' + note + self.search_note  # how to use it: the ? button
         if self.selected_key not in self.fields:
             self.selected_key = None
@@ -1742,7 +1795,8 @@ class SimilarityMapWidget(QWidget):
         dot = self.dots.get(key)
         if dot is None:
             return
-        depth = DEPTH_Z * self._depth.get(key, 0)  # 3D view: nearer dots on top within a tier
+        # 3D view: nearer dots on top within a tier; sized by Match: smaller dots above bigger ones
+        depth = DEPTH_Z * self._depth.get(key, 0) - SMALL_ON_TOP * (self._match_scale.get(key, 1.0) - 1)
         if key == self.selected_key:
             dot.setPen(QPen(QColor(SELECTED_RING), 3))
             dot.setZValue(4 + depth)

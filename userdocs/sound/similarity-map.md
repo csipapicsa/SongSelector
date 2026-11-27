@@ -56,6 +56,11 @@ The library map of each layout is kept, so switching back is instant.
 
 *Closest matches* can show *all* similar tracks, *harmonic only*, or only the relations ticked under *Edges*.
 
+**After a description search** ([Describe a sound](describe.md)) the dots are sized by their *Match*: the best match
+shown is the biggest dot, the weakest the smallest. Sizes compare the tracks shown, so even a narrow range of scores
+(say 35 % to 41 %) is easy to read; the status line below the map gives the range. Clear the search and all dots are
+the same size again.
+
 !!! note
     Distances on a 2D map are approximate. The closest-matches list uses the full model output, so trust it over
     what looks close on the map.

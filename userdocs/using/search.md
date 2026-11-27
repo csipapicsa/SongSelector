@@ -24,6 +24,10 @@ grey, none.
   *within ± 8 %*. It follows the master tempo as you change it.
 - *outside ± (%)*: the opposite.
 
+And on *Match*, how well a track matches a [description search](../sound/describe.md), in percent: for example
+*Match at least 30* keeps only the close results. The rule filters only while the List shows description results;
+otherwise it lets every track through. Set *Top* to *All* to filter every analysed track, not just the top ones.
+
 Set a rule's column to *None* to switch it off without losing it.
 
 Want to keep a search? Save it as a [smartlist](playlists.md#smartlists).

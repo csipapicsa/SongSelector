@@ -1,7 +1,7 @@
 """Harmonic mixing relations, checked cell by cell against Mixed In Key's published table."""
 import unittest
 
-from songselector.core.harmonic import MIX_TYPES, compatible_keys, mix_type, parse_camelot
+from songselector.core.harmonic import MIX_TYPES, compatible_keys, current_names, mix_type, parse_camelot
 
 COLUMNS = ('perfect_mix', 'minus_1_mix', 'plus_1_mix', 'energy_boost', 'scale_change',
            'diagonal_mix', 'jaws_mix', 'mood_shifter')
@@ -36,9 +36,13 @@ MIXED_IN_KEY_TABLE = '''
 
 
 def g_jump_sharp_targets(start):
-    """Our own move on top of the table: minor -> minor three semitones either way (3 numbers)."""
+    """Our own move on top of the table: minor -> minor three semitones up (+3: three numbers down the wheel)
+    or down (-3: three numbers up the wheel). {mix name: target key}."""
     number, letter = int(start[:-1]), start[-1]
-    return {f'{(number + step - 1) % 12 + 1}A' for step in (3, -3)} if letter == 'A' else set()
+    if letter != 'A':
+        return {}
+    return {name: f'{(number + step - 1) % 12 + 1}A' for name, step in (('g_jump_sharp_up', -3),
+                                                                        ('g_jump_sharp_down', 3))}
 
 
 class HarmonicTests(unittest.TestCase):
@@ -59,22 +63,34 @@ class HarmonicTests(unittest.TestCase):
     def test_compatible_keys_are_the_table_row_plus_custom_moves(self):
         for start, expected in self.table():
             found = compatible_keys(start)
-            jump = found.pop('g_jump_sharp', None)
+            jumps = {name: found.pop(name) for name in ('g_jump_sharp_up', 'g_jump_sharp_down') if name in found}
             self.assertEqual(found, expected, start)
-            self.assertEqual(jump is not None, start.endswith('A'), start)
+            self.assertEqual(jumps, g_jump_sharp_targets(start), start)
 
-    def test_g_jump_sharp(self):
-        self.assertEqual(mix_type('9A', '6A').name, 'g_jump_sharp')    # Em -> Gm
-        self.assertEqual(mix_type('6A', '9A').name, 'g_jump_sharp')    # Gm -> Em: both ways
-        self.assertEqual(mix_type('11A', '2A').name, 'g_jump_sharp')   # F#m -> Ebm, wraps around
-        self.assertIsNone(mix_type('9B', '6B'))                        # majors: no G jump
+    def test_g_jump_sharp_is_signed_by_the_direction_of_the_pitch(self):
+        # Asked 2026-11-27: +3 when the pitch goes three semitones up, -3 when it goes down.
+        self.assertEqual(mix_type('9A', '6A').label, '+3 G jump sharp')   # Em -> Gm: up
+        self.assertEqual(mix_type('8A', '5A').label, '+3 G jump sharp')   # Am -> Cm: up
+        self.assertEqual(mix_type('6A', '9A').label, '-3 G jump sharp')   # Gm -> Em: down
+        self.assertEqual(mix_type('8A', '11A').label, '-3 G jump sharp')  # Am -> F#m: down
+        self.assertEqual(mix_type('11A', '2A').label, '-3 G jump sharp')  # F#m -> Ebm: down, wraps around
+        self.assertEqual(mix_type('2A', '11A').label, '+3 G jump sharp')  # Ebm -> F#m: up, wraps around
+        self.assertIsNone(mix_type('9B', '6B'))                           # majors: no G jump
         for start, _ in self.table():
-            for target in g_jump_sharp_targets(start):
-                self.assertEqual(mix_type(start, target).name, 'g_jump_sharp', (start, target))
+            for name, target in g_jump_sharp_targets(start).items():
+                self.assertEqual(mix_type(start, target).name, name, (start, target))
+                back = mix_type(target, start).name                       # the way back has the other sign
+                self.assertEqual({name, back}, {'g_jump_sharp_up', 'g_jump_sharp_down'}, (start, target))
+
+    def test_a_saved_g_jump_sharp_becomes_both_signed_moves(self):
+        self.assertEqual(current_names(['perfect_mix', 'g_jump_sharp']),
+                         ['perfect_mix', 'g_jump_sharp_up', 'g_jump_sharp_down'])
+        self.assertEqual(current_names(['g_jump_sharp_down', 'g_jump_sharp']), ['g_jump_sharp_down', 'g_jump_sharp_up'])
+        self.assertEqual(current_names([]), [])
 
     def test_other_keys_are_not_named_mixes_and_relations_are_directional(self):
         for start, expected in self.table():
-            named = set(expected.values()) | g_jump_sharp_targets(start)
+            named = set(expected.values()) | set(g_jump_sharp_targets(start).values())
             for number in range(1, 13):
                 for letter in 'AB':
                     if f'{number}{letter}' not in named:
