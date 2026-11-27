@@ -28,4 +28,4 @@ tempo*, so you can see at a glance what mixes in key. More in
 ## Optional: the sound-based features
 
 The similarity map, closest matches and search by description need audio models (a separate download of up to
-2.3 GB). Everything else works without them. See [Getting the models](../sound/models.md).
+1.7 GB). Everything else works without them. See [Getting the models](../sound/models.md).
