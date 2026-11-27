@@ -5,9 +5,10 @@ get_mix_type_new_wheel(..., connection_mode="commercial") and its edge weights).
 
 Custom moves of our own (not in Mixed In Key's table) come last in MIX_TYPES:
 G jump sharp is minor -> minor three semitones up or down, labelled with the direction of the pitch
-(asked 2026-11-27): +3 is three semitones up (Em -> Gm, 9A -> 6A), -3 three semitones down
-(Gm -> Em, 6A -> 9A). One semitone is seven steps on the wheel, so the pitch and the wheel number
-move opposite ways here: +3 semitones is three numbers down on the wheel.
+(asked 2026-11-27): + is three semitones up (Em -> Gm, 9A -> 6A), - three semitones down
+(Gm -> Em, 6A -> 9A). The sign alone, since the move is always three semitones. One semitone is
+seven steps on the wheel, so the pitch and the wheel number move opposite ways here: three
+semitones up is three numbers down on the wheel.
 
 A relation is directional: mix_type('1A', '3A') is an energy boost (+2), while
 mix_type('3A', '1A') is not a named mix. "From" is the playing track, "to" the next one.
@@ -33,9 +34,9 @@ MIX_TYPES = (
     MixType('mood_shifter', 'Mood shifter', 5, True),
     MixType('jaws_mix', "Jaw's mix", 4, True),
     MixType('diagonal_mix', 'Diagonal mix', 3, False),
-    # custom: minor -> minor, three semitones up (+3) or down (-3) in pitch
-    MixType('g_jump_sharp_up', '+3 G jump sharp', 2, True),
-    MixType('g_jump_sharp_down', '-3 G jump sharp', 2, True),
+    # custom: minor -> minor, three semitones up (+) or down (-) in pitch
+    MixType('g_jump_sharp_up', '+ G jump sharp', 2, True),
+    MixType('g_jump_sharp_down', '- G jump sharp', 2, True),
 )
 MIX_TYPES_BY_NAME = {mix.name: mix for mix in MIX_TYPES}
 # Names saved in settings before a move was split by direction -> the names that replace it.

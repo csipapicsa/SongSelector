@@ -11,7 +11,7 @@ from that period still mention 4.x numbers.
 ## [Unreleased]
 
 - **A harmonic move of our own: G jump sharp, with its direction.** Minor to minor, three semitones up or down.
-  The sign says which way the pitch goes: *+3 G jump sharp* is three semitones up (8A → 5A, Am → Cm), *-3 G jump
+  The sign says which way the pitch goes: *+ G jump sharp* is three semitones up (8A → 5A, Am → Cm), *- G jump
   sharp* three semitones down (8A → 11A, Am → F#m). Both show in the Mix column and in the map's *Edges* menu (teal);
   an *Edges* setting that had G jump sharp ticked ticks both.
 - **The map sizes the dots by their Match.** While the List shows *Describe a sound* results, the best match on the
