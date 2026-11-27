@@ -24,6 +24,10 @@ Type what a track should sound like and get the closest tracks in your library. 
 
 With a playlist or other Browser entry shown, only its tracks are ranked.
 
+To keep only the close matches, add an [Advanced Search](../using/search.md#advanced-search) rule on *Match*, for
+example *Match at least 30*, with *Top* set to *All*. On the [similarity map](similarity-map.md) the dots are sized by
+their *Match*: the best match is the biggest dot.
+
 **Analysis → Search by description…** (++ctrl+shift+f++) opens the same search in its own window.
 
 ## Writing good descriptions

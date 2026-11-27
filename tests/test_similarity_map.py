@@ -449,6 +449,14 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         self.assertEqual(self.matched_keys(), same_group)
         self.assertEqual(self.window.settings['Map match filter'], 'edges')
 
+    def test_a_saved_g_jump_sharp_edge_checks_both_signed_moves(self):
+        from songselector.ui.similarity_map import SimilarityMapWidget
+        widget = SimilarityMapWidget(self.map.store, {'Map edges': ['perfect_mix', 'g_jump_sharp']})
+        self.assertEqual({name for name, action in widget.edge_actions.items() if action.isChecked()},
+                         {'perfect_mix', 'g_jump_sharp_up', 'g_jump_sharp_down'})
+        self.assertEqual(widget.edge_actions['g_jump_sharp_up'].text(), '+3 G jump sharp')
+        self.assertEqual(widget.edge_actions['g_jump_sharp_down'].text(), '-3 G jump sharp')
+
     def test_old_harmonic_only_setting_carries_over(self):
         from songselector.ui.similarity_map import SimilarityMapWidget
         widget = SimilarityMapWidget(self.map.store, {'Map harmonic only': True})
@@ -778,6 +786,24 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         from songselector.core.embedding_models import LAION_CLAP
         self.window._description_model_id = LAION_CLAP.id
         self.window.show_description_results(prompt, [(self.key(i), 0.5 - i / 100) for i in indexes], 0.01)
+
+    def test_dots_are_sized_by_their_match_while_a_description_search_is_shown(self):
+        # Asked 2026-11-27. describe(): track i matches 50 - i %, so track 0 is the best match.
+        self.describe(range(0, 6))
+        self.application.processEvents()
+        scales = {i: self.map.dots[self.key(i)].scale() for i in range(6)}
+        self.assertEqual([scales[i] for i in range(6)], sorted(scales.values(), reverse=True))
+        self.assertAlmostEqual(scales[0], 2.2)
+        self.assertAlmostEqual(scales[5], 0.6)
+        self.assertIn('dot size: Match, 45 % (smallest) to 50 % (largest)', self.map._base_status)
+        # A bigger dot lies under a smaller one, and the selected track's label keeps clear of the big dot.
+        self.assertLess(self.map.dots[self.key(0)].zValue(), self.map.dots[self.key(5)].zValue())
+        self.map.select(self.key(0))
+        self.assertGreater(self.map.label.gap, 9)
+        self.window.clear_description()
+        self.application.processEvents()
+        self.assertEqual({dot.scale() for key, dot in self.map.dots.items() if dot.isVisible()}, {1.0})
+        self.assertNotIn('dot size', self.map._base_status)
 
     def test_map_the_list_only_follows_new_description_searches(self):
         # Reported 2026-11-17: after a new search (or a CLAP model switch, which searches again) the map showed only
@@ -1236,6 +1262,17 @@ class MapViewOptionsTests(MapWindowTestBase):
         self.show_window()
         self.assertEqual(self.window.search_splitter.sizes()[0], 0)
         self.assertFalse(self.window.search_bars_action.isChecked())
+
+
+class MatchScaleTests(unittest.TestCase):
+    def test_dot_area_grows_evenly_from_the_weakest_to_the_best_match(self):
+        from songselector.ui.similarity_map import match_scales
+        scales = match_scales({'low': -10.0, 'middle': 15.0, 'high': 40.0}, sizes=(1.0, 3.0))
+        self.assertAlmostEqual(scales['low'], 1.0)
+        self.assertAlmostEqual(scales['high'], 3.0)
+        self.assertAlmostEqual(scales['middle'] ** 2, (1.0 + 9.0) / 2)  # area halfway, not the diameter
+        self.assertEqual(match_scales({}), {})
+        self.assertEqual(match_scales({'a': 30.0, 'b': 30.0}), {'a': 1.0, 'b': 1.0})
 
 
 class TurnTests(unittest.TestCase):

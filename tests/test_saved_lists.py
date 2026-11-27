@@ -188,6 +188,21 @@ class BrowserGuiTests(unittest.TestCase):
         self.assertEqual(sorted(self.shown(window)), ['four', 'three', 'two'])
         self.assertIn('showing Smartlist: House', window.status_label.text())
 
+    def test_advanced_search_on_match_filters_the_description_results_only(self):
+        # Asked 2026-11-27. Scores 50 %, 49 %, 48 %, 47 % from best to worst (describe()).
+        window = self.window()
+        window.current_advanced_search = {'enabled': True, 'filters': []}
+        window.advanced_filters = [{'column': 'Match', 'condition': 'at least (>=)', 'value': '49'}]
+        window.filter_items()
+        self.assertEqual(sorted(self.shown(window)), ['four', 'one', 'three', 'two'])  # no search: nothing hidden
+        self.describe(window, ['two', 'one', 'three', 'four'])
+        self.assertEqual(self.shown(window), ['two', 'one'])
+        window.advanced_filters = [{'column': 'Match', 'condition': 'less than', 'value': '49'}]
+        window.filter_items()
+        self.assertEqual(self.shown(window), ['three', 'four'])
+        window.clear_description()
+        self.assertEqual(sorted(self.shown(window)), ['four', 'one', 'three', 'two'])
+
     def test_description_search_within_a_playlist_and_without_one(self):
         window = self.window()
         window.library_store.save_playlist('Set', [track(self.paths['four'], 'four'), track(self.paths['one'], 'one')])

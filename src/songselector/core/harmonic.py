@@ -4,8 +4,10 @@ Ported from the master thesis project (E:\\GITHUB_E\\MasterThesis\\functions.py,
 get_mix_type_new_wheel(..., connection_mode="commercial") and its edge weights).
 
 Custom moves of our own (not in Mixed In Key's table) come last in MIX_TYPES:
-G jump sharp is minor -> minor three semitones up or down (Em <-> Gm, i.e. 9A <-> 6A: three
-numbers on the wheel either way, since one semitone is seven steps on the wheel).
+G jump sharp is minor -> minor three semitones up or down, labelled with the direction of the pitch
+(asked 2026-11-27): +3 is three semitones up (Em -> Gm, 9A -> 6A), -3 three semitones down
+(Gm -> Em, 6A -> 9A). One semitone is seven steps on the wheel, so the pitch and the wheel number
+move opposite ways here: +3 semitones is three numbers down on the wheel.
 
 A relation is directional: mix_type('1A', '3A') is an energy boost (+2), while
 mix_type('3A', '1A') is not a named mix. "From" is the playing track, "to" the next one.
@@ -31,9 +33,23 @@ MIX_TYPES = (
     MixType('mood_shifter', 'Mood shifter', 5, True),
     MixType('jaws_mix', "Jaw's mix", 4, True),
     MixType('diagonal_mix', 'Diagonal mix', 3, False),
-    MixType('g_jump_sharp', 'G jump sharp', 2, True),   # custom: minor <-> minor, three semitones
+    # custom: minor -> minor, three semitones up (+3) or down (-3) in pitch
+    MixType('g_jump_sharp_up', '+3 G jump sharp', 2, True),
+    MixType('g_jump_sharp_down', '-3 G jump sharp', 2, True),
 )
 MIX_TYPES_BY_NAME = {mix.name: mix for mix in MIX_TYPES}
+# Names saved in settings before a move was split by direction -> the names that replace it.
+RENAMED = {'g_jump_sharp': ('g_jump_sharp_up', 'g_jump_sharp_down')}
+
+
+def current_names(names):
+    """Saved mix names (e.g. the map's Edges settings) with renamed moves replaced by their new names."""
+    result = []
+    for name in names:
+        for new in RENAMED.get(name, (name,)):
+            if new not in result:
+                result.append(new)
+    return result
 
 
 def parse_camelot(key):
@@ -54,8 +70,8 @@ def mix_type(from_key, to_key):
     step = (other_number - number) % 12          # clockwise steps on the Camelot wheel
     if letter == other_letter:
         name = {0: 'perfect_mix', 1: 'plus_1_mix', 11: 'minus_1_mix', 2: 'energy_boost', 7: 'jaws_mix'}.get(step)
-        if name is None and letter == 'A' and step in (3, 9):   # minor, three semitones down / up
-            name = 'g_jump_sharp'
+        if name is None and letter == 'A':       # minor: 9 steps = 3 semitones up, 3 steps = 3 down
+            name = {9: 'g_jump_sharp_up', 3: 'g_jump_sharp_down'}.get(step)
     elif step == 0:
         name = 'scale_change'
     elif letter == 'A':                          # minor -> major

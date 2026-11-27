@@ -2,11 +2,11 @@
 import math
 import operator
 
-from songselector.config import SPEED_COLUMN, SS_COLOR_COLUMN, SS_RATING_COLUMN
+from songselector.config import MATCH_COLUMN, SPEED_COLUMN, SS_COLOR_COLUMN, SS_RATING_COLUMN
 from songselector.core.color_search import color_id, parse_color_values
 
 NUMERIC_COLUMNS = {'Original BPM', 'New BPM', 'BPM', 'Tempo', 'Rating', 'Color', SS_RATING_COLUMN, SS_COLOR_COLUMN,
-                   SPEED_COLUMN}
+                   SPEED_COLUMN, MATCH_COLUMN}
 # Columns holding a category color number; they also accept color names (blue, red,orange).
 COLOR_COLUMNS = {'Color', SS_COLOR_COLUMN}
 TEXT_CONDITIONS = ['contains', 'does not contain', 'is', 'is not']
@@ -40,6 +40,10 @@ def parse_number(value):
 
 
 def matches_condition(cell, condition, value, column):
+    # The Match column has a value only while the List shows description results ('31%', -100 % to 100 %). A Match
+    # rule filters those; without a description search it lets every track through instead of hiding them all.
+    if column == MATCH_COLUMN and not str(cell or '').strip():
+        return True
     if condition in SPEED_CONDITIONS:
         actual, limit = parse_number(cell), parse_number(value)
         return (column == SPEED_COLUMN and actual is not None and limit is not None
