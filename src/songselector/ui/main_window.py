@@ -2675,7 +2675,7 @@ class MainWindow(SavedListsMixin, QMainWindow):
 
 
     def get_filters_from_dialog(self):
-        """Extract filters from dialog; rows set to None are kept so they come back next time"""
+        """Extract filters from dialog; unticked rows are kept so they come back next time"""
         return self.advanced_search_dialog.saved_filters()
     
     def populate_tree(self):

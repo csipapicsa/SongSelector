@@ -3,7 +3,7 @@ advanced_search_panel.py
 Advanced search panel
 """
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -30,23 +30,48 @@ from songselector.core.search_filters import (
     parse_number,
 )
 
+ALL_CONDITIONS = TEXT_CONDITIONS + list(NUMERIC_COMPARISONS) + list(SPEED_CONDITIONS)
+
+
+class ConditionCombo(QComboBox):
+    """As wide as the widest condition of any column, so the boxes line up in every row (asked 2026-11-27: Match
+    offers only the short number comparisons, and its box came out narrower than the rest).
+
+    Qt sizes a combo to its widest item; this adds the difference to the widest condition there is."""
+
+    def _widen(self, hint):
+        metrics = self.fontMetrics()
+        shown = max((metrics.boundingRect(self.itemText(i)).width() for i in range(self.count())), default=0)
+        widest = max(metrics.boundingRect(condition).width() for condition in ALL_CONDITIONS)
+        return QSize(hint.width() + max(0, widest - shown), hint.height())
+
+    def sizeHint(self):
+        return self._widen(super().sizeHint())
+
+    def minimumSizeHint(self):
+        return self._widen(super().minimumSizeHint())
+
 
 class AdvancedSearchRow(QWidget):
     def __init__(self, column_names, parent=None):
         super().__init__(parent)
         layout = QHBoxLayout()
-        self.column_combo = QComboBox()
-        self.column_combo.addItems([NO_COLUMN] + list(column_names))
-        self.column_combo.setCurrentIndex(1 if column_names else 0)
-        self.column_combo.setToolTip(f'{NO_COLUMN}: keep this row but leave it out of the search.')
+        # Switches the row on and off without losing it (asked 2026-11-27; before, the column was set to None).
+        self.active_check = QCheckBox('Active')
+        self.active_check.setChecked(True)
+        self.active_check.setToolTip('Untick to keep this rule but leave it out of the search.')
 
-        self.condition_combo = QComboBox()
+        self.column_combo = QComboBox()
+        self.column_combo.addItems(list(column_names))
+
+        self.condition_combo = ConditionCombo()
         self.condition_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
 
         self.value_edit = QLineEdit()
         self.color_completer = QCompleter(list(COLOR_NAMES.values()) + ['purple', 'magenta'], self)
         self.color_completer.setCaseSensitivity(Qt.CaseInsensitive)
 
+        layout.addWidget(self.active_check)
         layout.addWidget(self.column_combo)
         layout.addWidget(self.condition_combo)
         layout.addWidget(self.value_edit)
@@ -60,10 +85,9 @@ class AdvancedSearchRow(QWidget):
         selected = self.condition_combo.currentText()
         # Match is a percentage: only the number comparisons make sense for it.
         conditions = [] if self.column_combo.currentText() == MATCH_COLUMN else list(TEXT_CONDITIONS)
-        # None offers every condition, so a numeric one is kept while the row is switched off.
-        if self.column_combo.currentText() in NUMERIC_COLUMNS | {NO_COLUMN}:
+        if self.column_combo.currentText() in NUMERIC_COLUMNS:
             conditions += list(NUMERIC_COMPARISONS)
-        if self.column_combo.currentText() in (SPEED_COLUMN, NO_COLUMN):
+        if self.column_combo.currentText() == SPEED_COLUMN:
             conditions += list(SPEED_CONDITIONS)
         self.condition_combo.blockSignals(True)
         self.condition_combo.clear()
@@ -96,7 +120,8 @@ class AdvancedSearchRow(QWidget):
         return {
             'column': self.column_combo.currentText(),
             'condition': self.condition_combo.currentText(),
-            'value': self.value_edit.text().strip()
+            'value': self.value_edit.text().strip(),
+            'active': self.active_check.isChecked(),
         }
 
 class AdvancedSearchDialog(QDialog):
@@ -145,12 +170,17 @@ class AdvancedSearchDialog(QDialog):
 
     def set_filters(self, filters):
         for row, filter_data in zip(self.filter_rows, filters):
-            row.column_combo.setCurrentText(filter_data['column'])
+            # Before the Active tick a row was switched off by setting its column to None: it comes back unticked,
+            # on the first column (which column it had is not saved).
+            switched_off = filter_data['column'] == NO_COLUMN
+            if not switched_off:
+                row.column_combo.setCurrentText(filter_data['column'])
             row.condition_combo.setCurrentText(filter_data['condition'])
             row.value_edit.setText(filter_data['value'])
+            row.active_check.setChecked(filter_data.get('active', True) and not switched_off)
 
     def saved_filters(self):
-        """Rows with a value, also those set to None, so they come back next time."""
+        """Rows with a value, also unticked ones, so they come back next time."""
         return [row.get_filter() for row in self.filter_rows if row.get_filter()['value']]
 
     def get_active_filters(self):
@@ -158,7 +188,7 @@ class AdvancedSearchDialog(QDialog):
 
     def _valid(self):
         for row in self.filter_rows:
-            value = row.value_edit.text().strip() if row.column_combo.currentText() != NO_COLUMN else ''
+            value = row.value_edit.text().strip() if row.active_check.isChecked() else ''
             if value and row.column_combo.currentText() in COLOR_COLUMNS and row.condition_combo.currentText() not in NUMERIC_COMPARISONS:
                 _, error = parse_color_values(value)
                 if error:

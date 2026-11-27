@@ -21,13 +21,15 @@ SPEED_CONDITIONS = {
     'within ± (%)': lambda actual, limit: abs(actual) <= abs(limit),
     'outside ± (%)': lambda actual, limit: abs(actual) > abs(limit),
 }
-# A row set to this column keeps its condition and value but does not filter.
+# Before the Active tick (2026-11-27), a row set to this column kept its condition and value but did not filter.
+# Saved searches and smartlists may still hold such rows.
 NO_COLUMN = 'None'
 
 
 def active_filters(filters):
-    """The rules that filter: a value is given and a column is chosen."""
-    return [f for f in filters if f.get('value') and f.get('column') != NO_COLUMN]
+    """The rules that filter: ticked Active (rules saved before the tick count as ticked), a value is given and a
+    column is chosen."""
+    return [f for f in filters if f.get('active', True) and f.get('value') and f.get('column') != NO_COLUMN]
 
 
 def parse_number(value):

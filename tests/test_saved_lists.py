@@ -413,7 +413,7 @@ class BrowserGuiTests(unittest.TestCase):
         QTimer.singleShot(0, configure)
         window.open_advanced_search()
         self.assertEqual(window.library_store.saved_list('Cats')['rules'],
-                         [{'column': 'Artist', 'condition': 'contains', 'value': 'cat'}])
+                         [{'column': 'Artist', 'condition': 'contains', 'value': 'cat', 'active': True}])
         window.show_list_source({'kind': SMARTLIST, 'name': 'Cats'})
         self.assertEqual(sorted(self.shown(window)), ['one', 'three'])
 

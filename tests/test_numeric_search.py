@@ -29,6 +29,15 @@ class ComparisonTests(unittest.TestCase):
         for empty in ('', ' ', None):
             self.assertTrue(matches_condition(empty, 'at least (>=)', '30', 'Match'))
 
+    def test_active_filters_skip_unticked_rules_and_rows_saved_with_the_none_column(self):
+        from songselector.core.search_filters import NO_COLUMN, active_filters
+        rules = [{'column': 'Genre', 'condition': 'is', 'value': 'house', 'active': True},
+                 {'column': 'Genre', 'condition': 'is', 'value': 'techno', 'active': False},
+                 {'column': 'Genre', 'condition': 'is', 'value': 'saved before the tick'},
+                 {'column': NO_COLUMN, 'condition': 'is', 'value': 'switched off the old way'},
+                 {'column': 'Genre', 'condition': 'is', 'value': '', 'active': True}]
+        self.assertEqual([f['value'] for f in active_filters(rules)], ['house', 'saved before the tick'])
+
     def test_existing_text_conditions(self):
         self.assertTrue(matches_condition('Tribal House', 'contains', 'tribal', 'Genre'))
         self.assertTrue(matches_condition('Tribal House', 'does not contain', 'techno', 'Genre'))
@@ -149,25 +158,27 @@ class NumericSearchGuiTests(unittest.TestCase):
         self.assertEqual(seen,['greater than'])
         restored.close()
 
-    def test_none_column_keeps_the_row_but_leaves_it_out_of_the_search(self):
+    def test_unticked_row_keeps_the_rule_but_leaves_it_out_of_the_search(self):
+        # Asked 2026-11-27: an Active tick on every row, instead of setting the column to None.
         from PyQt5.QtCore import QTimer
 
         from songselector.core.search_filters import NO_COLUMN
         window=self.make_window()
         rules=[('Genre','contains','tribal'),('Original BPM','greater than','abc'),
-               (NO_COLUMN,'is','house')]
+               ('Genre','is','house')]
         def configure():
             dialog=window.advanced_search_dialog
-            self.assertEqual(dialog.filter_rows[0].column_combo.itemText(0),NO_COLUMN)
-            self.assertNotEqual(dialog.filter_rows[0].column_combo.currentText(),NO_COLUMN)
+            combo=dialog.filter_rows[0].column_combo
+            self.assertNotIn(NO_COLUMN,[combo.itemText(i) for i in range(combo.count())])
+            self.assertTrue(all(row.active_check.isChecked() for row in dialog.filter_rows))
             dialog.checkbox_enable.setChecked(True)
             for row,(column,condition,value) in zip(dialog.filter_rows,rules):
                 row.column_combo.setCurrentText(column)
                 row.condition_combo.setCurrentText(condition)
                 row.value_edit.setText(value)
-            # switched off: the numeric condition and the invalid number stay, OK still works
-            dialog.filter_rows[1].column_combo.setCurrentText(NO_COLUMN)
-            self.assertEqual(dialog.filter_rows[1].condition_combo.currentText(),'greater than')
+            # unticked: the column, the condition and even an invalid number stay, OK still works
+            dialog.filter_rows[1].active_check.setChecked(False)
+            dialog.filter_rows[2].active_check.setChecked(False)
             dialog.button_ok.click()
         QTimer.singleShot(0,configure)
         window.open_advanced_search()
@@ -177,14 +188,45 @@ class NumericSearchGuiTests(unittest.TestCase):
         seen=[]
         def inspect_restored():
             row=window.advanced_search_dialog.filter_rows[1]
-            seen.append((row.column_combo.currentText(),row.condition_combo.currentText(),row.value_edit.text()))
+            seen.append((row.active_check.isChecked(),row.column_combo.currentText(),
+                         row.condition_combo.currentText(),row.value_edit.text()))
             window.advanced_search_dialog.button_cancel.click()
         QTimer.singleShot(0,inspect_restored)
         window.open_advanced_search()
-        self.assertEqual(seen,[(NO_COLUMN,'greater than','abc')])
+        self.assertEqual(seen,[(False,'Original BPM','greater than','abc')])
         window.populate_tree()
         self.assertEqual(len(window.advanced_filters),1)
         window.close()
+
+    def test_a_row_saved_with_the_none_column_comes_back_unticked(self):
+        from songselector.core.search_filters import NO_COLUMN
+        from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
+        dialog=AdvancedSearchDialog(['Genre','Original BPM'])
+        dialog.set_filters([{'column':NO_COLUMN,'condition':'does not contain','value':'breakbeat'},
+                            {'column':'Original BPM','condition':'greater than','value':'120'}])
+        old,kept=dialog.filter_rows[:2]
+        self.assertFalse(old.active_check.isChecked())
+        self.assertEqual((old.column_combo.currentText(),old.condition_combo.currentText(),old.value_edit.text()),
+                         ('Genre','does not contain','breakbeat'))
+        self.assertTrue(kept.active_check.isChecked())  # saved before the tick: counts as ticked
+        self.assertEqual([f['value'] for f in dialog.get_active_filters()],['120'])
+        self.assertEqual(len(dialog.saved_filters()),2)
+        dialog.close()
+
+    def test_condition_boxes_are_equally_wide_whatever_the_column(self):
+        # Asked 2026-11-27: Match offers only the short number comparisons and its box was narrower than the rest.
+        from songselector.config import COMPLEX_SEARCH_COLUMNS
+        from songselector.ui.advanced_search_dialog import AdvancedSearchDialog
+        dialog=AdvancedSearchDialog(COMPLEX_SEARCH_COLUMNS)
+        for row,column in zip(dialog.filter_rows,['Match','Genre','Speed change','Rating','Artist']):
+            row.column_combo.setCurrentText(column)
+        dialog.show()
+        widths={row.condition_combo.width() for row in dialog.filter_rows}
+        self.assertEqual(len(widths),1,widths)
+        widest=max(dialog.filter_rows[0].fontMetrics().boundingRect(c).width()
+                   for c in ['does not contain','outside ± (%)','at least (>=)'])
+        self.assertGreater(widths.pop(),widest)  # the longest condition fits
+        dialog.close()
 
     def test_integer_rating_and_color_filters(self):
         window=self.make_window()
