@@ -454,8 +454,8 @@ class SimilarityMapInteractionTests(MapWindowTestBase):
         widget = SimilarityMapWidget(self.map.store, {'Map edges': ['perfect_mix', 'g_jump_sharp']})
         self.assertEqual({name for name, action in widget.edge_actions.items() if action.isChecked()},
                          {'perfect_mix', 'g_jump_sharp_up', 'g_jump_sharp_down'})
-        self.assertEqual(widget.edge_actions['g_jump_sharp_up'].text(), '+3 G jump sharp')
-        self.assertEqual(widget.edge_actions['g_jump_sharp_down'].text(), '-3 G jump sharp')
+        self.assertEqual(widget.edge_actions['g_jump_sharp_up'].text(), '+ G jump sharp')
+        self.assertEqual(widget.edge_actions['g_jump_sharp_down'].text(), '- G jump sharp')
 
     def test_old_harmonic_only_setting_carries_over(self):
         from songselector.ui.similarity_map import SimilarityMapWidget

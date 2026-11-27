@@ -68,13 +68,14 @@ class HarmonicTests(unittest.TestCase):
             self.assertEqual(jumps, g_jump_sharp_targets(start), start)
 
     def test_g_jump_sharp_is_signed_by_the_direction_of_the_pitch(self):
-        # Asked 2026-11-27: +3 when the pitch goes three semitones up, -3 when it goes down.
-        self.assertEqual(mix_type('9A', '6A').label, '+3 G jump sharp')   # Em -> Gm: up
-        self.assertEqual(mix_type('8A', '5A').label, '+3 G jump sharp')   # Am -> Cm: up
-        self.assertEqual(mix_type('6A', '9A').label, '-3 G jump sharp')   # Gm -> Em: down
-        self.assertEqual(mix_type('8A', '11A').label, '-3 G jump sharp')  # Am -> F#m: down
-        self.assertEqual(mix_type('11A', '2A').label, '-3 G jump sharp')  # F#m -> Ebm: down, wraps around
-        self.assertEqual(mix_type('2A', '11A').label, '+3 G jump sharp')  # Ebm -> F#m: up, wraps around
+        # Asked 2026-11-27: + when the pitch goes three semitones up, - when it goes down (the 3 left out: it never
+        # changes).
+        self.assertEqual(mix_type('9A', '6A').label, '+ G jump sharp')   # Em -> Gm: up
+        self.assertEqual(mix_type('8A', '5A').label, '+ G jump sharp')   # Am -> Cm: up
+        self.assertEqual(mix_type('6A', '9A').label, '- G jump sharp')   # Gm -> Em: down
+        self.assertEqual(mix_type('8A', '11A').label, '- G jump sharp')  # Am -> F#m: down
+        self.assertEqual(mix_type('11A', '2A').label, '- G jump sharp')  # F#m -> Ebm: down, wraps around
+        self.assertEqual(mix_type('2A', '11A').label, '+ G jump sharp')  # Ebm -> F#m: up, wraps around
         self.assertIsNone(mix_type('9B', '6B'))                           # majors: no G jump
         for start, _ in self.table():
             for name, target in g_jump_sharp_targets(start).items():

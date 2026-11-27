@@ -71,8 +71,8 @@ From a track in **8A**, these are the moves, safest first:
 | Mood shifter | 8A → 11B | Minor to major, three steps: a special effect, use with care |
 | Jaw's mix | 8A → 3A | Seven steps (a semitone up): a special effect, use with care |
 | Diagonal mix | 8A → 7B | Across and back one step |
-| +3 G jump sharp | 8A → 5A | Our own move, not Mixed In Key's: minor to minor, three semitones up (Am → Cm) |
-| −3 G jump sharp | 8A → 11A | The same, three semitones down (Am → F#m) |
+| + G jump sharp | 8A → 5A | Our own move, not Mixed In Key's: minor to minor, three semitones up (Am → Cm) |
+| − G jump sharp | 8A → 11A | The same, three semitones down (Am → F#m) |
 
 Moves are one-way: 8A → 10A is an energy boost, but 10A → 8A isn't a named move. G jump sharp goes both ways, and
 the sign tells you which way the pitch goes. On the wheel the number moves the other way: three semitones up is three
