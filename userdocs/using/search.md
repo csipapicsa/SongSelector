@@ -28,7 +28,7 @@ And on *Match*, how well a track matches a [description search](../sound/describ
 *Match at least 30* keeps only the close results. The rule filters only while the List shows description results;
 otherwise it lets every track through. Set *Top* to *All* to filter every analysed track, not just the top ones.
 
-Set a rule's column to *None* to switch it off without losing it.
+Untick a rule's *Active* box to switch it off without losing it; tick it again to bring it back.
 
 Want to keep a search? Save it as a [smartlist](playlists.md#smartlists).
 

@@ -19,6 +19,9 @@ from that period still mention 4.x numbers.
   line). Without a description search all dots are the same size again.
 - **Advanced Search on Match.** Filter description results by how well they match, for example *Match at least 30*
   (percent). Without a description search the rule lets every track through.
+- **An Active tick on every Advanced Search rule.** Untick a rule to switch it off and keep it, instead of setting its
+  column to *None* (no longer offered). A rule switched off that way comes back unticked, on the first column, since
+  its old column was not saved. The condition boxes are now equally wide in every row.
 - **New defaults: UMAP layout and the MTG model.** The map is laid out with UMAP unless you pick another layout.
   With no model chosen, the map and the description search use AllMusicCaps CLAP (MTG) once it's downloaded, then
   LAION CLAP, then CNN14; a model you chose stays as it is.
