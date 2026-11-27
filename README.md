@@ -42,7 +42,7 @@ Mixxx, reads their libraries automatically, and answers three questions:
   the map uses; each track is decoded once for all of them, in a low-priority background process, on the
   GPU through DirectML (any DirectX 12 card) or on the CPU
 - **Search by description:** a typed prompt is turned into a CLAP text vector and the closest tracks are
-  listed; prompts can be saved, results dragged onto Traktor
+  listed, with the best matches drawn largest on the map; prompts can be saved, results dragged onto Traktor
 - Similarity map (UMAP by default, or t-SNE or PCA; 2D or 3D; implemented in numpy to keep scikit-learn and numba
   out of the exe) with
   closest matches, drag and drop into Traktor's decks
@@ -61,8 +61,9 @@ Mixxx, reads their libraries automatically, and answers three questions:
 
 **Organising**
 - Playlist panel for building a set in order; saved playlists and smartlists (stored search rules)
-- Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons and the speed
-  change (*within ± 8 %* of the master tempo)
+- Search by text, Traktor colour, own rating and colour; Advanced Search with numeric comparisons, the speed
+  change (*within ± 8 %* of the master tempo) and the description match (*Match at least 30 %*); each rule can be
+  switched off without losing it
 - Own *Rating* and *Color* per track, independent of Traktor
 - *Speed change* column: how much faster or slower each track plays at the master tempo (`+6.2%`)
 - Cover art in the List, the Playlist and on the map (embedded, or `cover.jpg` / `folder.jpg` next to the file)
@@ -76,10 +77,10 @@ What is behind the features, and where to look:
 | Area | What | Where |
 |---|---|---|
 | Architecture | Logic in `core/` (no widgets, unit-tested), PyQt5 UI in `ui/`. Embedding analysis in a separate process at low CPU and I/O priority, with crash recovery, so the UI and Traktor stay responsive | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| ML inference | Four models exported to ONNX, every one taking raw audio (LAION's spectrogram built into the graph); DirectML / CUDA / CPU chosen at runtime, batch sizes measured per model. Text encoders run in their own process with the `tokenizers` library, no PyTorch in the app | [core/embeddings.py](src/songselector/core/embeddings.py), [core/text_search.py](src/songselector/core/text_search.py), [research note](docs/research/text_search_clap.md) |
+| ML inference | Three models exported to ONNX, every one taking raw audio (LAION's spectrogram built into the graph); DirectML / CUDA / CPU chosen at runtime, batch sizes measured per model. Text encoders run in their own process with the `tokenizers` library, no PyTorch in the app | [core/embeddings.py](src/songselector/core/embeddings.py), [core/text_search.py](src/songselector/core/text_search.py), [research note](docs/research/text_search_clap.md) |
 | Model choice by measurement | CPU and GPU cost of LAION vs Microsoft CLAP measured before any app work; a broken model (collapsed embeddings) caught and excluded | [docs/research/text_search_clap.md](docs/research/text_search_clap.md) |
 | Model reproducibility | No model is in the repo; export scripts rebuild them from the published weights and check every export against PyTorch (and LAION's audio side against transformers' own feature extractor) | [Getting the models](#getting-the-embedding-models) |
-| Testing | About 320 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
+| Testing | About 400 pytest tests, including headless Qt GUI tests and a test of the analysis process; acceptance tests on the developer's real library are marked and kept out of CI | [tests/](tests/) |
 | Release verification | Every build (Windows exe, Linux AppImage) runs a self-check *inside the packaged app* (imports, GUI flows, Rekordbox reader, real inference) and a native-window smoke test (on Linux on Xvfb, closed through the X11 window protocol) before it is published | [selfcheck.py](src/songselector/selfcheck.py), [verify_release.ps1](scripts/verify_release.ps1), [verify_release.sh](scripts/verify_release.sh) |
 | CI/CD | GitHub Actions: ruff, pytest on Windows and Linux, pip-audit, gitleaks over the full history, weekly scheduled run. `main` only accepts pull requests with green checks. A version tag builds, verifies and publishes the exe and the AppImage with SHA-256 checksums, signed build provenance (`gh attestation verify`) and VirusTotal reports ([SECURITY.md](SECURITY.md)) | [ci.yml](.github/workflows/ci.yml), [release.yml](.github/workflows/release.yml) |
 | Research | Can the sound predict a DJ's own ratings and colours? Four embedding models (CNN14, MusiCNN, Discogs-EffNet, OpenL3) compared with artist-grouped validation and bootstrap intervals. The answer was mostly no (rating AUC ≈ 0.6 for all four), so the feature was put on hold rather than shipped | [docs/research/](docs/research/) |
@@ -103,7 +104,7 @@ self-contained (no Python needed). Check them against `SHA256SUMS.txt` from the 
   On Linux the app reads Mixxx's library (also Mixxx from Flathub); Traktor and Rekordbox do not run there.
 
 The embedding models (similarity map, closest matches, groups, search by description) are a separate, optional
-download (up to 2.3 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
+download (up to 1.7 GB): *Analysis → Get models…* → *Download* fetches them from Hugging Face and checks each file
 ([below](#getting-the-embedding-models)). Everything else works without them.
 
 The app stores its data in one folder: on Windows **next to the exe**, on Linux in `~/.local/share/SongSelector`
